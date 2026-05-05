@@ -2437,7 +2437,188 @@ function wfDelete(id) {
     closeModal(); renderPage('workflows');
   }, 'Delete');
 }
-function renderTags()     { return placeholderPage('Tags', `${TAG_LIBRARY.length} tags in the library.`); }
+// ─── Tags ────────────────────────────────────────────────────────────────────
+let TAG_FILTER_TYPE = 'all';
+let TAG_QUERY = '';
+
+function renderTags() {
+  const admin = isAdmin();
+  let list = [...TAG_LIBRARY];
+  if (TAG_FILTER_TYPE !== 'all') list = list.filter(t => t.type === TAG_FILTER_TYPE);
+  if (TAG_QUERY.trim()) {
+    const q = TAG_QUERY.toLowerCase();
+    list = list.filter(t => t.tag.toLowerCase().includes(q));
+  }
+  list.sort((a, b) => b.count - a.count);
+
+  const total = TAG_LIBRARY.length;
+  const manualN = TAG_LIBRARY.filter(t => t.type === 'manual').length;
+  const aiN = TAG_LIBRARY.filter(t => t.type === 'ai').length;
+  const aiWithConf = TAG_LIBRARY.filter(t => t.type === 'ai' && t.conf);
+  const avgConf = aiWithConf.length ? Math.round(aiWithConf.reduce((a, t) => a + t.conf, 0) / aiWithConf.length) : 0;
+  const totalUsage = TAG_LIBRARY.reduce((a, t) => a + t.count, 0);
+  const max = Math.max(...TAG_LIBRARY.map(x => x.count), 1);
+
+  const rows = list.map(t => {
+    const pct = (t.count / max) * 100;
+    const confColor = t.conf
+      ? (t.conf >= 90 ? 'var(--green)' : t.conf >= 80 ? 'var(--amber)' : 'var(--red)')
+      : 'var(--ink4)';
+    return `
+      <tr style="cursor:pointer" onclick="tagShowUsage('${escAttr(t.tag)}')">
+        <td><span class="tag tag-neutral" style="font-size:11px">${t.tag}</span></td>
+        <td>${t.type === 'ai'
+          ? '<span class="tag tag-resolved" style="font-size:10px">AI</span>'
+          : '<span class="tag tag-neutral" style="font-size:10px">Manual</span>'}</td>
+        <td style="font-family:'DM Mono',monospace;font-size:12px;color:${confColor}">${t.conf ? t.conf + '%' : '—'}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="font-family:'DM Mono',monospace;font-size:12px;width:28px;color:var(--ink2)">${t.count}</div>
+            <div style="flex:1;background:var(--off2);height:6px;border-radius:3px;overflow:hidden;max-width:160px"><div style="background:var(--purple);height:100%;width:${pct}%"></div></div>
+          </div>
+        </td>
+        ${admin ? `<td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+          <button class="btn btn-sm" onclick="tagEdit('${escAttr(t.tag)}')">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="tagDelete('${escAttr(t.tag)}')">Delete</button>
+        </td>` : ''}
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="page">
+      <div class="topbar">
+        <div class="tb-title">Tags</div>
+        ${admin
+          ? `<button class="btn btn-solid btn-sm" onclick="tagNew()">+ New Tag</button>`
+          : `<span style="font-size:11px;color:var(--ink3);font-style:italic">Read-only — admin access required to edit</span>`}
+      </div>
+      <div class="kpi-bar">
+        <div class="kpi"><div class="kpi-n">${total}</div><div class="kpi-l">Total tags</div></div>
+        <div class="kpi"><div class="kpi-n c-blue">${manualN}</div><div class="kpi-l">Manual</div></div>
+        <div class="kpi"><div class="kpi-n c-green">${aiN}</div><div class="kpi-l">AI-suggested</div></div>
+        <div class="kpi"><div class="kpi-n c-amber">${avgConf ? avgConf + '%' : '—'}</div><div class="kpi-l">Avg AI confidence</div></div>
+      </div>
+      <div class="filter-bar">
+        <span class="filter-label">Filter</span>
+        <input class="filter-select" id="tag-search" placeholder="Search tags…" style="width:200px" value="${TAG_QUERY}" oninput="tagSetQuery(this.value)"/>
+        <select class="filter-select" onchange="tagSetType(this.value)">
+          <option value="all"    ${TAG_FILTER_TYPE==='all'?'selected':''}>All types</option>
+          <option value="manual" ${TAG_FILTER_TYPE==='manual'?'selected':''}>Manual</option>
+          <option value="ai"     ${TAG_FILTER_TYPE==='ai'?'selected':''}>AI-suggested</option>
+        </select>
+        <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:auto">${list.length} of ${total} · ${totalUsage} total uses</span>
+      </div>
+      <div style="flex:1;overflow-y:auto">
+        <table class="tbl">
+          <thead><tr>
+            <th>Tag</th><th>Type</th><th>Confidence</th><th>Usage</th>
+            ${admin ? '<th style="text-align:right">Actions</th>' : ''}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${list.length === 0 ? `<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">No tags match</div><div class="empty-line"></div></div>` : ''}
+      </div>
+    </div>`;
+}
+
+function tagSetType(v) { TAG_FILTER_TYPE = v; renderPage('tags'); }
+function tagSetQuery(v) {
+  TAG_QUERY = v;
+  renderPage('tags');
+  const input = document.getElementById('tag-search');
+  if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+}
+
+function tagShowUsage(tagName) {
+  const using = TICKETS.filter(t =>
+    (t.tags || []).includes(tagName) ||
+    (t.aiTags || []).some(at => at.tag === tagName)
+  );
+  const def = TAG_LIBRARY.find(t => t.tag === tagName);
+  const items = using.length
+    ? using.map(t => `
+        <div onmousedown="closeModal();openTicket('${escAttr(t.id)}')" style="padding:10px 12px;border:1px solid var(--rule);border-radius:var(--r);cursor:pointer;display:flex;gap:10px;align-items:center;background:var(--off2);transition:all .15s" onmouseover="this.style.borderColor='var(--purple)';this.style.background='var(--purple-lt)'" onmouseout="this.style.borderColor='var(--rule)';this.style.background='var(--off2)'">
+          <span class="tag tag-${t.status}" style="font-size:10px">${t.status}</span>
+          <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3)">${t.id}</span>
+          <span style="flex:1;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.subject}</span>
+        </div>`).join('')
+    : '<div style="font-size:12px;color:var(--ink3);text-align:center;padding:24px">No tickets currently use this tag</div>';
+  showModal(`Tag: ${tagName}`, `
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--rule)">
+      <span class="tag tag-neutral">${tagName}</span>
+      ${def ? `<span style="font-size:11px;color:var(--ink3)">${def.type==='ai'?'AI-suggested':'Manual'}${def.conf?` · ${def.conf}% confidence`:''}</span>` : ''}
+      <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:auto">${using.length} ticket${using.length===1?'':'s'}</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">${items}</div>
+  `, null, null);
+}
+
+function tagFormBody(t) {
+  const esc = s => String(s||'').replace(/"/g,'&quot;');
+  return `
+    <div class="form-row"><label class="form-label">Tag name</label><input class="form-input" id="tag-name" value="${esc(t?.tag)}" placeholder="lowercase-with-dashes"/></div>
+    <div class="form-row"><label class="form-label">Type</label>
+      <select class="form-input" id="tag-type" onchange="document.getElementById('tag-conf-row').style.display = this.value === 'ai' ? 'block' : 'none'">
+        <option value="manual" ${(!t || t.type==='manual')?'selected':''}>Manual</option>
+        <option value="ai"     ${t?.type==='ai'?'selected':''}>AI-suggested</option>
+      </select>
+    </div>
+    <div class="form-row" id="tag-conf-row" style="display:${t?.type==='ai'?'block':'none'}">
+      <label class="form-label">Confidence (%)</label>
+      <input class="form-input" id="tag-conf" type="number" min="0" max="100" value="${t?.conf||''}" placeholder="0–100"/>
+    </div>`;
+}
+
+function normalizeTagName(s) {
+  return String(s).trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+}
+
+function tagNew() {
+  if (!isAdmin()) return;
+  showModal('New tag', tagFormBody(null), () => {
+    const name = normalizeTagName(document.getElementById('tag-name').value);
+    const type = document.getElementById('tag-type').value;
+    const conf = type === 'ai' ? (parseInt(document.getElementById('tag-conf').value) || null) : null;
+    if (!name || TAG_LIBRARY.find(t => t.tag === name)) return;
+    TAG_LIBRARY.unshift({ tag: name, count: 0, type, conf });
+    closeModal(); renderPage('tags');
+  }, 'Create');
+}
+
+function tagEdit(name) {
+  if (!isAdmin()) return;
+  const t = TAG_LIBRARY.find(x => x.tag === name); if (!t) return;
+  showModal(`Edit tag`, tagFormBody(t), () => {
+    const newName = normalizeTagName(document.getElementById('tag-name').value);
+    const type = document.getElementById('tag-type').value;
+    const conf = type === 'ai' ? (parseInt(document.getElementById('tag-conf').value) || null) : null;
+    if (!newName) return;
+    if (newName !== t.tag && TAG_LIBRARY.find(x => x.tag === newName)) return;
+    if (newName !== t.tag) {
+      TICKETS.forEach(tk => {
+        tk.tags = (tk.tags || []).map(x => x === t.tag ? newName : x);
+        tk.aiTags = (tk.aiTags || []).map(at => at.tag === t.tag ? { ...at, tag: newName } : at);
+      });
+    }
+    t.tag = newName; t.type = type; t.conf = conf;
+    closeModal(); renderPage('tags');
+  }, 'Save');
+}
+
+function tagDelete(name) {
+  if (!isAdmin()) return;
+  const t = TAG_LIBRARY.find(x => x.tag === name); if (!t) return;
+  const inUse = TICKETS.filter(tk => (tk.tags||[]).includes(name) || (tk.aiTags||[]).some(at => at.tag === name)).length;
+  showModal('Delete tag', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${name}</strong>?${inUse?` This tag is currently used by <strong style="color:var(--ink)">${inUse} ticket${inUse===1?'':'s'}</strong> — it will be removed from those tickets.`:''}</div>`, () => {
+    TICKETS.forEach(tk => {
+      tk.tags = (tk.tags || []).filter(x => x !== name);
+      tk.aiTags = (tk.aiTags || []).filter(at => at.tag !== name);
+    });
+    const i = TAG_LIBRARY.findIndex(x => x.tag === name);
+    if (i >= 0) TAG_LIBRARY.splice(i, 1);
+    closeModal(); renderPage('tags');
+  }, 'Delete');
+}
 // ─── Roles & Permissions ─────────────────────────────────────────────────────
 let ROLES_VIEW_AGENTS = null; // role name → show agents-in-role page; null → matrix
 

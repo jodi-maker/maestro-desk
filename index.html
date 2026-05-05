@@ -141,6 +141,20 @@ body{font-family:'Inter',sans-serif;background:var(--w);color:var(--ink);font-si
 .settings-h{font-family:'Inter',sans-serif;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin-bottom:14px}
 .settings-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--rule)}
 .settings-row:last-of-type{border-bottom:none}
+/* ── Customer detail extras ── */
+.cust-quickactions{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.cust-quickactions .btn{text-decoration:none}
+.cust-timeline{position:relative;padding-left:18px;max-height:340px;overflow-y:auto}
+.cust-timeline::before{content:'';position:absolute;left:6px;top:6px;bottom:6px;width:1px;background:var(--rule)}
+.cust-timeline-item{position:relative;padding:8px 0 8px 8px;cursor:pointer;border-radius:var(--r);transition:background .1s}
+.cust-timeline-item:hover{background:var(--off2)}
+.cust-timeline-item::before{content:'';position:absolute;left:-15px;top:14px;width:8px;height:8px;border-radius:50%;background:var(--purple);border:2px solid var(--off);box-sizing:content-box}
+.cust-timeline-item.role-customer::before{background:var(--cyan)}
+.cust-timeline-item.role-agent::before{background:var(--purple)}
+.cust-timeline-item.role-ai::before{background:var(--green)}
+.cust-timeline-item.role-note::before{background:var(--amber)}
+.cust-note{padding:10px 12px;border-left:2px solid var(--amber);background:rgba(251,191,36,0.07);border-radius:0 var(--r) var(--r) 0;margin-bottom:8px}
+.cust-note:last-child{margin-bottom:0}
 /* ── Help & Support ── */
 .help-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 .help-quickstart{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
@@ -1492,6 +1506,64 @@ function getCustomerStats(custId) {
   return { tickets, total: tickets.length, open, resolved, csatCount: csat.length, avgCSAT };
 }
 
+function getCustomerActivity(custId) {
+  const items = [];
+  TICKETS.filter(t => t.customerId === custId).forEach(t => {
+    (t.msgs || []).forEach(m => items.push({
+      ticketId: t.id,
+      from: m.from,
+      role: m.r,
+      text: m.t,
+      ts: m.ts,
+    }));
+  });
+  return items.slice(-15).reverse();
+}
+
+function getCustomerCommonTags(custId) {
+  const counts = {};
+  TICKETS.filter(t => t.customerId === custId).forEach(t => {
+    (t.tags || []).forEach(tag => { counts[tag] = (counts[tag] || 0) + 1; });
+  });
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+}
+
+function getCustomerRisk(c) {
+  const tickets = TICKETS.filter(t => t.customerId === c.id);
+  const flags = [];
+  const breaches = tickets.filter(t => t.sla === 'breach').length;
+  if (breaches > 0) flags.push({ level: 'high', text: `${breaches} SLA breach${breaches>1?'es':''}` });
+  const escalated = tickets.filter(t => t.status === 'escalated').length;
+  if (escalated > 0) flags.push({ level: 'high', text: `${escalated} escalated` });
+  if (tickets.filter(t => t.status === 'gdpr').length > 0) flags.push({ level: 'high', text: 'Active GDPR request' });
+  if (!c.consent) flags.push({ level: 'medium', text: 'No marketing consent' });
+  if (c.kyc !== 'Verified') flags.push({ level: 'medium', text: `KYC ${c.kyc}` });
+  return flags;
+}
+
+function addCustomerNote(custId) {
+  showModal('Add internal note', `<div class="form-row"><label class="form-label">Note</label><textarea class="form-input" id="cn-text" style="min-height:120px;font-family:'Inter',sans-serif" placeholder="Context the team should know about this customer…"></textarea></div>`, () => {
+    const text = document.getElementById('cn-text').value.trim();
+    if (!text) return;
+    const c = CUSTOMERS.find(x => x.id === custId);
+    if (!c) return;
+    if (!c.notes) c.notes = [];
+    c.notes.unshift({
+      author: SESSION?.name || 'Unknown',
+      ts: new Date().toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }),
+      text,
+    });
+    closeModal(); renderPage('customers');
+  }, 'Add note');
+}
+
+function deleteCustomerNote(custId, idx) {
+  const c = CUSTOMERS.find(x => x.id === custId);
+  if (!c || !c.notes) return;
+  c.notes.splice(idx, 1);
+  renderPage('customers');
+}
+
 function openCustomerProfile(id) { CUSTOMER_SELECTED = id; renderPage('customers'); }
 function closeCustomerProfile()  { CUSTOMER_SELECTED = null; renderPage('customers'); }
 
@@ -1515,6 +1587,10 @@ function renderCustomerDetail(custId) {
   if (!c) { CUSTOMER_SELECTED = null; return renderCustomers(); }
   const s = getCustomerStats(custId);
   const admin = isAdmin();
+  const activity = getCustomerActivity(custId);
+  const tagsList = getCustomerCommonTags(custId);
+  const risks = getCustomerRisk(c);
+  const notes = c.notes || [];
 
   const ticketRows = s.tickets.map(t => `
     <tr onclick="openTicket('${escAttr(t.id)}')" style="cursor:pointer">
@@ -1539,6 +1615,61 @@ function renderCustomerDetail(custId) {
       </div>`;
   }).join('') || '<div style="color:var(--ink3);font-size:12px;padding:8px 0">No custom fields defined. Admins can add them via Manage Fields on the list view.</div>';
 
+  const riskPanel = risks.length ? `
+    <div class="card" style="margin-bottom:16px;border-color:rgba(248,113,113,0.3);background:rgba(248,113,113,0.04)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l6 11H1L7 1z" stroke="var(--red)" stroke-width="1.4" stroke-linejoin="round"/><path d="M7 5v3M7 10v.5" stroke="var(--red)" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <div class="card-title" style="margin:0;color:var(--red)">Risk indicators</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${risks.map(r => `<span class="tag" style="font-size:10px;border-color:${r.level==='high'?'rgba(248,113,113,0.5)':'rgba(251,191,36,0.5)'};color:${r.level==='high'?'var(--red)':'var(--amber)'};background:${r.level==='high'?'var(--red-lt)':'var(--amber-lt)'}">${r.text}</span>`).join('')}
+      </div>
+    </div>` : '';
+
+  const tagsBlock = tagsList.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Common topics</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${tagsList.map(([tag, count]) => `<span class="tag tag-neutral" style="font-size:11px;display:inline-flex;align-items:center;gap:5px">${tag} <span style="color:var(--ink3);font-family:'DM Mono',monospace">${count}</span></span>`).join('')}
+      </div>
+    </div>` : '';
+
+  const timelineBlock = activity.length ? `
+    <div class="card">
+      <div class="card-title">Activity timeline</div>
+      <div class="cust-timeline">
+        ${activity.map(a => `
+          <div class="cust-timeline-item role-${a.role}" onclick="openTicket('${escAttr(a.ticketId)}')">
+            <div style="display:flex;gap:8px;align-items:baseline;margin-bottom:3px">
+              <span style="font-size:11px;font-weight:600;color:var(--ink)">${a.from}</span>
+              ${a.role === 'note' ? '<span class="note-mark">Note</span>' : a.role === 'ai' ? '<span class="ai-mark">AI</span>' : ''}
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${a.ticketId}</span>
+              <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink4);margin-left:auto">${a.ts}</span>
+            </div>
+            <div style="font-size:12px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.text}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>` : `<div class="card"><div class="card-title">Activity timeline</div><div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px 0">No activity yet</div></div>`;
+
+  const notesBlock = `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin:0">Internal notes</div>
+        <button class="btn btn-sm" onclick="addCustomerNote('${escAttr(c.id)}')">+ Add note</button>
+      </div>
+      ${notes.length ? notes.map((n, i) => `
+        <div class="cust-note">
+          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px">
+            <span style="font-size:11px;font-weight:600;color:var(--ink)">${n.author}</span>
+            <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${n.ts}</span>
+            ${admin ? `<button class="btn btn-sm btn-danger" style="margin-left:auto;padding:2px 8px;font-size:10px;border:none;background:transparent;color:var(--ink3)" onclick="deleteCustomerNote('${escAttr(c.id)}',${i})" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--ink3)'" title="Delete note">×</button>` : ''}
+          </div>
+          <div style="font-size:12.5px;color:var(--ink2);line-height:1.55;white-space:pre-wrap">${n.text}</div>
+        </div>
+      `).join('') : '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px 0">No notes yet — share context with the team by adding one.</div>'}
+    </div>`;
+
   return `
     <div class="page">
       <div class="topbar">
@@ -1546,10 +1677,6 @@ function renderCustomerDetail(custId) {
           <span onclick="closeCustomerProfile()">Customers</span>
           <span class="tb-sep">/</span>
           <span style="color:var(--ink);font-weight:500">${c.first} ${c.last}</span>
-          <span style="margin-left:auto;display:flex;gap:6px">
-            ${c.bo ? `<a href="${c.bo}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none">Backoffice ↗</a>` : ''}
-            <button class="btn btn-sm btn-danger" onclick="showCustomerGDPR('${escAttr(c.id)}')">GDPR</button>
-          </span>
         </div>
       </div>
       <div class="page-scroll">
@@ -1566,12 +1693,27 @@ function renderCustomerDetail(custId) {
           </div>
           <span class="tag ${c.kyc==='Verified'?'tag-resolved':'tag-pending'}" style="flex-shrink:0">${c.kyc}</span>
         </div>
+        <div class="cust-quickactions">
+          <a href="mailto:${c.email}" class="btn btn-sm">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="2.5" width="10" height="7" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M1.5 3l4.5 3.5L10.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Email
+          </a>
+          <a href="tel:${c.mobile.replace(/\s/g,'')}" class="btn btn-sm">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 1.5h2l1 2.5L3.5 5a8 8 0 0 0 3.5 3.5L8.5 7l2.5 1V11a1 1 0 0 1-1 1A9 9 0 0 1 1 2.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+            Call
+          </a>
+          <button class="btn btn-sm" onclick="addCustomerNote('${escAttr(c.id)}')">+ Note</button>
+          ${c.bo ? `<a href="${c.bo}" target="_blank" rel="noopener" class="btn btn-sm">Backoffice ↗</a>` : ''}
+          <button class="btn btn-sm btn-danger" style="margin-left:auto" onclick="showCustomerGDPR('${escAttr(c.id)}')">GDPR</button>
+        </div>
+        ${riskPanel}
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
           <div class="r-tile" style="border-color:rgba(34,211,238,0.3);background:var(--cyan-lt)"><div class="r-tile-n" style="color:var(--cyan)">${s.open}</div><div class="r-tile-l" style="color:var(--cyan)">Open</div></div>
           <div class="r-tile"><div class="r-tile-n" style="color:var(--ink)">${s.total}</div><div class="r-tile-l" style="color:var(--ink3)">Total tickets</div></div>
           <div class="r-tile" style="border-color:rgba(251,191,36,0.3);background:var(--amber-lt)"><div class="r-tile-n" style="color:var(--amber)">${s.csatCount?s.avgCSAT.toFixed(1):'—'}</div><div class="r-tile-l" style="color:var(--amber)">CSAT (${s.csatCount})</div></div>
           <div class="r-tile" style="border-color:${c.consent?'rgba(52,211,153,0.3)':'rgba(248,113,113,0.3)'};background:${c.consent?'var(--green-lt)':'var(--red-lt)'}"><div class="r-tile-n" style="color:${c.consent?'var(--green)':'var(--red)'};font-size:18px;line-height:1.2">${c.consent?'Yes':'No'}</div><div class="r-tile-l" style="color:${c.consent?'var(--green)':'var(--red)'}">Consent</div></div>
         </div>
+        ${tagsBlock}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
           <div class="card">
             <div class="card-title">Profile</div>
@@ -1588,6 +1730,10 @@ function renderCustomerDetail(custId) {
             <div class="card-title">Custom fields</div>
             ${customFields}
           </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          ${timelineBlock}
+          ${notesBlock}
         </div>
         <div class="card">
           <div class="card-title">Tickets</div>

@@ -579,6 +579,9 @@ let CURRENT_TICKET = null;
 let FILTER_STATUS = 'all';
 let FILTER_CATEGORY = 'all';
 let FILTER_PRIORITY = 'all';
+let FILTER_AGENT = 'all';
+let FILTER_QUERY = '';
+let FILTER_VIEW = 'all';
 let SORT_COL = 'id';
 let SORT_DIR = 1;
 let AI_THINKING = false;
@@ -772,9 +775,25 @@ function renderTickets() {
   const tabs = statuses.map(s => `<div class="tab ${FILTER_STATUS===s?'active':''}" onclick="setStatusFilter('${s}')">${s==='all'?'All':s.charAt(0).toUpperCase()+s.slice(1)}${s!=='all'?' ('+TICKETS.filter(t=>t.status===s).length+')':' ('+TICKETS.length+')'}</div>`).join('');
 
   let list = [...TICKETS];
-  if (FILTER_STATUS !== 'all') list = list.filter(t => t.status === FILTER_STATUS);
+  if (FILTER_VIEW === 'mine' && SESSION)        list = list.filter(t => t.agent === SESSION.name);
+  else if (FILTER_VIEW === 'unassigned')        list = list.filter(t => !t.agent);
+  else if (FILTER_VIEW === 'breach')            list = list.filter(t => t.sla === 'breach' || t.sla === 'warn');
+  if (FILTER_STATUS !== 'all')   list = list.filter(t => t.status === FILTER_STATUS);
   if (FILTER_CATEGORY !== 'all') list = list.filter(t => t.category === FILTER_CATEGORY);
   if (FILTER_PRIORITY !== 'all') list = list.filter(t => t.priority === FILTER_PRIORITY);
+  if (FILTER_AGENT !== 'all')    list = list.filter(t => t.agent === FILTER_AGENT);
+  if (FILTER_QUERY.trim()) {
+    const q = FILTER_QUERY.toLowerCase();
+    list = list.filter(t => {
+      const cust = CUSTOMERS.find(c => c.id === t.customerId);
+      const custName = cust ? (cust.first + ' ' + cust.last) : '';
+      return t.id.toLowerCase().includes(q)
+        || t.subject.toLowerCase().includes(q)
+        || (t.tags || []).some(tag => tag.toLowerCase().includes(q))
+        || custName.toLowerCase().includes(q)
+        || (t.agent || '').toLowerCase().includes(q);
+    });
+  }
 
   list.sort((a,b) => {
     let av = a[SORT_COL]||'', bv = b[SORT_COL]||'';
@@ -783,16 +802,31 @@ function renderTickets() {
 
   const cats = [...new Set(TICKETS.map(t=>t.category))];
 
+  // KPIs
+  const total = TICKETS.length;
+  const openN = TICKETS.filter(t => t.status === 'open' || t.status === 'escalated').length;
+  const breachN = TICKETS.filter(t => t.sla === 'breach').length;
+  const myN = SESSION ? TICKETS.filter(t => t.agent === SESSION.name && (t.status === 'open' || t.status === 'escalated')).length : 0;
+  const unassignedN = TICKETS.filter(t => !t.agent).length;
+  const slaRiskN = TICKETS.filter(t => t.sla === 'breach' || t.sla === 'warn').length;
+
+  const views = [
+    { k: 'all',        l: 'All',                                     active: FILTER_VIEW === 'all' },
+    { k: 'mine',       l: `Assigned to me · ${myN}`,                 active: FILTER_VIEW === 'mine' },
+    { k: 'unassigned', l: `Unassigned · ${unassignedN}`,             active: FILTER_VIEW === 'unassigned' },
+    { k: 'breach',     l: `SLA risk · ${slaRiskN}`,                  active: FILTER_VIEW === 'breach' },
+  ];
+
   const rows = list.map(t => {
     const cust = CUSTOMERS.find(c => c.id === t.customerId);
     return `<tr onclick="openTicket('${t.id}')" style="cursor:pointer">
       <td class="bold">${t.id}</td>
       <td>${cust ? cust.first+' '+cust.last : '—'}</td>
-      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--ink)">${t.subject}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--ink)">${t.subject}</td>
       <td><span class="tag tag-${t.status}">${t.status}</span></td>
       <td><span class="tag tag-${t.priority}">${t.priority}</span></td>
       <td>${t.category}</td>
-      <td>${t.agent}</td>
+      <td>${t.agent || '<span style="color:var(--ink3)">Unassigned</span>'}</td>
       <td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${t.updated}</td>
       <td><span class="sla-${t.sla}" style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;text-transform:uppercase">${t.sla}</span></td>
     </tr>`;
@@ -804,9 +838,16 @@ function renderTickets() {
         <div class="tb-title">Tickets</div>
         <button class="btn btn-solid btn-sm" onclick="showNewTicketModal()">+ New Ticket</button>
       </div>
+      <div class="kpi-bar">
+        <div class="kpi"><div class="kpi-n">${total}</div><div class="kpi-l">Total</div></div>
+        <div class="kpi"><div class="kpi-n c-blue">${openN}</div><div class="kpi-l">Open</div></div>
+        <div class="kpi"><div class="kpi-n c-red">${breachN}</div><div class="kpi-l">SLA breach</div></div>
+        <div class="kpi"><div class="kpi-n c-purple">${myN}</div><div class="kpi-l">Assigned to me</div></div>
+      </div>
       <div class="tab-bar">${tabs}</div>
-      <div class="filter-bar">
-        <span class="filter-label">Filter</span>
+      <div class="filter-bar" style="flex-wrap:wrap">
+        <span class="filter-label">Search</span>
+        <input class="filter-select" id="ticket-search" placeholder="Subject, ID, customer, tag, agent…" style="width:260px" value="${FILTER_QUERY}" oninput="setTicketQuery(this.value)"/>
         <select class="filter-select" onchange="FILTER_CATEGORY=this.value;renderPage('tickets')">
           <option value="all">All categories</option>
           ${cats.map(c=>`<option value="${c}" ${FILTER_CATEGORY===c?'selected':''}>${c}</option>`).join('')}
@@ -820,10 +861,17 @@ function renderTickets() {
         </select>
         <select class="filter-select" onchange="setAgentFilter(this.value)">
           <option value="all">All agents</option>
-          ${AGENTS.map(a=>`<option value="${a.name}">${a.name}</option>`).join('')}
+          ${AGENTS.map(a=>`<option value="${a.name}" ${FILTER_AGENT===a.name?'selected':''}>${a.name}</option>`).join('')}
         </select>
         ${FILTER_CATEGORY!=='all'?`<span class="filter-tag">${FILTER_CATEGORY}<span class="rm" onclick="FILTER_CATEGORY='all';renderPage('tickets')">×</span></span>`:''}
         ${FILTER_PRIORITY!=='all'?`<span class="filter-tag">${FILTER_PRIORITY}<span class="rm" onclick="FILTER_PRIORITY='all';renderPage('tickets')">×</span></span>`:''}
+        ${FILTER_AGENT!=='all'?`<span class="filter-tag">${FILTER_AGENT}<span class="rm" onclick="FILTER_AGENT='all';renderPage('tickets')">×</span></span>`:''}
+        ${FILTER_QUERY?`<span class="filter-tag">"${FILTER_QUERY}"<span class="rm" onclick="FILTER_QUERY='';renderPage('tickets')">×</span></span>`:''}
+        <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:auto">${list.length} of ${total}</span>
+      </div>
+      <div class="filter-bar" style="border-top:none;padding-top:6px;padding-bottom:10px">
+        <span class="filter-label">View</span>
+        ${views.map(v => `<span class="filter-tag" style="cursor:pointer;${v.active?'border-color:var(--purple);color:var(--purple);background:var(--purple-lt)':''}" onclick="setTicketView('${v.k}')">${v.l}</span>`).join('')}
       </div>
       <div style="flex:1;overflow-y:auto">
         <table class="tbl">
@@ -832,7 +880,7 @@ function renderTickets() {
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        ${list.length===0?'<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">No tickets found</div><div class="empty-line"></div></div>':''}
+        ${list.length===0?'<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">No tickets match the current filters</div><div class="empty-line"></div></div>':''}
       </div>
     </div>`;
 }
@@ -842,9 +890,13 @@ function sortTickets(col) {
   if (SORT_COL === col) SORT_DIR *= -1; else { SORT_COL = col; SORT_DIR = 1; }
   renderPage('tickets');
 }
-function setAgentFilter(v) {
-  if (v !== 'all') TICKETS.forEach(t => {});
+function setAgentFilter(v)  { FILTER_AGENT = v; renderPage('tickets'); }
+function setTicketView(v)   { FILTER_VIEW = v;  renderPage('tickets'); }
+function setTicketQuery(q)  {
+  FILTER_QUERY = q;
   renderPage('tickets');
+  const input = document.getElementById('ticket-search');
+  if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
 }
 
 // ─── Ticket Detail ────────────────────────────────────────────────────────────
@@ -883,9 +935,14 @@ function openTicket(id) {
           <span onclick="renderPage('tickets')">Tickets</span>
           <span class="tb-sep">/</span>
           <span style="color:var(--ink);font-weight:500">${t.id}</span>
-          <span style="margin-left:auto;display:flex;gap:6px">
+          <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
             <button class="btn btn-sm" onclick="prevNextTicket(-1)">← Prev</button>
             <button class="btn btn-sm" onclick="prevNextTicket(1)">Next →</button>
+            <span style="width:1px;background:var(--rule);align-self:stretch;margin:0 4px"></span>
+            ${t.status !== 'escalated' && t.status !== 'resolved' ? `<button class="btn btn-sm" onclick="quickStatus('${id}','escalated')">Escalate</button>` : ''}
+            ${t.status !== 'resolved'
+              ? `<button class="btn btn-sm btn-solid" onclick="quickStatus('${id}','resolved')">Resolve</button>`
+              : `<button class="btn btn-sm" onclick="quickStatus('${id}','open')">Reopen</button>`}
           </span>
         </div>
       </div>
@@ -895,8 +952,9 @@ function openTicket(id) {
           <span class="tag tag-${t.status}">${t.status}</span>
           <span class="tag tag-${t.priority}">${t.priority}</span>
           <span class="tag tag-neutral">${t.category}</span>
-          ${t.tags.map(tg=>`<span class="tag tag-neutral">${tg}</span>`).join('')}
-          <span style="font-family:'Inter',sans-serif;font-size:11px;color:var(--ink3);margin-left:4px">SLA: <span class="sla-${t.sla}">${t.sla.toUpperCase()}</span></span>
+          ${t.tags.map(tg=>`<span class="tag tag-neutral" style="display:inline-flex;align-items:center;gap:4px">${tg}<span style="cursor:pointer;color:var(--ink3);font-weight:400" onclick="event.stopPropagation();removeTicketTag('${id}','${escAttr(tg)}')" title="Remove tag">×</span></span>`).join('')}
+          <input id="tag-add-${id}" placeholder="+ tag" style="background:transparent;border:1px dashed var(--rule2);border-radius:3px;padding:2px 8px;font-size:10px;color:var(--ink2);width:90px;outline:none;font-family:'Inter',sans-serif;letter-spacing:.03em;text-transform:uppercase" onkeydown="if(event.key==='Enter'){event.preventDefault();addTicketTag('${id}',this.value)}"/>
+          <span style="font-family:'Inter',sans-serif;font-size:11px;color:var(--ink3);margin-left:auto">SLA: <span class="sla-${t.sla}">${t.sla.toUpperCase()}</span></span>
         </div>
       </div>
       <div class="ticket-layout">
@@ -997,6 +1055,30 @@ function setComposeTab(tab, id) { COMPOSE_TAB = tab; openTicket(id); }
 function changeTicketStatus(id, val) {
   const t = TICKETS.find(x => x.id === id); if(t) t.status = val;
   updateNavBadges();
+}
+function quickStatus(id, val) {
+  changeTicketStatus(id, val);
+  if (CURRENT_TICKET === id) openTicket(id);
+}
+function addTicketTag(id, raw) {
+  const tag = String(raw || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  if (!tag) return;
+  const t = TICKETS.find(x => x.id === id); if (!t) return;
+  if (!t.tags) t.tags = [];
+  if (!t.tags.includes(tag)) {
+    t.tags.push(tag);
+    const lib = TAG_LIBRARY.find(x => x.tag === tag);
+    if (lib) lib.count++;
+    else TAG_LIBRARY.push({ tag, count: 1, type: 'manual', conf: null });
+  }
+  openTicket(id);
+}
+function removeTicketTag(id, tag) {
+  const t = TICKETS.find(x => x.id === id); if (!t) return;
+  t.tags = (t.tags || []).filter(x => x !== tag);
+  const lib = TAG_LIBRARY.find(x => x.tag === tag);
+  if (lib && lib.count > 0) lib.count--;
+  openTicket(id);
 }
 function changeTicketPriority(id, val) { const t = TICKETS.find(x=>x.id===id); if(t) t.priority=val; }
 function acceptAITag(ticketId, tagName) {

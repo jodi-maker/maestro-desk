@@ -331,6 +331,7 @@ textarea.form-input{resize:vertical;min-height:72px}
 .toggle-slider:before{content:'';position:absolute;width:12px;height:12px;left:3px;top:3px;background:var(--w);border-radius:50%;transition:.2s}
 .toggle input:checked+.toggle-slider{background:var(--purple)}
 .toggle input:checked+.toggle-slider:before{transform:translateX(14px)}
+.toggle input:disabled+.toggle-slider{opacity:.45;cursor:not-allowed}
 /* ── Context source chips ── */
 .source-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--rule);border-radius:var(--r);font-size:12px;font-weight:500;color:var(--ink2);background:var(--off2)}
 .source-chip.on{border-color:var(--purple);background:var(--purple-lt);color:var(--purple)}
@@ -1471,13 +1472,33 @@ function updateProfileInitials(v) {
 }
 
 function settingsAppearance() {
-  const opts = [{k:'light',l:'Light'},{k:'dark',l:'Dark'},{k:'system',l:'System'}];
+  const isSystem = THEME === 'system';
+  const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDark = THEME === 'dark' || (isSystem && sysDark);
+  const fallback = isDark ? 'dark' : 'light';
   return `
     <div class="settings-section">
       <div class="settings-h">Theme</div>
-      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px">Light, dark, or follow your operating system preference.</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${opts.map(o => `<button class="btn ${THEME===o.k?'btn-solid':''}" onclick="setTheme('${o.k}');renderPage('settings')">${o.l}</button>`).join('')}
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px">Light or dark palette, or follow your operating system.</div>
+      <div class="settings-row">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--ink)">Dark mode</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:2px">Use a darker color palette across the app${isSystem?' — currently controlled by system preference':''}</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" ${isDark?'checked':''} ${isSystem?'disabled':''} onchange="setTheme(this.checked?'dark':'light');renderPage('settings')">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--ink)">Match system preference</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:2px">Automatically switch when your operating system changes themes</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" ${isSystem?'checked':''} onchange="setTheme(this.checked?'system':'${fallback}');renderPage('settings')">
+          <span class="toggle-slider"></span>
+        </label>
       </div>
     </div>`;
 }

@@ -110,6 +110,26 @@ body{font-family:'Inter',sans-serif;background:var(--w);color:var(--ink);font-si
 .notif-name{font-size:12px;font-weight:600;color:var(--ink)}
 .notif-time{font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);flex-shrink:0;white-space:nowrap}
 .notif-text{font-size:12px;color:var(--ink2);line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ── Profile dropdown ── */
+.profile-wrap{position:relative}
+.profile-btn{background:transparent;border:1px solid var(--rule);border-radius:var(--r);padding:3px 10px 3px 3px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--ink2);transition:all .15s;font-family:'Inter',sans-serif}
+.profile-btn:hover{border-color:var(--purple);color:var(--purple)}
+.profile-btn.active{border-color:var(--purple);background:var(--purple-lt)}
+.pf-av{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--purple),#22d3ee);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#fff;flex-shrink:0}
+.pf-name-sm{font-size:12px;font-weight:500;color:var(--ink);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-chev{font-size:9px;color:var(--ink3);margin-left:-2px}
+.profile-dropdown{position:absolute;top:calc(100% + 6px);right:0;width:240px;background:var(--off);border:1px solid var(--rule2);border-radius:var(--r2);z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.25);display:none;overflow:hidden}
+.profile-dropdown.show{display:block}
+.profile-head{padding:14px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--rule);background:var(--off2)}
+.pf-av-lg{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--purple),#22d3ee);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;flex-shrink:0}
+.pf-name-lg{font-size:13px;font-weight:600;color:var(--ink)}
+.pf-role-lg{font-size:11px;color:var(--ink3);margin-top:2px}
+.profile-menu{padding:6px}
+.profile-menu-item{padding:8px 10px;font-size:12.5px;color:var(--ink2);cursor:pointer;border-radius:var(--r);display:flex;align-items:center;gap:8px;transition:all .1s}
+.profile-menu-item:hover{background:rgba(139,92,246,0.08);color:var(--ink)}
+.profile-menu-item.danger{color:var(--red)}
+.profile-menu-item.danger:hover{background:var(--red-lt);color:var(--red)}
+.profile-menu-divider{height:1px;background:var(--rule);margin:4px 6px}
 /* ── Settings ── */
 .settings-shell{display:grid;grid-template-columns:200px 1fr;gap:24px;max-width:880px}
 .settings-side{display:flex;flex-direction:column;gap:2px;border-right:1px solid var(--rule);padding-right:16px}
@@ -562,6 +582,41 @@ textarea.form-input{resize:vertical;min-height:72px}
           </button>
           <div class="notif-dropdown" id="notif-dropdown"></div>
         </div>
+        <div class="profile-wrap">
+          <button class="profile-btn" id="profile-btn" onclick="toggleProfileMenu()">
+            <div class="pf-av" id="pf-av-sm">EC</div>
+            <span class="pf-name-sm" id="pf-name-sm">Emma Clarke</span>
+            <span class="pf-chev">▾</span>
+          </button>
+          <div class="profile-dropdown" id="profile-dropdown">
+            <div class="profile-head">
+              <div class="pf-av-lg" id="pf-av-lg">EC</div>
+              <div style="min-width:0">
+                <div class="pf-name-lg" id="pf-name-lg">Emma Clarke</div>
+                <div class="pf-role-lg" id="pf-role-lg">Admin</div>
+              </div>
+            </div>
+            <div class="profile-menu">
+              <div class="profile-menu-item" onclick="profileMenuGo('profile')">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M2 11c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                My profile
+              </div>
+              <div class="profile-menu-item" onclick="profileMenuGo('settings')">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="1.6" stroke="currentColor" stroke-width="1.2"/><path d="M6 1.5v1.4M6 9.1v1.4M10.5 6h-1.4M2.9 6H1.5M9.2 9.2l-1-1M3.8 3.8l-1-1M9.2 2.8l-1 1M3.8 8.2l-1 1" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+                Settings
+              </div>
+              <div class="profile-menu-item" onclick="profileMenuGo('help')">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M4.5 4.7c0-.9.7-1.6 1.5-1.6.9 0 1.5.7 1.5 1.5 0 .9-1.5 1-1.5 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.8" r=".6" fill="currentColor"/></svg>
+                Help & Support
+              </div>
+              <div class="profile-menu-divider"></div>
+              <div class="profile-menu-item danger" onclick="profileMenuGo('signout')">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M5 2H2v8h3M7 4l2 2-2 2M9 6H4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Sign out
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="main-content" id="main-area"></div>
@@ -719,6 +774,11 @@ function login(role, name, initials) {
   document.getElementById('sb-uname').textContent = name;
   document.getElementById('sb-urole').textContent = role;
   document.getElementById('sf-name').textContent = name;
+  document.getElementById('pf-av-sm').textContent = initials;
+  document.getElementById('pf-av-lg').textContent = initials;
+  document.getElementById('pf-name-sm').textContent = name;
+  document.getElementById('pf-name-lg').textContent = name;
+  document.getElementById('pf-role-lg').textContent = role;
   if (role === 'Read Only') document.getElementById('nav-roles').style.opacity = '.3';
   applyTheme(THEME);
   renderPage('dashboard');
@@ -1635,7 +1695,30 @@ document.addEventListener('mousedown', e => {
   const notifWrap = document.querySelector('.notif-wrap');
   const notifDD = document.getElementById('notif-dropdown');
   if (notifWrap && notifDD && !notifWrap.contains(e.target)) notifDD.classList.remove('show');
+  const profileWrap = document.querySelector('.profile-wrap');
+  const profileDD = document.getElementById('profile-dropdown');
+  if (profileWrap && profileDD && !profileWrap.contains(e.target)) {
+    profileDD.classList.remove('show');
+    document.getElementById('profile-btn')?.classList.remove('active');
+  }
 });
+
+function toggleProfileMenu() {
+  const dd = document.getElementById('profile-dropdown');
+  const btn = document.getElementById('profile-btn');
+  if (!dd) return;
+  if (dd.classList.contains('show')) { dd.classList.remove('show'); btn?.classList.remove('active'); }
+  else { dd.classList.add('show'); btn?.classList.add('active'); }
+}
+
+function profileMenuGo(action) {
+  document.getElementById('profile-dropdown')?.classList.remove('show');
+  document.getElementById('profile-btn')?.classList.remove('active');
+  if (action === 'profile')      { SETTINGS_TAB = 'profile'; navTo('settings'); }
+  else if (action === 'settings'){ navTo('settings'); }
+  else if (action === 'help')    { navTo('help'); }
+  else if (action === 'signout') { logout(); }
+}
 
 // ─── Notifications ───────────────────────────────────────────────────────────
 const NOTIFICATIONS_READ = new Set();
@@ -1784,14 +1867,18 @@ function updateProfileName(name) {
   const trimmed = name.trim();
   if (!SESSION || !trimmed) return;
   SESSION.name = trimmed;
-  const a = document.getElementById('sb-uname');     if (a) a.textContent = trimmed;
-  const b = document.getElementById('sf-name');      if (b) b.textContent = trimmed;
+  const a = document.getElementById('sb-uname');   if (a) a.textContent = trimmed;
+  const b = document.getElementById('sf-name');    if (b) b.textContent = trimmed;
+  const c = document.getElementById('pf-name-sm'); if (c) c.textContent = trimmed;
+  const d = document.getElementById('pf-name-lg'); if (d) d.textContent = trimmed;
 }
 function updateProfileInitials(v) {
   const trimmed = v.trim().toUpperCase();
   if (!SESSION || !trimmed) return;
   SESSION.initials = trimmed;
-  const av = document.getElementById('sb-av');       if (av) av.textContent = trimmed;
+  const av  = document.getElementById('sb-av');    if (av)  av.textContent  = trimmed;
+  const av2 = document.getElementById('pf-av-sm'); if (av2) av2.textContent = trimmed;
+  const av3 = document.getElementById('pf-av-lg'); if (av3) av3.textContent = trimmed;
 }
 
 function settingsAppearance() {

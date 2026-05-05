@@ -636,10 +636,10 @@ const CUSTOM_FIELDS = [
 ];
 
 const WORKFLOWS = [
-  {id:'WF-001',name:'Auto-escalate urgent billing',trigger:'Priority = Urgent AND Category = Billing',action:'Assign to Senior Agent + Notify Manager',status:'active'},
-  {id:'WF-002',name:'GDPR 72h SLA alert',trigger:'Category = GDPR AND Age > 72h',action:'Send alert to DPO + Flag ticket',status:'active'},
-  {id:'WF-003',name:'Auto-resolve after 7 days',trigger:'Status = Pending AND Last updated > 7d',action:'Set status = Resolved',status:'inactive'},
-  {id:'WF-004',name:'Send CSAT survey on resolve',trigger:'Status changed to Resolved',action:'Send satisfaction survey email',status:'active'},
+  {id:'WF-001',name:'Auto-escalate urgent billing',trigger:'Priority = Urgent AND Category = Billing',action:'Assign to Senior Agent + Notify Manager',status:'active',  runCount:14,lastRun:'2 hours ago'},
+  {id:'WF-002',name:'GDPR 72h SLA alert',          trigger:'Category = GDPR AND Age > 72h',           action:'Send alert to DPO + Flag ticket',          status:'active',  runCount:3, lastRun:'1 day ago'},
+  {id:'WF-003',name:'Auto-resolve after 7 days',   trigger:'Status = Pending AND Last updated > 7d',  action:'Set status = Resolved',                    status:'inactive',runCount:0, lastRun:null},
+  {id:'WF-004',name:'Send CSAT survey on resolve', trigger:'Status changed to Resolved',              action:'Send satisfaction survey email',           status:'active',  runCount:42,lastRun:'15 min ago'},
 ];
 
 const TAG_LIBRARY = [
@@ -2270,7 +2270,173 @@ async function aiSend() {
   renderPage('ai');
 }
 
-function renderWorkflows(){ return placeholderPage('Workflows', `${WORKFLOWS.length} automation rules configured.`); }
+// ─── Workflows ───────────────────────────────────────────────────────────────
+let WF_FILTER = 'all';
+
+const WF_TRIGGER_PRESETS = [
+  'Ticket created',
+  'Status changed',
+  'Status changed to Resolved',
+  'Priority changed',
+  'Priority = Urgent',
+  'Category = GDPR',
+  'Age > 72h',
+  'Last updated > 7d',
+  'CSAT < 3',
+];
+
+const WF_ACTION_PRESETS = [
+  'Assign to Senior Agent',
+  'Set status = Resolved',
+  'Set priority = High',
+  'Add tag: urgent',
+  'Notify Manager',
+  'Notify DPO',
+  'Send email to customer',
+  'Send satisfaction survey email',
+];
+
+function renderWorkflows() {
+  const admin = isAdmin();
+  let list = [...WORKFLOWS];
+  if (WF_FILTER === 'active')   list = list.filter(w => w.status === 'active');
+  if (WF_FILTER === 'inactive') list = list.filter(w => w.status === 'inactive');
+
+  const total      = WORKFLOWS.length;
+  const activeN    = WORKFLOWS.filter(w => w.status === 'active').length;
+  const inactiveN  = total - activeN;
+  const totalRuns  = WORKFLOWS.reduce((a, w) => a + (w.runCount || 0), 0);
+
+  const rows = list.map(w => `
+    <tr>
+      <td class="bold">${w.id}</td>
+      <td style="font-weight:500;color:var(--ink)">${w.name}</td>
+      <td style="font-size:12px;color:var(--ink2);max-width:240px">${w.trigger}</td>
+      <td style="font-size:12px;color:var(--ink2);max-width:240px">${w.action}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${w.runCount || 0}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3)">${w.lastRun || '—'}</td>
+      <td style="text-align:center">
+        <label class="toggle">
+          <input type="checkbox" ${w.status==='active'?'checked':''} ${admin?'':'disabled'} onchange="wfToggle('${escAttr(w.id)}',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </td>
+      ${admin ? `<td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-sm" onclick="wfRunNow('${escAttr(w.id)}')" title="Simulate a run">Run</button>
+        <button class="btn btn-sm" onclick="wfEdit('${escAttr(w.id)}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="wfDelete('${escAttr(w.id)}')">Delete</button>
+      </td>` : ''}
+    </tr>`).join('');
+
+  return `
+    <div class="page">
+      <div class="topbar">
+        <div class="tb-title">Workflows</div>
+        ${admin
+          ? `<button class="btn btn-solid btn-sm" onclick="wfNew()">+ New Workflow</button>`
+          : `<span style="font-size:11px;color:var(--ink3);font-style:italic">Read-only — admin access required to edit</span>`}
+      </div>
+      <div class="kpi-bar">
+        <div class="kpi"><div class="kpi-n">${total}</div><div class="kpi-l">Total</div></div>
+        <div class="kpi"><div class="kpi-n c-green">${activeN}</div><div class="kpi-l">Active</div></div>
+        <div class="kpi"><div class="kpi-n c-amber">${inactiveN}</div><div class="kpi-l">Inactive</div></div>
+        <div class="kpi"><div class="kpi-n c-purple">${totalRuns}</div><div class="kpi-l">Runs (30d)</div></div>
+      </div>
+      <div class="filter-bar">
+        <span class="filter-label">Filter</span>
+        <select class="filter-select" onchange="wfSetFilter(this.value)">
+          <option value="all"      ${WF_FILTER==='all'?'selected':''}>All workflows</option>
+          <option value="active"   ${WF_FILTER==='active'?'selected':''}>Active</option>
+          <option value="inactive" ${WF_FILTER==='inactive'?'selected':''}>Inactive</option>
+        </select>
+        <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:auto">${list.length} of ${total}</span>
+      </div>
+      <div style="flex:1;overflow-y:auto">
+        <table class="tbl">
+          <thead><tr>
+            <th>ID</th><th>Name</th><th>Trigger</th><th>Action</th><th>Runs</th><th>Last run</th><th style="text-align:center">Active</th>
+            ${admin ? '<th style="text-align:right">Actions</th>' : ''}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${list.length===0 ? `<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">No workflows match the filter</div><div class="empty-line"></div></div>` : ''}
+      </div>
+    </div>`;
+}
+
+function wfSetFilter(v) { WF_FILTER = v; renderPage('workflows'); }
+
+function wfToggle(id, active) {
+  if (!isAdmin()) return;
+  const w = WORKFLOWS.find(x => x.id === id);
+  if (w) w.status = active ? 'active' : 'inactive';
+}
+
+function wfRunNow(id) {
+  if (!isAdmin()) return;
+  const w = WORKFLOWS.find(x => x.id === id);
+  if (!w) return;
+  w.runCount = (w.runCount || 0) + 1;
+  w.lastRun = 'just now';
+  renderPage('workflows');
+}
+
+function wfFormBody(w) {
+  const esc = s => String(s||'').replace(/"/g,'&quot;');
+  return `
+    <div class="form-row"><label class="form-label">Name</label><input class="form-input" id="wf-name" value="${esc(w?.name)}" placeholder="e.g. Notify on urgent billing"/></div>
+    <div class="form-row"><label class="form-label">Trigger</label>
+      <input class="form-input" id="wf-trigger" list="wf-trigger-list" value="${esc(w?.trigger)}" placeholder="When this should run"/>
+      <datalist id="wf-trigger-list">${WF_TRIGGER_PRESETS.map(t => `<option value="${t}">`).join('')}</datalist>
+    </div>
+    <div class="form-row"><label class="form-label">Action</label>
+      <input class="form-input" id="wf-action" list="wf-action-list" value="${esc(w?.action)}" placeholder="What should happen"/>
+      <datalist id="wf-action-list">${WF_ACTION_PRESETS.map(a => `<option value="${a}">`).join('')}</datalist>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+      <span style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3)">Active</span>
+      <label class="toggle"><input type="checkbox" id="wf-active" ${(!w || w.status==='active')?'checked':''}><span class="toggle-slider"></span></label>
+    </div>`;
+}
+
+function wfNew() {
+  if (!isAdmin()) return;
+  showModal('New workflow', wfFormBody(null), () => {
+    const name    = document.getElementById('wf-name').value.trim();
+    const trigger = document.getElementById('wf-trigger').value.trim();
+    const action  = document.getElementById('wf-action').value.trim();
+    const active  = document.getElementById('wf-active').checked;
+    if (!name || !trigger || !action) return;
+    const id = 'WF-' + String(WORKFLOWS.length + 1).padStart(3, '0');
+    WORKFLOWS.unshift({ id, name, trigger, action, status: active?'active':'inactive', runCount:0, lastRun:null });
+    closeModal(); renderPage('workflows');
+  }, 'Create');
+}
+
+function wfEdit(id) {
+  if (!isAdmin()) return;
+  const w = WORKFLOWS.find(x => x.id === id); if (!w) return;
+  showModal(`Edit ${w.id}`, wfFormBody(w), () => {
+    const name    = document.getElementById('wf-name').value.trim();
+    const trigger = document.getElementById('wf-trigger').value.trim();
+    const action  = document.getElementById('wf-action').value.trim();
+    const active  = document.getElementById('wf-active').checked;
+    if (!name || !trigger || !action) return;
+    w.name = name; w.trigger = trigger; w.action = action;
+    w.status = active ? 'active' : 'inactive';
+    closeModal(); renderPage('workflows');
+  }, 'Save');
+}
+
+function wfDelete(id) {
+  if (!isAdmin()) return;
+  const w = WORKFLOWS.find(x => x.id === id); if (!w) return;
+  showModal('Delete workflow', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${w.name}</strong>? This cannot be undone.</div>`, () => {
+    const i = WORKFLOWS.findIndex(x => x.id === id);
+    if (i >= 0) WORKFLOWS.splice(i, 1);
+    closeModal(); renderPage('workflows');
+  }, 'Delete');
+}
 function renderTags()     { return placeholderPage('Tags', `${TAG_LIBRARY.length} tags in the library.`); }
 // ─── Roles & Permissions ─────────────────────────────────────────────────────
 let ROLES_VIEW_AGENTS = null; // role name → show agents-in-role page; null → matrix

@@ -5105,21 +5105,43 @@ function slaFormBody(p) {
     <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
       <span style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3)">Active</span>
       <label class="toggle"><input type="checkbox" id="sla-active" ${(!p || p.status==='active')?'checked':''}><span class="toggle-slider"></span></label>
-    </div>`;
+    </div>
+    <div id="sla-form-error" style="display:none;margin-top:8px;font-size:11px;color:var(--red);font-family:'DM Mono',monospace;letter-spacing:.04em"></div>`;
+}
+
+function slaNextId() {
+  const max = Math.max(0, ...SLA_POLICIES.map(x => parseInt((x.id||'').split('-')[1] || '0', 10)));
+  return 'SLA-' + String(max + 1).padStart(3, '0');
+}
+
+function slaShowError(msg) {
+  const el = document.getElementById('sla-form-error');
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+
+function slaReadAndValidate() {
+  const name  = document.getElementById('sla-name').value.trim();
+  const first = parseInt(document.getElementById('sla-first').value, 10);
+  const res   = parseInt(document.getElementById('sla-res').value, 10);
+  if (!name) { slaShowError('Name is required.'); return null; }
+  if (!Number.isFinite(first) || first < 1) { slaShowError('First response must be a positive number of minutes.'); return null; }
+  if (!Number.isFinite(res)   || res   < 1) { slaShowError('Resolution must be a positive number of minutes.'); return null; }
+  if (res < first) { slaShowError('Resolution must be at least the first-response window.'); return null; }
+  return {
+    name,
+    priority: document.getElementById('sla-priority').value,
+    category: document.getElementById('sla-category').value,
+    firstResponseMin: first,
+    resolutionMin: res,
+    status: document.getElementById('sla-active').checked ? 'active' : 'inactive',
+  };
 }
 
 function slaNew() {
   if (!isAdmin()) return;
   showModal('New SLA policy', slaFormBody(null), () => {
-    const name = document.getElementById('sla-name').value.trim();
-    const priority = document.getElementById('sla-priority').value;
-    const category = document.getElementById('sla-category').value;
-    const first = parseInt(document.getElementById('sla-first').value) || 60;
-    const res   = parseInt(document.getElementById('sla-res').value)   || 1440;
-    const active = document.getElementById('sla-active').checked;
-    if (!name) return;
-    const id = 'SLA-' + String(SLA_POLICIES.length + 1).padStart(3, '0');
-    SLA_POLICIES.unshift({ id, name, priority, category, firstResponseMin:first, resolutionMin:res, status:active?'active':'inactive' });
+    const data = slaReadAndValidate(); if (!data) return;
+    SLA_POLICIES.unshift({ id: slaNextId(), ...data });
     closeModal(); renderPage('sla');
   }, 'Create');
 }
@@ -5128,14 +5150,8 @@ function slaEdit(id) {
   if (!isAdmin()) return;
   const p = SLA_POLICIES.find(x => x.id === id); if (!p) return;
   showModal(`Edit ${p.id}`, slaFormBody(p), () => {
-    const name = document.getElementById('sla-name').value.trim();
-    if (!name) return;
-    p.name = name;
-    p.priority = document.getElementById('sla-priority').value;
-    p.category = document.getElementById('sla-category').value;
-    p.firstResponseMin = parseInt(document.getElementById('sla-first').value) || p.firstResponseMin;
-    p.resolutionMin    = parseInt(document.getElementById('sla-res').value)   || p.resolutionMin;
-    p.status = document.getElementById('sla-active').checked ? 'active' : 'inactive';
+    const data = slaReadAndValidate(); if (!data) return;
+    Object.assign(p, data);
     closeModal(); renderPage('sla');
   }, 'Save');
 }

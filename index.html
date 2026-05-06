@@ -6119,7 +6119,7 @@ function renderTemplates() {
   const rows = list.map(t => {
     const preview = (t.text || '').replace(/\n+/g, ' ').slice(0, 120);
     return `<tr>
-      <td class="bold">${t.id}</td>
+      <td class="bold">${escHtml(t.id)}</td>
       <td style="font-weight:500;color:var(--ink)">${escHtml(t.name)}</td>
       <td><span class="tag tag-neutral" style="font-size:10px">${escHtml(t.category||'—')}</span></td>
       <td style="font-size:12px;color:var(--ink2);max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(preview)}</td>
@@ -6192,6 +6192,11 @@ function tplFormBody(t) {
     </div>`;
 }
 
+function tplNextId() {
+  const max = Math.max(0, ...CANNED_RESPONSES.map(x => parseInt((x.id||'').split('-')[1] || '0', 10)));
+  return 'TPL-' + String(max + 1).padStart(3, '0');
+}
+
 function tplNew() {
   if (!isAdmin()) return;
   showModal('New template', tplFormBody(null), () => {
@@ -6199,8 +6204,7 @@ function tplNew() {
     const cat  = document.getElementById('tpl-cat').value.trim() || 'General';
     const text = document.getElementById('tpl-text').value;
     if (!name || !text.trim()) return;
-    const id = 'TPL-' + String(CANNED_RESPONSES.length + 1).padStart(3, '0');
-    CANNED_RESPONSES.unshift({ id, name, category:cat, text });
+    CANNED_RESPONSES.unshift({ id: tplNextId(), name, category:cat, text });
     closeModal(); renderPage('templates');
   }, 'Create');
 }
@@ -6221,8 +6225,7 @@ function tplEdit(id) {
 function tplDuplicate(id) {
   if (!isAdmin()) return;
   const orig = CANNED_RESPONSES.find(x => x.id === id); if (!orig) return;
-  const newId = 'TPL-' + String(CANNED_RESPONSES.length + 1).padStart(3, '0');
-  CANNED_RESPONSES.unshift({ id:newId, name:orig.name + ' (copy)', category:orig.category, text:orig.text });
+  CANNED_RESPONSES.unshift({ id:tplNextId(), name:orig.name + ' (copy)', category:orig.category, text:orig.text });
   renderPage('templates');
 }
 

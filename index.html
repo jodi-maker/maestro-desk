@@ -691,6 +691,10 @@ textarea.form-input{resize:vertical;min-height:72px}
           <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 3.5v3l2 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span class="sb-lbl">SLA Policies</span>
         </div>
+        <div class="sb-item" onclick="nav('assignment-rules',this)">
+          <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><circle cx="3.5" cy="3.5" r="1.5" stroke="currentColor" stroke-width="1.1"/><circle cx="9.5" cy="3.5" r="1.5" stroke="currentColor" stroke-width="1.1"/><circle cx="6.5" cy="9.5" r="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M3.5 5v1.5L6.5 8M9.5 5v1.5L6.5 8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+          <span class="sb-lbl">Assignment Rules</span>
+        </div>
         <div class="sb-item" onclick="nav('csat',this)">
           <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><path d="M6.5 1.8l1.45 2.94 3.25.47-2.35 2.29.55 3.23L6.5 9.2 3.6 10.73l.55-3.23-2.35-2.29 3.25-.47z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
           <span class="sb-lbl">CSAT Surveys</span>
@@ -921,6 +925,29 @@ const SLA_POLICIES = [
   {id:'SLA-005', name:'Low · Default',      priority:'low',    category:'all',       firstResponseMin:480, resolutionMin:7200,  status:'inactive'},
 ];
 
+// Auto-assignment rules applied on ticket creation (and via Run rules action).
+// Rules are evaluated by ascending priority (1 wins over 2). The first matching
+// active rule fires; round-robin rules cycle through their team.
+const ASSIGN_RULES = [
+  {id:'AR-001', name:'Urgent · Billing → Sofia',  priority:1, status:'active',
+   conditions:{priority:'urgent', category:'Billing', vip:'all'},
+   assignment:{mode:'specific-agent', agent:'Sofia Reyes'},
+   matchCount:9, lastMatchAt:'2025-04-15'},
+  {id:'AR-002', name:'GDPR → Emma',               priority:2, status:'active',
+   conditions:{priority:'all', category:'GDPR', vip:'all'},
+   assignment:{mode:'specific-agent', agent:'Emma Clarke'},
+   matchCount:4, lastMatchAt:'2025-04-15'},
+  {id:'AR-003', name:'VIP gold → senior team',    priority:3, status:'active',
+   conditions:{priority:'all', category:'all', vip:'Gold'},
+   assignment:{mode:'least-busy', team:['Emma Clarke','Sofia Reyes']},
+   matchCount:3, lastMatchAt:'2025-04-14'},
+  {id:'AR-004', name:'Default round-robin',       priority:99, status:'active',
+   conditions:{priority:'all', category:'all', vip:'all'},
+   assignment:{mode:'round-robin', team:['Emma Clarke','James Webb','Sofia Reyes','Tom Bates']},
+   matchCount:18, lastMatchAt:'2025-04-16'},
+];
+const ASSIGN_RULES_RR_INDEX = {};
+
 const TICKET_TEMPLATES = [
   {id:'TT-001', name:'Password reset request',         category:'Account',   priority:'normal', subject:'Password reset for [member ID]',          body:'Customer is unable to log in after attempting a password reset. Please verify identity, unlock the account if necessary, and confirm the reset email has been delivered.'},
   {id:'TT-002', name:'Refund — duplicate charge',      category:'Billing',   priority:'high',   subject:'Duplicate charge — refund requested',     body:'Customer reports being charged twice for the same transaction. Verify in the payments system, raise a refund for the duplicate amount, and confirm via email when processed.'},
@@ -1020,6 +1047,7 @@ function renderPage(page) {
     tags:      renderTags,
     roles:     renderRoles,
     sla:           renderSLA,
+    'assignment-rules': renderAssignmentRules,
     csat:          renderCSAT,
     templates:     renderTemplates,
     'ticket-templates': renderTicketTemplates,
@@ -1121,6 +1149,7 @@ function renderTickets() {
         <option value="low">Low</option>
       </select>
       <button class="btn btn-sm" onclick="bulkAddTag()">Add tag…</button>
+      <button class="btn btn-sm" onclick="bulkApplyAssignmentRules()">⇄ Run rules</button>
       <button class="btn btn-sm" onclick="bulkExportTickets()">Export selected</button>
       <button class="btn btn-sm btn-danger" onclick="bulkDeleteTickets()">Delete</button>
       <button class="btn btn-sm" onclick="clearTicketSelection()" style="margin-left:auto">Clear selection</button>
@@ -1634,6 +1663,7 @@ function openTicket(id) {
             <button class="btn btn-sm" onclick="prevNextTicket(-1)">← Prev</button>
             <button class="btn btn-sm" onclick="prevNextTicket(1)">Next →</button>
             <span style="width:1px;background:var(--rule);align-self:stretch;margin:0 4px"></span>
+            ${t.mergedInto ? '' : `<button class="btn btn-sm" onclick="runAssignmentRulesOnTicket('${id}')" title="Auto-assign by rules">⇄ Run rules</button>`}
             ${t.status !== 'escalated' && t.status !== 'resolved' ? `<button class="btn btn-sm" onclick="quickStatus('${id}','escalated')">Escalate</button>` : ''}
             ${t.status !== 'resolved'
               ? `<button class="btn btn-sm btn-solid" onclick="quickStatus('${id}','resolved')">Resolve</button>`
@@ -2627,7 +2657,10 @@ function showNewTicketModal(templateId) {
         <select class="form-input" id="nt-pri">${['normal','high','urgent','low'].map(p => `<option ${tpl?.priority===p?'selected':''}>${p}</option>`).join('')}</select>
       </div>
       <div class="form-row"><label class="form-label">Assign to</label>
-        <select class="form-input" id="nt-agent">${AGENTS.map(a=>`<option>${a.name}</option>`).join('')}</select>
+        <select class="form-input" id="nt-agent">
+          <option value="__auto__">Auto (apply rules)</option>
+          ${AGENTS.map(a=>`<option value="${escAttr(a.name)}">${escHtml(a.name)}</option>`).join('')}
+        </select>
       </div>
     </div>
     <div class="form-row"><label class="form-label">Message</label><textarea class="form-input" id="nt-msg" placeholder="First message…">${escHtml(tpl?.body || '')}</textarea></div>
@@ -2637,7 +2670,9 @@ function showNewTicketModal(templateId) {
     const custId = document.getElementById('nt-cust').value.trim() || 'M001';
     if (!subj) return;
     const newId = 'TK-' + String(TICKETS.length + 1).padStart(3,'0');
-    TICKETS.unshift({id:newId,subject:subj,customerId:custId,status:'open',priority:document.getElementById('nt-pri').value,category:document.getElementById('nt-cat').value,agent:document.getElementById('nt-agent').value,created:new Date().toISOString().slice(0,10),updated:'just now',sla:'ok',tags:[],aiTags:[],csat:null,msgs:msg?[{from:SESSION.name,r:'agent',t:msg,ts:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}]:[]});
+    const agentPick = document.getElementById('nt-agent').value;
+    TICKETS.unshift({id:newId,subject:subj,customerId:custId,status:'open',priority:document.getElementById('nt-pri').value,category:document.getElementById('nt-cat').value,agent:agentPick === '__auto__' ? '' : agentPick,created:new Date().toISOString().slice(0,10),updated:'just now',sla:'ok',tags:[],aiTags:[],csat:null,msgs:msg?[{from:SESSION.name,r:'agent',t:msg,ts:new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}]:[]});
+    if (agentPick === '__auto__') applyAssignmentRules(TICKETS[0]);
     refreshTicketSLA(TICKETS[0]);
     closeModal(); renderPage('tickets');
   }, 'Create Ticket');
@@ -3398,6 +3433,7 @@ const SEARCH_PAGES = [
   {p:'tags',      l:'Tags'},
   {p:'roles',     l:'Roles & Permissions'},
   {p:'sla',       l:'SLA Policies'},
+  {p:'assignment-rules', l:'Assignment Rules'},
   {p:'csat',      l:'CSAT Surveys'},
   {p:'templates', l:'Response Templates'},
   {p:'ticket-templates', l:'Ticket Templates'},
@@ -6488,6 +6524,298 @@ function renderCSAT() {
           <tbody>${rows}</tbody>
         </table>
         ${visible.length === 0 ? `<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">No responses match</div><div class="empty-line"></div></div>` : ''}
+      </div>
+    </div>`;
+}
+
+// ─── Assignment rules ───────────────────────────────────────────────────────
+let AR_FILTER = 'all';
+
+function arNextId() {
+  const max = Math.max(0, ...ASSIGN_RULES.map(r => parseInt((r.id||'').split('-')[1] || '0', 10)));
+  return `AR-${String(max + 1).padStart(3, '0')}`;
+}
+
+function arRuleMatches(rule, t) {
+  if (rule.status !== 'active') return false;
+  const c = rule.conditions || {};
+  if (c.priority && c.priority !== 'all' && c.priority !== t.priority) return false;
+  if (c.category && c.category !== 'all' && c.category !== t.category) return false;
+  if (c.vip && c.vip !== 'all') {
+    const cust = CUSTOMERS.find(x => x.id === t.customerId);
+    if (!cust || cust.vip !== c.vip) return false;
+  }
+  return true;
+}
+
+function arPickAgent(rule) {
+  const a = rule.assignment || {};
+  if (a.mode === 'specific-agent') return a.agent || null;
+  if (a.mode === 'round-robin') {
+    const team = (a.team || []).filter(Boolean);
+    if (!team.length) return null;
+    const idx = ASSIGN_RULES_RR_INDEX[rule.id] || 0;
+    const pick = team[idx % team.length];
+    ASSIGN_RULES_RR_INDEX[rule.id] = (idx + 1) % team.length;
+    return pick;
+  }
+  if (a.mode === 'least-busy') {
+    const team = (a.team || []).filter(Boolean);
+    if (!team.length) return null;
+    // Pick the team member with the fewest open/escalated tickets right now.
+    const counts = team.map(name => ({
+      name,
+      n: TICKETS.filter(t => t.agent === name && (t.status === 'open' || t.status === 'escalated')).length,
+    }));
+    counts.sort((a, b) => a.n - b.n);
+    return counts[0].name;
+  }
+  return null;
+}
+
+function applyAssignmentRules(t) {
+  if (!t) return null;
+  const ordered = [...ASSIGN_RULES].sort((a, b) => (a.priority || 99) - (b.priority || 99));
+  for (const rule of ordered) {
+    if (!arRuleMatches(rule, t)) continue;
+    const agent = arPickAgent(rule);
+    if (!agent) continue;
+    if (t.agent !== agent) {
+      logTicketEvent(t.id, 'assign', `Assigned by rule ${rule.id} (${rule.name}): ${t.agent || 'Unassigned'} → ${agent}`);
+    }
+    t.agent = agent;
+    rule.matchCount = (rule.matchCount || 0) + 1;
+    rule.lastMatchAt = new Date().toISOString().slice(0, 10);
+    return rule;
+  }
+  return null;
+}
+
+function runAssignmentRulesOnTicket(id) {
+  const t = TICKETS.find(x => x.id === id);
+  if (!t) return;
+  const rule = applyAssignmentRules(t);
+  if (!rule) {
+    alert('No active rule matched this ticket.');
+    return;
+  }
+  if (CURRENT_TICKET === id) openTicket(id);
+  else renderPage(CURRENT_PAGE || 'tickets');
+}
+
+function bulkApplyAssignmentRules() {
+  if (TICKET_SELECTED_IDS.size === 0) return;
+  let matched = 0;
+  [...TICKET_SELECTED_IDS].forEach(id => {
+    const t = TICKETS.find(x => x.id === id);
+    if (t && applyAssignmentRules(t)) matched++;
+  });
+  TICKET_SELECTED_IDS.clear();
+  renderPage('tickets');
+  alert(matched ? `Assignment rules matched ${matched} ticket${matched===1?'':'s'}.` : 'No active rule matched any ticket in the selection.');
+}
+
+function arToggle(id, active) {
+  if (!isAdmin()) return;
+  const r = ASSIGN_RULES.find(x => x.id === id);
+  if (r) r.status = active ? 'active' : 'inactive';
+}
+
+function arConditionsSummary(c) {
+  const bits = [];
+  if (c.priority && c.priority !== 'all') bits.push(`priority=<strong>${escHtml(c.priority)}</strong>`);
+  if (c.category && c.category !== 'all') bits.push(`category=<strong>${escHtml(c.category)}</strong>`);
+  if (c.vip && c.vip !== 'all') bits.push(`VIP=<strong>${escHtml(c.vip)}</strong>`);
+  return bits.length ? bits.join(' · ') : '<span style="color:var(--ink3)">any ticket</span>';
+}
+
+function arAssignmentSummary(a) {
+  if (!a) return '<span style="color:var(--ink3)">—</span>';
+  if (a.mode === 'specific-agent') return `→ <strong>${escHtml(a.agent || '—')}</strong>`;
+  if (a.mode === 'round-robin')    return `↻ round-robin · ${(a.team||[]).map(escHtml).join(', ') || '—'}`;
+  if (a.mode === 'least-busy')     return `↧ least-busy · ${(a.team||[]).map(escHtml).join(', ') || '—'}`;
+  return escHtml(a.mode);
+}
+
+function arFormBody(r) {
+  const esc = s => String(s||'').replace(/"/g,'&quot;');
+  const cats = ['all', ...new Set(TICKETS.map(t => t.category))];
+  const vipOpts = ['all','Gold','Silver','Standard'];
+  const c = r?.conditions || { priority:'all', category:'all', vip:'all' };
+  const a = r?.assignment || { mode:'round-robin', team:[] };
+  const teamCsv = (a.team || []).join(', ');
+  return `
+    <div class="form-row"><label class="form-label">Name</label><input class="form-input" id="ar-name" value="${esc(r?.name)}" placeholder="e.g. Urgent · Billing → Sofia"/></div>
+    <div class="form-grid">
+      <div class="form-row"><label class="form-label">Priority (lower wins)</label><input class="form-input" type="number" id="ar-priority" value="${r?.priority ?? 50}" min="1" max="999"/></div>
+      <div class="form-row"><label class="form-label">Status</label>
+        <select class="form-input" id="ar-status">
+          <option value="active"   ${(r?.status || 'active')==='active'?'selected':''}>Active</option>
+          <option value="inactive" ${r?.status==='inactive'?'selected':''}>Inactive</option>
+        </select>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px">When</div>
+    <div class="form-grid">
+      <div class="form-row"><label class="form-label">Priority</label>
+        <select class="form-input" id="ar-cond-priority">${['all','urgent','high','normal','low'].map(p=>`<option value="${p}" ${c.priority===p?'selected':''}>${p==='all'?'Any':p}</option>`).join('')}</select>
+      </div>
+      <div class="form-row"><label class="form-label">Category</label>
+        <select class="form-input" id="ar-cond-category">${cats.map(x=>`<option value="${escAttr(x)}" ${c.category===x?'selected':''}>${x==='all'?'Any':escHtml(x)}</option>`).join('')}</select>
+      </div>
+      <div class="form-row"><label class="form-label">VIP tier</label>
+        <select class="form-input" id="ar-cond-vip">${vipOpts.map(v=>`<option value="${v}" ${c.vip===v?'selected':''}>${v==='all'?'Any':v}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 8px">Then assign</div>
+    <div class="form-row"><label class="form-label">Mode</label>
+      <select class="form-input" id="ar-mode" onchange="arModeChanged(this.value)">
+        <option value="specific-agent" ${a.mode==='specific-agent'?'selected':''}>Specific agent</option>
+        <option value="round-robin"    ${a.mode==='round-robin'?'selected':''}>Round-robin (cycle through team)</option>
+        <option value="least-busy"     ${a.mode==='least-busy'?'selected':''}>Least-busy (fewest open tickets)</option>
+      </select>
+    </div>
+    <div class="form-row" id="ar-agent-row" style="display:${a.mode==='specific-agent'?'block':'none'}">
+      <label class="form-label">Agent</label>
+      <select class="form-input" id="ar-agent">${AGENTS.map(ag=>`<option value="${escAttr(ag.name)}" ${a.agent===ag.name?'selected':''}>${escHtml(ag.name)}</option>`).join('')}</select>
+    </div>
+    <div class="form-row" id="ar-team-row" style="display:${a.mode==='specific-agent'?'none':'block'}">
+      <label class="form-label">Team (comma-separated agent names)</label>
+      <input class="form-input" id="ar-team" value="${esc(teamCsv)}" placeholder="Emma Clarke, Sofia Reyes"/>
+      <div style="font-size:11px;color:var(--ink3);margin-top:4px">Round-robin cycles through the team in order. Least-busy picks the agent with fewest open + escalated tickets.</div>
+    </div>`;
+}
+
+function arModeChanged(mode) {
+  const agentRow = document.getElementById('ar-agent-row');
+  const teamRow  = document.getElementById('ar-team-row');
+  if (agentRow) agentRow.style.display = mode === 'specific-agent' ? 'block' : 'none';
+  if (teamRow)  teamRow.style.display  = mode === 'specific-agent' ? 'none' : 'block';
+}
+
+function arReadForm() {
+  const mode = document.getElementById('ar-mode').value;
+  const assignment = { mode };
+  if (mode === 'specific-agent') {
+    assignment.agent = document.getElementById('ar-agent').value;
+  } else {
+    const csv = document.getElementById('ar-team').value;
+    assignment.team = csv.split(',').map(s => s.trim()).filter(Boolean);
+  }
+  return {
+    name: document.getElementById('ar-name').value.trim(),
+    priority: parseInt(document.getElementById('ar-priority').value, 10) || 50,
+    status: document.getElementById('ar-status').value,
+    conditions: {
+      priority: document.getElementById('ar-cond-priority').value,
+      category: document.getElementById('ar-cond-category').value,
+      vip:      document.getElementById('ar-cond-vip').value,
+    },
+    assignment,
+  };
+}
+
+function arNew() {
+  if (!isAdmin()) return;
+  showModal('New assignment rule', arFormBody(null), () => {
+    const data = arReadForm();
+    if (!data.name) { alert('Name is required.'); return; }
+    if (data.assignment.mode === 'specific-agent' && !data.assignment.agent) { alert('Pick an agent.'); return; }
+    if (data.assignment.mode !== 'specific-agent' && !(data.assignment.team || []).length) { alert('Team is required.'); return; }
+    ASSIGN_RULES.push({ id: arNextId(), matchCount: 0, lastMatchAt: null, ...data });
+    closeModal(); renderPage('assignment-rules');
+  }, 'Create');
+}
+
+function arEdit(id) {
+  if (!isAdmin()) return;
+  const r = ASSIGN_RULES.find(x => x.id === id); if (!r) return;
+  showModal('Edit rule · ' + r.id, arFormBody(r), () => {
+    const data = arReadForm();
+    if (!data.name) { alert('Name is required.'); return; }
+    if (data.assignment.mode === 'specific-agent' && !data.assignment.agent) { alert('Pick an agent.'); return; }
+    if (data.assignment.mode !== 'specific-agent' && !(data.assignment.team || []).length) { alert('Team is required.'); return; }
+    Object.assign(r, data);
+    delete ASSIGN_RULES_RR_INDEX[r.id];
+    closeModal(); renderPage('assignment-rules');
+  }, 'Save');
+}
+
+function arDelete(id) {
+  if (!isAdmin()) return;
+  const r = ASSIGN_RULES.find(x => x.id === id); if (!r) return;
+  showModal('Delete rule', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${escHtml(r.name)}</strong>?</div>`, () => {
+    const i = ASSIGN_RULES.findIndex(x => x.id === id);
+    if (i >= 0) ASSIGN_RULES.splice(i, 1);
+    delete ASSIGN_RULES_RR_INDEX[id];
+    closeModal(); renderPage('assignment-rules');
+  }, 'Delete');
+}
+
+function renderAssignmentRules() {
+  const admin = isAdmin();
+  let list = [...ASSIGN_RULES].sort((a, b) => (a.priority || 99) - (b.priority || 99));
+  if (AR_FILTER === 'active')   list = list.filter(r => r.status === 'active');
+  if (AR_FILTER === 'inactive') list = list.filter(r => r.status === 'inactive');
+  const total = ASSIGN_RULES.length;
+  const activeN = ASSIGN_RULES.filter(r => r.status === 'active').length;
+  const totalMatches = ASSIGN_RULES.reduce((s, r) => s + (r.matchCount || 0), 0);
+  const top = [...ASSIGN_RULES].sort((a,b)=>(b.matchCount||0)-(a.matchCount||0))[0];
+
+  const rows = list.map(r => `
+    <tr>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;text-align:center">${r.priority || 50}</td>
+      <td><strong>${escHtml(r.name)}</strong><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);margin-top:2px">${escHtml(r.id)}</div></td>
+      <td style="font-size:11px;color:var(--ink2)">${arConditionsSummary(r.conditions || {})}</td>
+      <td style="font-size:11px;color:var(--ink2)">${arAssignmentSummary(r.assignment)}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${r.matchCount || 0}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3)">${escHtml(r.lastMatchAt || '—')}</td>
+      <td style="text-align:center">
+        <label class="toggle">
+          <input type="checkbox" ${r.status==='active'?'checked':''} ${admin?'':'disabled'} onchange="arToggle('${escAttr(r.id)}',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </td>
+      ${admin ? `<td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-sm" onclick="arEdit('${escAttr(r.id)}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="arDelete('${escAttr(r.id)}')">Delete</button>
+      </td>` : ''}
+    </tr>`).join('');
+
+  return `
+    <div class="page">
+      <div class="topbar">
+        <div class="tb-title">Assignment Rules</div>
+        ${admin
+          ? `<button class="btn btn-solid btn-sm" onclick="arNew()">+ New Rule</button>`
+          : `<span style="font-size:11px;color:var(--ink3);font-style:italic">Read-only — admin access required to edit</span>`}
+      </div>
+      <div class="kpi-bar">
+        <div class="kpi"><div class="kpi-n">${total}</div><div class="kpi-l">Rules</div></div>
+        <div class="kpi"><div class="kpi-n c-green">${activeN}</div><div class="kpi-l">Active</div></div>
+        <div class="kpi"><div class="kpi-n c-blue">${totalMatches}</div><div class="kpi-l">Total matches</div></div>
+        <div class="kpi"><div class="kpi-n c-purple" style="font-size:18px;line-height:1.1">${top ? escHtml(top.name) : '—'}</div><div class="kpi-l">Most used ${top ? '· ' + (top.matchCount || 0) : ''}</div></div>
+      </div>
+      <div class="filter-bar">
+        <span class="filter-label">Filter</span>
+        <select class="filter-select" onchange="AR_FILTER=this.value;renderPage('assignment-rules')">
+          <option value="all"      ${AR_FILTER==='all'?'selected':''}>All rules</option>
+          <option value="active"   ${AR_FILTER==='active'?'selected':''}>Active</option>
+          <option value="inactive" ${AR_FILTER==='inactive'?'selected':''}>Inactive</option>
+        </select>
+        <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:auto">${list.length} of ${total}</span>
+      </div>
+      <div class="page-scroll">
+        <table class="tbl">
+          <thead><tr>
+            <th style="width:50px;text-align:center">#</th><th>Rule</th><th>When</th><th>Then assign</th><th>Matches</th><th>Last match</th>
+            <th style="text-align:center">Active</th>
+            ${admin?'<th style="text-align:right">Actions</th>':''}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${list.length===0 ? `<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">No rules match</div><div class="empty-line"></div></div>` : ''}
+        <div style="margin-top:14px;font-size:11px;color:var(--ink3);line-height:1.5;padding:0 4px">Rules are evaluated in ascending priority order; the first matching active rule wins. Apply rules manually from the ticket sidebar (<strong style="color:var(--ink2)">Run rules</strong>) or to a selection from the bulk action bar. New tickets created with "Auto" assignment go through this engine.</div>
       </div>
     </div>`;
 }

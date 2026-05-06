@@ -809,6 +809,7 @@ let FILTER_QUERY = '';
 let FILTER_VIEW = 'all';
 let TICKET_GROUP_BY = 'none';
 const TICKET_SELECTED_IDS = new Set();
+let TICKET_HEADER_CB_INDETERMINATE = false;
 let SORT_COL = 'id';
 let SORT_DIR = 1;
 let AI_THINKING = false;
@@ -1035,7 +1036,7 @@ function renderPage(page) {
 
 function initTicketsPage() {
   const cb = document.getElementById('ticket-select-all-cb');
-  if (cb && cb.dataset.indeterminate === '1') cb.indeterminate = true;
+  if (cb) cb.indeterminate = TICKET_HEADER_CB_INDETERMINATE;
 }
 
 function updateNavBadges() {
@@ -1093,20 +1094,21 @@ function renderTickets() {
   const filteredIds = list.map(t => t.id);
   const allSelected = filteredIds.length > 0 && filteredIds.every(id => TICKET_SELECTED_IDS.has(id));
   const someSelected = !allSelected && filteredIds.some(id => TICKET_SELECTED_IDS.has(id));
-  const headerCbAttr = allSelected ? 'checked' : (someSelected ? 'data-indeterminate="1"' : '');
+  // initTicketsPage reads this and applies the indeterminate DOM property after innerHTML.
+  TICKET_HEADER_CB_INDETERMINATE = someSelected;
 
   const bulkBar = TICKET_SELECTED_IDS.size > 0 ? `
     <div style="padding:8px 20px;border-bottom:1px solid var(--rule);background:var(--purple-lt);display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap">
       <span style="font-size:12px;color:var(--purple);font-weight:600">${TICKET_SELECTED_IDS.size} selected</span>
       <button class="btn btn-sm" onclick="bulkAssignTickets()">Assign…</button>
-      <select class="filter-select" onchange="bulkSetStatus(this.value);this.value=''">
+      <select class="filter-select" onchange="bulkSetStatus(this.value)">
         <option value="">Set status…</option>
         <option value="open">Open</option>
         <option value="pending">Pending</option>
         <option value="escalated">Escalated</option>
         <option value="resolved">Resolved</option>
       </select>
-      <select class="filter-select" onchange="bulkSetPriority(this.value);this.value=''">
+      <select class="filter-select" onchange="bulkSetPriority(this.value)">
         <option value="">Set priority…</option>
         <option value="urgent">Urgent</option>
         <option value="high">High</option>
@@ -1173,7 +1175,7 @@ function renderTickets() {
         <table class="tbl">
           <thead><tr>
             <th style="width:32px;padding-right:0" onclick="event.stopPropagation()">
-              <input type="checkbox" id="ticket-select-all-cb" ${headerCbAttr} onchange="toggleAllTickets()" style="cursor:pointer;accent-color:var(--purple)" title="Select all in view"/>
+              <input type="checkbox" id="ticket-select-all-cb" ${allSelected?'checked':''} onchange="toggleAllTickets()" style="cursor:pointer;accent-color:var(--purple)" title="Select all in view"/>
             </th>
             ${[['id','ID'],['customerId','Customer'],['subject','Subject'],['status','Status'],['priority','Priority'],['category','Category'],['agent','Agent'],['updated','Updated'],['sla','SLA']].map(([k,l])=>`<th onclick="sortTickets('${k}')">${l} ${SORT_COL===k?(SORT_DIR===1?'↑':'↓'):''}</th>`).join('')}
           </tr></thead>
@@ -1347,12 +1349,16 @@ function bulkExportTickets() {
     return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? ''];
   });
   const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+  // UTF-8 BOM so Excel on Windows recognises the encoding for accented names/tags.
+  const blob = new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `tickets-selected-${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
+  try {
+    const a = document.createElement('a');
+    a.href = url; a.download = `tickets-selected-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function bulkDeleteTickets() {

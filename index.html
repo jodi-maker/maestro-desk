@@ -712,6 +712,10 @@ textarea.form-input{resize:vertical;min-height:72px}
           <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 3.5v3l2 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span class="sb-lbl">SLA Policies</span>
         </div>
+        <div class="sb-item" onclick="nav('business-hours',this)">
+          <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><rect x="1.5" y="2.5" width="10" height="9" rx="1" stroke="currentColor" stroke-width="1.1"/><path d="M1.5 5.5h10M4 1.5v2M9 1.5v2M3.5 8h2M7.5 8h2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+          <span class="sb-lbl">Business Hours</span>
+        </div>
         <div class="sb-item" onclick="nav('assignment-rules',this)">
           <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><circle cx="3.5" cy="3.5" r="1.5" stroke="currentColor" stroke-width="1.1"/><circle cx="9.5" cy="3.5" r="1.5" stroke="currentColor" stroke-width="1.1"/><circle cx="6.5" cy="9.5" r="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M3.5 5v1.5L6.5 8M9.5 5v1.5L6.5 8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
           <span class="sb-lbl">Assignment Rules</span>
@@ -1081,6 +1085,7 @@ function renderPage(page) {
     tags:      renderTags,
     roles:     renderRoles,
     sla:           renderSLA,
+    'business-hours': renderBusinessHours,
     'assignment-rules': renderAssignmentRules,
     csat:          renderCSAT,
     templates:     renderTemplates,
@@ -1549,11 +1554,14 @@ function openTicket(id) {
     const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
     return `<div style="height:5px;background:var(--off2);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;background:${slaColor(status)};width:${pct}%;transition:width .25s"></div></div>`;
   };
+  const bhActive = BUSINESS_HOURS.enabled;
+  const bhPaused = bhActive && !isWithinBusinessHours(new Date());
   const slaBlock = `
     <div class="ts-section">
-      <div class="ts-heading">SLA</div>
+      <div class="ts-heading">SLA${bhPaused ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink3);font-size:10px;font-style:italic;margin-left:4px">· paused (outside hours)</span>' : ''}</div>
       ${sla.policy ? `
         <div class="ts-row"><span class="ts-key">Policy</span><span class="ts-val"><span class="link" onclick="navTo('sla')">${escHtml(sla.policy.name)}</span></span></div>
+        ${bhActive ? `<div class="ts-row"><span class="ts-key">Hours</span><span class="ts-val"><span class="link" onclick="navTo('business-hours')">Business hours</span></span></div>` : ''}
         <div style="margin-top:10px">
           <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink2)">
             <span>First response</span>
@@ -2284,7 +2292,10 @@ function slaNowForDemo() {
   _slaNowCache = new Date(latest.getTime() + 24 * 60 * 60 * 1000);
   return _slaNowCache;
 }
-function invalidateSLAClock() { _slaNowCache = null; }
+function invalidateSLAClock() {
+  _slaNowCache = null;
+  if (typeof bhInvalidateCache === 'function') bhInvalidateCache();
+}
 
 function findMatchingSLAPolicy(t) {
   if (!t.priority) return null;
@@ -2318,7 +2329,84 @@ function ticketElapsedMinutes(t) {
   if (!t.created) return 0;
   const created = new Date(t.created);
   if (isNaN(created)) return 0;
+  if (BUSINESS_HOURS.enabled) {
+    return businessMinutesBetween(created.getTime(), slaNowForDemo().getTime());
+  }
   return Math.max(0, Math.floor((slaNowForDemo() - created) / 60000));
+}
+
+// ─── Business hours ──────────────────────────────────────────────────────────
+// Drives the SLA elapsed-time calculation. When enabled, only minutes that
+// fall inside a configured business-hours window count toward the SLA timer,
+// pausing it overnight, on weekends, and on holiday dates. When disabled the
+// timer runs 24/7 (legacy behaviour).
+const BUSINESS_HOURS = {
+  enabled: true,
+  days: [
+    { day: 0, label: 'Sun', enabled: false, start: '09:00', end: '17:00' },
+    { day: 1, label: 'Mon', enabled: true,  start: '09:00', end: '17:00' },
+    { day: 2, label: 'Tue', enabled: true,  start: '09:00', end: '17:00' },
+    { day: 3, label: 'Wed', enabled: true,  start: '09:00', end: '17:00' },
+    { day: 4, label: 'Thu', enabled: true,  start: '09:00', end: '17:00' },
+    { day: 5, label: 'Fri', enabled: true,  start: '09:00', end: '17:00' },
+    { day: 6, label: 'Sat', enabled: false, start: '09:00', end: '17:00' },
+  ],
+  holidays: ['2026-12-25', '2026-12-26', '2026-01-01'],
+};
+
+function bhParseHM(s) {
+  const m = String(s || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return { h, min };
+}
+
+function isWithinBusinessHours(date) {
+  if (!BUSINESS_HOURS.enabled) return true;
+  const cfg = BUSINESS_HOURS.days[date.getDay()];
+  if (!cfg || !cfg.enabled) return false;
+  const ymd = date.toISOString().slice(0, 10);
+  if (BUSINESS_HOURS.holidays.includes(ymd)) return false;
+  const start = bhParseHM(cfg.start), end = bhParseHM(cfg.end);
+  if (!start || !end) return false;
+  const mins = date.getHours() * 60 + date.getMinutes();
+  return mins >= (start.h * 60 + start.min) && mins < (end.h * 60 + end.min);
+}
+
+// Cached results keyed by (startMs, endMs). refreshAllSLA on many tickets
+// re-uses the same slaNow anchor, so most calls share startMs (created date)
+// or endMs across calls. Cache invalidates on every config edit + slaNow reset.
+let _bizMinutesCache = new Map();
+function bhInvalidateCache() { _bizMinutesCache = new Map(); }
+
+function businessMinutesBetween(startMs, endMs) {
+  if (!BUSINESS_HOURS.enabled) return Math.max(0, Math.floor((endMs - startMs) / 60000));
+  if (endMs <= startMs) return 0;
+  const cacheKey = startMs + '-' + endMs;
+  const hit = _bizMinutesCache.get(cacheKey);
+  if (hit !== undefined) return hit;
+  let total = 0;
+  const startDay = new Date(startMs);
+  startDay.setHours(0, 0, 0, 0);
+  // Walk one calendar day at a time and sum the overlap with that day's window.
+  // Strict `<` so an endMs at midnight doesn't trigger an extra empty iteration.
+  for (let d = startDay.getTime(); d < endMs; d += 86400000) {
+    const day = new Date(d);
+    const cfg = BUSINESS_HOURS.days[day.getDay()];
+    if (!cfg || !cfg.enabled) continue;
+    if (BUSINESS_HOURS.holidays.includes(day.toISOString().slice(0, 10))) continue;
+    const start = bhParseHM(cfg.start), end = bhParseHM(cfg.end);
+    if (!start || !end) continue;
+    const dayStart = new Date(d); dayStart.setHours(start.h, start.min, 0, 0);
+    const dayEnd   = new Date(d); dayEnd.setHours(end.h,   end.min,   0, 0);
+    const winStart = Math.max(dayStart.getTime(), startMs);
+    const winEnd   = Math.min(dayEnd.getTime(),   endMs);
+    if (winEnd > winStart) total += Math.floor((winEnd - winStart) / 60000);
+  }
+  _bizMinutesCache.set(cacheKey, total);
+  return total;
 }
 
 const SLA_WARN_FRACTION = 0.7; // warn at 70 % of the window
@@ -3944,6 +4032,7 @@ const SEARCH_PAGES = [
   {p:'tags',      l:'Tags'},
   {p:'roles',     l:'Roles & Permissions'},
   {p:'sla',       l:'SLA Policies'},
+  {p:'business-hours', l:'Business Hours'},
   {p:'assignment-rules', l:'Assignment Rules'},
   {p:'csat',      l:'CSAT Surveys'},
   {p:'templates', l:'Response Templates'},
@@ -7955,6 +8044,126 @@ function renderAssignmentRules() {
         </table>
         ${list.length===0 ? `<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">No rules match</div><div class="empty-line"></div></div>` : ''}
         <div style="margin-top:14px;font-size:11px;color:var(--ink3);line-height:1.5;padding:0 4px">Rules are evaluated in ascending priority order; the first matching active rule wins. Apply rules manually from the ticket sidebar (<strong style="color:var(--ink2)">Run rules</strong>) or to a selection from the bulk action bar. New tickets created with "Auto" assignment go through this engine.</div>
+      </div>
+    </div>`;
+}
+
+// ─── Business Hours page ────────────────────────────────────────────────────
+function bhSetEnabled(v) {
+  BUSINESS_HOURS.enabled = !!v;
+  invalidateSLAClock();
+  refreshAllSLA();
+  renderPage('business-hours');
+}
+
+function bhSetDayEnabled(idx, v) {
+  const d = BUSINESS_HOURS.days[idx];
+  if (!d) return;
+  d.enabled = !!v;
+  invalidateSLAClock();
+  refreshAllSLA();
+  renderPage('business-hours');
+}
+
+function bhSetDayTime(idx, field, v) {
+  const d = BUSINESS_HOURS.days[idx];
+  if (!d) return;
+  if (!bhParseHM(v)) return;
+  d[field] = v;
+  invalidateSLAClock();
+  refreshAllSLA();
+}
+
+function bhAddHoliday() {
+  const el = document.getElementById('bh-new-holiday');
+  if (!el) return;
+  const v = el.value;
+  if (!v) return;
+  if (!BUSINESS_HOURS.holidays.includes(v)) BUSINESS_HOURS.holidays.push(v);
+  BUSINESS_HOURS.holidays.sort();
+  invalidateSLAClock();
+  refreshAllSLA();
+  renderPage('business-hours');
+}
+
+function bhRemoveHoliday(date) {
+  const i = BUSINESS_HOURS.holidays.indexOf(date);
+  if (i < 0) return;
+  BUSINESS_HOURS.holidays.splice(i, 1);
+  invalidateSLAClock();
+  refreshAllSLA();
+  renderPage('business-hours');
+}
+
+function renderBusinessHours() {
+  const admin = isAdmin();
+  const now = new Date();
+  const inHours = isWithinBusinessHours(now);
+  const dayRows = BUSINESS_HOURS.days.map((d, i) => `
+    <tr>
+      <td style="width:80px;font-weight:500;color:var(--ink)">${escHtml(d.label)}</td>
+      <td style="width:60px;text-align:center">
+        <label class="toggle">
+          <input type="checkbox" ${d.enabled ? 'checked' : ''} ${admin ? '' : 'disabled'} onchange="bhSetDayEnabled(${i},this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </td>
+      <td>
+        <input type="time" class="form-input" value="${escAttr(d.start)}" style="max-width:120px" ${admin && d.enabled ? '' : 'disabled'} onchange="bhSetDayTime(${i},'start',this.value)"/>
+      </td>
+      <td>
+        <input type="time" class="form-input" value="${escAttr(d.end)}" style="max-width:120px" ${admin && d.enabled ? '' : 'disabled'} onchange="bhSetDayTime(${i},'end',this.value)"/>
+      </td>
+      <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3)">${d.enabled ? escHtml(`${d.start}–${d.end}`) : '<span style="font-style:italic">closed</span>'}</td>
+    </tr>`).join('');
+
+  const holidayRows = BUSINESS_HOURS.holidays.map(date => `
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border:1px solid var(--rule);border-radius:var(--r);margin-bottom:4px;background:var(--off2)">
+      <span style="font-family:'DM Mono',monospace;font-size:12px;color:var(--ink2)">${escHtml(date)}</span>
+      <span style="font-size:11px;color:var(--ink3);font-style:italic">${escHtml(new Date(date).toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'short' }))}</span>
+      ${admin ? `<button class="btn btn-sm" style="margin-left:auto" onclick="bhRemoveHoliday(${escHtml(JSON.stringify(date))})">Remove</button>` : ''}
+    </div>`).join('');
+
+  return `
+    <div class="page">
+      <div class="topbar">
+        <div class="tb-title">Business Hours</div>
+        <span style="font-size:11px;color:${inHours ? 'var(--green)' : 'var(--ink3)'};font-weight:500">${inHours ? '● Currently in business hours' : '○ Currently outside business hours'}</span>
+      </div>
+      <div class="kpi-bar">
+        <div class="kpi"><div class="kpi-n c-${BUSINESS_HOURS.enabled ? 'green' : 'red'}" style="font-size:18px;line-height:1.1">${BUSINESS_HOURS.enabled ? 'On' : 'Off'}</div><div class="kpi-l">SLA pause</div></div>
+        <div class="kpi"><div class="kpi-n c-blue">${BUSINESS_HOURS.days.filter(d => d.enabled).length}</div><div class="kpi-l">Working days</div></div>
+        <div class="kpi"><div class="kpi-n c-amber">${BUSINESS_HOURS.holidays.length}</div><div class="kpi-l">Holidays</div></div>
+      </div>
+      <div class="filter-bar">
+        <span class="filter-label">SLA pause outside business hours</span>
+        <label class="toggle" style="margin-left:8px">
+          <input type="checkbox" ${BUSINESS_HOURS.enabled ? 'checked' : ''} ${admin ? '' : 'disabled'} onchange="bhSetEnabled(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="font-size:11px;color:var(--ink3);margin-left:auto;font-style:italic">${admin ? 'Changes apply to live SLA evaluation immediately.' : 'Read-only — admin access required to edit'}</span>
+      </div>
+      <div class="page-scroll">
+        <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px">
+          <div class="card">
+            <div class="card-title">Weekly schedule</div>
+            <table class="tbl" style="margin-top:8px">
+              <thead><tr><th>Day</th><th style="text-align:center">Open</th><th>Start</th><th>End</th><th>Window</th></tr></thead>
+              <tbody>${dayRows}</tbody>
+            </table>
+            <div style="margin-top:10px;font-size:11px;color:var(--ink3);line-height:1.5">When SLA pause is on, only minutes inside an open window count against a ticket's SLA timer. First-response thresholds count business minutes too once the customer's first message lands.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Holidays (${BUSINESS_HOURS.holidays.length})</div>
+            <div style="font-size:11px;color:var(--ink3);margin-bottom:10px;line-height:1.5">Dates listed here count as fully closed regardless of weekday schedule.</div>
+            ${holidayRows || '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:14px 0">No holidays added</div>'}
+            ${admin ? `
+              <div style="display:flex;gap:6px;margin-top:10px">
+                <input type="date" class="form-input" id="bh-new-holiday" style="flex:1"/>
+                <button class="btn btn-sm" onclick="bhAddHoliday()">+ Add</button>
+              </div>` : ''}
+          </div>
+        </div>
       </div>
     </div>`;
 }

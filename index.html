@@ -2718,17 +2718,44 @@ function parseMentions(text) {
 }
 
 function renderTextWithMentions(text) {
-  let html = escHtml(text);
+  // Scan the ORIGINAL (unescaped) text for mention positions, then build the
+  // output by escaping segments between mentions independently. Avoids the
+  // class of bug where regex over already-escaped HTML can interleave a span
+  // into the middle of an entity (&amp;, &lt;, etc).
+  if (!text) return '';
   const me = SESSION?.name;
-  // Replace longest names first so substrings don't break the longer match.
   const names = AGENTS.map(a => a.name).sort((a, b) => b.length - a.length);
-  for (const name of names) {
-    const escName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp('(^|[^A-Za-z0-9_@])@' + escName + '(?![A-Za-z0-9_])', 'g');
-    const cls = name === me ? 'mention self' : 'mention';
-    html = html.replace(re, (_, lead) => `${lead}<span class="${cls}">@${escHtml(name)}</span>`);
+  const isWord = c => /[A-Za-z0-9_]/.test(c);
+  const found = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '@' && (i === 0 || !isWord(text[i - 1]))) {
+      let matched = null;
+      for (const name of names) {
+        if (text.slice(i + 1, i + 1 + name.length) === name) {
+          const after = text[i + 1 + name.length] || '';
+          if (!isWord(after)) { matched = name; break; }
+        }
+      }
+      if (matched) {
+        found.push({ pos: i, name: matched });
+        i += 1 + matched.length;
+        continue;
+      }
+    }
+    i++;
   }
-  return html.replace(/\n/g, '<br>');
+  if (!found.length) return escHtml(text).replace(/\n/g, '<br>');
+  let out = '';
+  let pos = 0;
+  for (const m of found) {
+    out += escHtml(text.slice(pos, m.pos));
+    const cls = m.name === me ? 'mention self' : 'mention';
+    out += `<span class="${cls}">@${escHtml(m.name)}</span>`;
+    pos = m.pos + 1 + m.name.length;
+  }
+  out += escHtml(text.slice(pos));
+  return out.replace(/\n/g, '<br>');
 }
 
 let MENTION_DD_ACTIVE_INDEX = 0;

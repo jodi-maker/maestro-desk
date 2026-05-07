@@ -6329,7 +6329,10 @@ function renderInbox() {
           <span style="font-weight:600">Customer matched</span>
           <span class="link" onclick="CUSTOMER_SELECTED='${escAttr(cust.id)}';navTo('customers')" style="color:var(--green);font-weight:500">${escHtml(cust.first + ' ' + cust.last)}</span>
           <span class="vip-badge vip-${(cust.vip || '').toLowerCase()}" style="margin-left:auto">${escHtml(cust.vip || '')}</span>
-        </div>` : `<div style="margin-bottom:14px;padding:10px 12px;background:var(--off2);border:1px solid var(--rule);border-radius:var(--r);font-size:11px;color:var(--ink3);font-style:italic">No customer record matches ${escHtml(selected.fromEmail || '')} — converted tickets default to ${escHtml(CUSTOMERS[0]?.id || 'M001')} as a placeholder.</div>`}
+        </div>` : `<div style="margin-bottom:14px;padding:10px 12px;background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);font-size:11px;color:var(--amber);display:flex;gap:8px;align-items:center">
+          <span style="font-weight:600">No customer match</span>
+          <span style="color:var(--ink2);font-style:italic">${escHtml(selected.fromEmail || '')} isn't in the customer list — convert is blocked. Add the customer first via <span class="link" onclick="navTo('customers')" style="color:var(--amber);font-weight:500">Customers → + New Customer</span>.</span>
+        </div>`}
         <div style="font-size:13px;color:var(--ink);line-height:1.65;white-space:pre-wrap;background:var(--off2);border:1px solid var(--rule);border-radius:var(--r);padding:14px 16px">${escHtml(selected.body || '')}</div>
         ${isActed ? `<div style="margin-top:14px;font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${selected.status} ${selected.actedAt ? '· ' + escHtml(selected.actedAt) : ''}</div>` : ''}
       </div>`;

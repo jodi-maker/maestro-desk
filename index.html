@@ -371,6 +371,11 @@ textarea.form-input{resize:vertical;min-height:72px}
 .msg-agent .msg-from{color:var(--purple)}.msg-ai .msg-from{color:var(--green)}.msg-note .msg-from{color:var(--amber)}
 .ai-mark{font-size:8px;padding:0 4px;border:1px solid var(--green);color:var(--green);border-radius:3px;background:rgba(52,211,153,0.1)}
 .note-mark{font-size:8px;padding:0 4px;border:1px solid var(--amber);color:var(--amber);border-radius:1px}
+.inbox-row{padding:10px 12px;border:1px solid var(--rule);border-radius:var(--r);background:var(--off);margin-bottom:6px;cursor:pointer;transition:all .12s}
+.inbox-row:hover{border-color:var(--purple);background:var(--purple-lt)}
+.inbox-row-selected{border-color:var(--purple)!important;background:var(--purple-lt)!important;box-shadow:0 0 0 1px var(--purple) inset}
+.inbox-row-read{opacity:.78}
+.inbox-row-unread{border-left:3px solid var(--blue)}
 .ts-stale-badge{font-weight:400;text-transform:none;letter-spacing:0;color:var(--amber);font-size:10px;font-style:italic;margin-left:6px}
 .portal-banner{padding:8px 20px;background:var(--purple-lt);border-bottom:1px solid var(--purple);color:var(--purple);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:10px;flex-shrink:0}
 .portal-tabs{display:flex;gap:2px;padding:8px 20px;border-bottom:1px solid var(--rule);background:var(--off);flex-shrink:0}
@@ -673,6 +678,11 @@ textarea.form-input{resize:vertical;min-height:72px}
           <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><rect x="1" y="2" width="11" height="2.5" rx="1" stroke="currentColor" stroke-width="1.1"/><rect x="1" y="6" width="7" height="1.8" rx=".9" fill="currentColor" opacity=".5"/><rect x="1" y="9.5" width="5" height="1.8" rx=".9" fill="currentColor" opacity=".3"/></svg>
           <span class="sb-lbl">Tickets</span>
           <span class="sb-n" id="nb-open">4</span>
+        </div>
+        <div class="sb-item" onclick="nav('inbox',this)">
+          <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><path d="M1.5 4.5h10v6h-10z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M1.5 4.5l5 4 5-4" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
+          <span class="sb-lbl">Inbox</span>
+          <span class="sb-n" id="nb-inbox">0</span>
         </div>
         <div class="sb-item" onclick="nav('customers',this)">
           <svg class="sb-icon" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="4.5" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M1.5 11.5c0-2.761 2.239-5 5-5s5 2.239 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
@@ -994,6 +1004,40 @@ const CHANNELS = [
   {id:'CH-005', name:'Partner API integration',type:'api',     address:'/api/v1/tickets',             status:'inactive', defaultCategory:'all',       defaultAgent:'',                 volume30d:0,   signature:''},
 ];
 
+// Synthetic inbox of incoming emails awaiting triage. Real-world this would
+// be polled from each email channel's IMAP/API; for the demo it's seeded so
+// the agent has realistic content to convert into tickets.
+const INBOX = [
+  {id:'EM-001', channelId:'CH-001', from:'Sarah Mitchell', fromEmail:'sarah.m@acme.com',
+   subject:'Card keeps getting declined at checkout',
+   body:'Hi, I\'ve tried three different cards and the checkout flow keeps failing on the final step. The page just spins for a while and then says "Something went wrong". I\'m on Chrome on a Mac. Order total was £148. Could you help?\n\nThanks,\nSarah',
+   receivedAt:'2025-04-17 09:14', status:'new'},
+  {id:'EM-002', channelId:'CH-002', from:'James Reed', fromEmail:'james.r@globex.io',
+   subject:'March invoice missing',
+   body:'Hi billing,\n\nI can\'t find the March 2025 invoice in my account. I need it for our finance team\'s month-end close. Can you resend it as a PDF?\n\nReference: GLO-2025-03\n\nJames Reed\nGlobex Finance',
+   receivedAt:'2025-04-17 10:22', status:'new'},
+  {id:'EM-003', channelId:'CH-001', from:'Carlos Diaz', fromEmail:'carlos@tyrell.com',
+   subject:'iOS app crashing on login',
+   body:'Since the last update the iOS app crashes the moment I tap "Sign in". Force-closing and reopening doesn\'t help. iPhone 14 Pro, iOS 17.4.\n\n— Carlos',
+   receivedAt:'2025-04-17 11:03', status:'new'},
+  {id:'EM-004', channelId:'CH-001', from:'Unknown sender', fromEmail:'newsletter@offers.example',
+   subject:'🔥 Limited time — upgrade your account today!',
+   body:'Click here for an exclusive offer just for you! Reply STOP to unsubscribe.',
+   receivedAt:'2025-04-17 11:30', status:'new'},
+  {id:'EM-005', channelId:'CH-002', from:'Priya Sharma', fromEmail:'priya@nakatomi.jp',
+   subject:'Subscription renewal date question',
+   body:'Hello,\n\nWhen exactly does my subscription auto-renew? I want to make sure my card on file is up to date before it processes.\n\nThanks,\nPriya',
+   receivedAt:'2025-04-17 12:48', status:'new'},
+  {id:'EM-006', channelId:'CH-001', from:'Tom Brewer', fromEmail:'tom@umbrella.co',
+   subject:'Forgot to mention - export to XLSX too?',
+   body:'Following up on my earlier export request — could the CSV export also be available as XLSX? Excel parses dates funny on the CSV.\n\n— Tom',
+   receivedAt:'2025-04-17 13:11', status:'new'},
+  {id:'EM-007', channelId:'CH-001', from:'Nina Kowalski', fromEmail:'nina@initech.com',
+   subject:'Re: Initial setup help — thanks!',
+   body:'Just wanted to say the setup walkthrough was excellent. Got everything configured in under 30 mins. Cheers.\n\nNina',
+   receivedAt:'2025-04-17 14:02', status:'new'},
+];
+
 const ROLES_MATRIX = {
   'Admin':        {tickets:true,customers:true,reports:true,ai:true,workflows:true,tags:true,roles:true,gdpr:true},
   'Senior Agent': {tickets:true,customers:true,reports:true,ai:true,workflows:false,tags:true,roles:false,gdpr:true},
@@ -1069,6 +1113,7 @@ function renderPage(page) {
   if (page !== 'agents')    AGENT_SELECTED = null;
   if (page !== 'customers') { CUSTOMER_SELECTED = null; CUSTOMER_SELECTED_IDS.clear(); }
   if (page !== 'tickets')   TICKET_SELECTED_IDS.clear();
+  if (page !== 'inbox')     INBOX_SELECTED_ID = null;
   if (page !== 'workflows') WF_SELECTED = null;
   if (page !== 'tags')      { TAG_SELECTED = null; TAG_SELECTED_NAMES.clear(); }
   CURRENT_PAGE = page;
@@ -1077,6 +1122,7 @@ function renderPage(page) {
   const pages = {
     dashboard: renderDashboard,
     tickets:   renderTickets,
+    inbox:     renderInbox,
     customers: renderCustomers,
     reports:   renderReports,
     agents:    renderAgents,
@@ -1116,6 +1162,12 @@ function initTicketsPage() {
 
 function updateNavBadges() {
   document.getElementById('nb-open').textContent = TICKETS.filter(t => t.status === 'open' || t.status === 'escalated').length;
+  const inboxBadge = document.getElementById('nb-inbox');
+  if (inboxBadge) {
+    const newCount = INBOX.filter(e => e.status === 'new').length;
+    inboxBadge.textContent = newCount;
+    inboxBadge.style.display = newCount > 0 ? '' : 'none';
+  }
   refreshNotifBadge();
 }
 
@@ -4120,6 +4172,7 @@ function closeModal() { document.getElementById('modal-container').innerHTML='';
 const SEARCH_PAGES = [
   {p:'dashboard', l:'Dashboard'},
   {p:'tickets',   l:'Tickets'},
+  {p:'inbox',     l:'Inbox'},
   {p:'customers', l:'Customers'},
   {p:'reports',   l:'Reports'},
   {p:'agents',    l:'Agents'},
@@ -6120,6 +6173,200 @@ function renderPortalProfile(cust) {
         ${cust.brand    ? `<div style="font-size:12px;color:var(--ink2);margin-bottom:4px"><strong>Brand:</strong> ${escHtml(cust.brand)}</div>` : ''}
         ${cust.vip      ? `<div style="font-size:12px;color:var(--ink2);margin-bottom:4px"><strong>Tier:</strong> ${escHtml(cust.vip)}</div>` : ''}
         ${cust.jurisdiction ? `<div style="font-size:12px;color:var(--ink2);margin-bottom:4px"><strong>Region:</strong> ${escHtml(cust.jurisdiction)}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+// ─── Inbox (incoming email triage) ──────────────────────────────────────────
+let INBOX_SELECTED_ID = null;
+let INBOX_FILTER_CHANNEL = 'all';
+let INBOX_FILTER_STATUS  = 'new';
+
+function inboxNextId() {
+  const max = Math.max(0, ...INBOX.map(e => parseInt((e.id || '').split('-')[1] || '0', 10)));
+  return 'EM-' + String(max + 1).padStart(3, '0');
+}
+
+function dismissEmail(emailId) {
+  const e = INBOX.find(x => x.id === emailId);
+  if (!e) return;
+  e.status = 'dismissed';
+  e.actedAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  if (INBOX_SELECTED_ID === emailId) INBOX_SELECTED_ID = null;
+  updateNavBadges();
+  renderPage('inbox');
+}
+
+function markSpamEmail(emailId) {
+  const e = INBOX.find(x => x.id === emailId);
+  if (!e) return;
+  e.status = 'spam';
+  e.actedAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  if (INBOX_SELECTED_ID === emailId) INBOX_SELECTED_ID = null;
+  updateNavBadges();
+  renderPage('inbox');
+}
+
+function restoreEmail(emailId) {
+  const e = INBOX.find(x => x.id === emailId);
+  if (!e || e.status === 'converted') return;
+  e.status = 'new';
+  delete e.actedAt;
+  updateNavBadges();
+  renderPage('inbox');
+}
+
+function convertEmailToTicket(emailId) {
+  const e = INBOX.find(x => x.id === emailId);
+  if (!e) return;
+  const cust = CUSTOMERS.find(c => (c.email || '').toLowerCase() === (e.fromEmail || '').toLowerCase());
+  const channel = CHANNELS.find(c => c.id === e.channelId);
+  const max = Math.max(0, ...TICKETS.map(x => parseInt((x.id || '').split('-')[1] || '0', 10)));
+  const newId = 'TK-' + String(max + 1).padStart(3, '0');
+  const newT = {
+    id: newId,
+    subject: e.subject || '(no subject)',
+    customerId: cust ? cust.id : (CUSTOMERS[0]?.id || 'M001'),
+    status: 'open',
+    priority: 'normal',
+    category: (channel?.defaultCategory && channel.defaultCategory !== 'all') ? channel.defaultCategory : 'Technical',
+    agent: channel?.defaultAgent || '',
+    created: new Date().toISOString().slice(0, 10),
+    updated: 'just now',
+    sla: 'ok', tags: [], aiTags: [], csat: null,
+    msgs: [{
+      from: cust ? `${cust.first} ${cust.last}` : (e.from || 'Customer'),
+      r: 'customer',
+      t: e.body || '',
+      ts: (e.receivedAt || '').slice(11, 16) || new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }),
+    }],
+    fromEmailId: e.id,
+    fromChannelId: e.channelId,
+  };
+  TICKETS.unshift(newT);
+  if (!newT.agent && typeof applyAssignmentRules === 'function') applyAssignmentRules(newT);
+  refreshTicketSLA(newT);
+  e.status = 'converted';
+  e.convertedTicketId = newId;
+  e.actedAt = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  updateNavBadges();
+  if (!cust) {
+    alert(`No matching customer found for ${e.fromEmail}. Ticket ${newId} attached to ${TICKETS.find(t=>t.id===newId).customerId} as a fallback — reassign on the ticket.`);
+  }
+  openTicket(newId);
+}
+
+function renderInbox() {
+  const channelOpts = ['all', ...CHANNELS.filter(c => c.type === 'email' || c.type === 'webform').map(c => c.id)];
+  let list = [...INBOX];
+  if (INBOX_FILTER_STATUS  !== 'all') list = list.filter(e => e.status === INBOX_FILTER_STATUS);
+  if (INBOX_FILTER_CHANNEL !== 'all') list = list.filter(e => e.channelId === INBOX_FILTER_CHANNEL);
+  list.sort((a, b) => (b.receivedAt || '').localeCompare(a.receivedAt || ''));
+
+  const total    = INBOX.length;
+  const newN     = INBOX.filter(e => e.status === 'new').length;
+  const convN    = INBOX.filter(e => e.status === 'converted').length;
+  const dismN    = INBOX.filter(e => e.status === 'dismissed').length;
+  const spamN    = INBOX.filter(e => e.status === 'spam').length;
+
+  const selected = INBOX_SELECTED_ID ? INBOX.find(e => e.id === INBOX_SELECTED_ID) : null;
+
+  const channelMap = {};
+  CHANNELS.forEach(c => channelMap[c.id] = c);
+
+  const rowFor = e => {
+    const ch = channelMap[e.channelId];
+    const isSelected = e.id === INBOX_SELECTED_ID;
+    const isUnread = e.status === 'new';
+    const cust = CUSTOMERS.find(c => (c.email || '').toLowerCase() === (e.fromEmail || '').toLowerCase());
+    return `
+      <div class="inbox-row ${isSelected ? 'inbox-row-selected' : ''} ${isUnread ? 'inbox-row-unread' : 'inbox-row-read'}" onclick="INBOX_SELECTED_ID='${escAttr(e.id)}';renderPage('inbox')">
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px">
+          <span style="font-size:13px;color:var(--ink);${isUnread ? 'font-weight:600' : 'font-weight:400'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${escHtml(e.from || 'Unknown')}</span>
+          <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);flex-shrink:0">${escHtml(e.receivedAt || '')}</span>
+        </div>
+        <div style="font-size:12px;color:${isUnread ? 'var(--ink)' : 'var(--ink2)'};${isUnread ? 'font-weight:500' : ''};margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(e.subject || '(no subject)')}</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink3)">
+          <span style="font-family:'DM Mono',monospace">${escHtml(e.fromEmail || '')}</span>
+          ${ch ? `<span style="margin-left:auto;font-size:10px;color:var(--purple);background:var(--purple-lt);padding:1px 6px;border-radius:3px">${escHtml(ch.name)}</span>` : ''}
+          ${cust ? `<span style="font-size:10px;color:var(--green);background:var(--green-lt);padding:1px 6px;border-radius:3px" title="Match: ${escAttr(cust.first + ' ' + cust.last)}">✓ ${escHtml(cust.id)}</span>` : `<span style="font-size:10px;color:var(--ink3);font-style:italic">no customer match</span>`}
+          ${e.status === 'converted' && e.convertedTicketId ? `<span style="font-size:10px;color:var(--green);font-family:'DM Mono',monospace">→ ${escHtml(e.convertedTicketId)}</span>` : ''}
+          ${e.status === 'dismissed' ? '<span style="font-size:10px;color:var(--ink3);font-style:italic">dismissed</span>' : ''}
+          ${e.status === 'spam' ? '<span style="font-size:10px;color:var(--red);font-style:italic">spam</span>' : ''}
+        </div>
+      </div>`;
+  };
+
+  const detailHtml = selected ? (() => {
+    const ch = channelMap[selected.channelId];
+    const cust = CUSTOMERS.find(c => (c.email || '').toLowerCase() === (selected.fromEmail || '').toLowerCase());
+    const isActed = selected.status !== 'new';
+    return `
+      <div class="card" style="padding:18px 20px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:16px;font-weight:600;color:var(--ink);margin-bottom:4px">${escHtml(selected.subject || '(no subject)')}</div>
+            <div style="font-size:11px;color:var(--ink2)">From <strong style="color:var(--ink)">${escHtml(selected.from || 'Unknown')}</strong> &lt;${escHtml(selected.fromEmail || '')}&gt;</div>
+            <div style="font-size:11px;color:var(--ink3);margin-top:2px;font-family:'DM Mono',monospace">${escHtml(selected.receivedAt || '')} · via ${escHtml(ch?.name || selected.channelId)}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+            ${selected.status === 'new'
+              ? `<button class="btn btn-sm btn-solid" onclick="convertEmailToTicket('${escAttr(selected.id)}')">→ Convert to ticket</button>
+                 <button class="btn btn-sm" onclick="dismissEmail('${escAttr(selected.id)}')">Dismiss</button>
+                 <button class="btn btn-sm btn-danger" onclick="markSpamEmail('${escAttr(selected.id)}')">Spam</button>`
+              : selected.status === 'converted'
+                ? `<button class="btn btn-sm" onclick="openTicket('${escAttr(selected.convertedTicketId)}')">Open ${escHtml(selected.convertedTicketId)}</button>`
+                : `<button class="btn btn-sm" onclick="restoreEmail('${escAttr(selected.id)}')">Restore</button>`}
+          </div>
+        </div>
+        ${cust ? `<div style="margin-bottom:14px;padding:10px 12px;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);font-size:11px;color:var(--green);display:flex;gap:8px;align-items:center">
+          <span style="font-weight:600">Customer matched</span>
+          <span class="link" onclick="CUSTOMER_SELECTED='${escAttr(cust.id)}';navTo('customers')" style="color:var(--green);font-weight:500">${escHtml(cust.first + ' ' + cust.last)}</span>
+          <span class="vip-badge vip-${(cust.vip || '').toLowerCase()}" style="margin-left:auto">${escHtml(cust.vip || '')}</span>
+        </div>` : `<div style="margin-bottom:14px;padding:10px 12px;background:var(--off2);border:1px solid var(--rule);border-radius:var(--r);font-size:11px;color:var(--ink3);font-style:italic">No customer record matches ${escHtml(selected.fromEmail || '')} — converted tickets default to ${escHtml(CUSTOMERS[0]?.id || 'M001')} as a placeholder.</div>`}
+        <div style="font-size:13px;color:var(--ink);line-height:1.65;white-space:pre-wrap;background:var(--off2);border:1px solid var(--rule);border-radius:var(--r);padding:14px 16px">${escHtml(selected.body || '')}</div>
+        ${isActed ? `<div style="margin-top:14px;font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${selected.status} ${selected.actedAt ? '· ' + escHtml(selected.actedAt) : ''}</div>` : ''}
+      </div>`;
+  })() : `
+    <div style="display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:12px;font-style:italic;padding:40px 0;border:1px dashed var(--rule);border-radius:var(--r)">Select an email to read it</div>`;
+
+  return `
+    <div class="page">
+      <div class="topbar">
+        <div class="tb-title">Inbox</div>
+        <span style="font-size:11px;color:var(--ink3);font-style:italic">Incoming mail across email and webform channels — convert into tickets, dismiss, or mark spam.</span>
+      </div>
+      <div class="kpi-bar">
+        <div class="kpi"><div class="kpi-n c-blue">${newN}</div><div class="kpi-l">New</div></div>
+        <div class="kpi"><div class="kpi-n c-green">${convN}</div><div class="kpi-l">Converted</div></div>
+        <div class="kpi"><div class="kpi-n">${dismN}</div><div class="kpi-l">Dismissed</div></div>
+        <div class="kpi"><div class="kpi-n c-red">${spamN}</div><div class="kpi-l">Spam</div></div>
+        <div class="kpi"><div class="kpi-n">${total}</div><div class="kpi-l">Total</div></div>
+      </div>
+      <div class="filter-bar">
+        <span class="filter-label">Channel</span>
+        <select class="filter-select" onchange="INBOX_FILTER_CHANNEL=this.value;renderPage('inbox')">
+          ${channelOpts.map(id => id === 'all'
+            ? `<option value="all" ${INBOX_FILTER_CHANNEL==='all'?'selected':''}>All channels</option>`
+            : `<option value="${escAttr(id)}" ${INBOX_FILTER_CHANNEL===id?'selected':''}>${escHtml(channelMap[id]?.name || id)}</option>`).join('')}
+        </select>
+        <span class="filter-label" style="margin-left:8px">Status</span>
+        <select class="filter-select" onchange="INBOX_FILTER_STATUS=this.value;renderPage('inbox')">
+          <option value="new"       ${INBOX_FILTER_STATUS==='new'?'selected':''}>New (${newN})</option>
+          <option value="converted" ${INBOX_FILTER_STATUS==='converted'?'selected':''}>Converted (${convN})</option>
+          <option value="dismissed" ${INBOX_FILTER_STATUS==='dismissed'?'selected':''}>Dismissed (${dismN})</option>
+          <option value="spam"      ${INBOX_FILTER_STATUS==='spam'?'selected':''}>Spam (${spamN})</option>
+          <option value="all"       ${INBOX_FILTER_STATUS==='all'?'selected':''}>All</option>
+        </select>
+        <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:auto">${list.length} of ${total}</span>
+      </div>
+      <div class="page-scroll">
+        <div style="display:grid;grid-template-columns:380px 1fr;gap:14px">
+          <div style="overflow-y:auto;max-height:calc(100vh - 280px);padding-right:4px">
+            ${list.length ? list.map(rowFor).join('') : `<div style="color:var(--ink3);font-size:12px;text-align:center;padding:40px 0;font-style:italic">No emails match the current filters</div>`}
+          </div>
+          <div>${detailHtml}</div>
+        </div>
       </div>
     </div>`;
 }

@@ -889,12 +889,12 @@ const TICKETS = [
     msgs:[
       {from:'Priya Sharma',r:'customer',t:'I am formally requesting erasure of all my personal data under GDPR Article 17. Please confirm within the statutory timeframe.',ts:'14:00'},
     ]},
-  {id:'TK-006',subject:'Bulk user import feature request',customerId:'M005',status:'resolved',priority:'low',category:'Feature',agent:'Tom Bates',created:'2025-04-14',updated:'2d ago',sla:'ok',tags:['feature-request'],aiTags:[{tag:'feature-request',conf:95,accepted:true}],csat:4,csatStars:4,csatSubmittedAt:'2025-04-14',csatRequestedAt:'2025-04-14',csatComment:'Quick acknowledgement and clear roadmap. Would have liked an exact ETA.',
+  {id:'TK-006',subject:'Bulk user import feature request',customerId:'M005',status:'resolved',priority:'low',category:'Feature',agent:'Tom Bates',created:'2025-04-14',updated:'2d ago',sla:'ok',tags:['feature-request'],aiTags:[{tag:'feature-request',conf:95,accepted:true}],csat:4,csatStars:4,csatSubmittedAt:'2025-04-14',csatRequestedAt:'2025-04-14',csatComment:'Quick acknowledgement and clear roadmap. Would have liked an exact ETA.',timeEntries:[{id:'TE-A1B2C3',agent:'Tom Bates',minutes:25,note:'Logged feature request, replied to customer',billable:true,ts:'2025-04-14 11:05'}],
     msgs:[
       {from:'Priya Sharma',r:'customer',t:'It would be really helpful to import users in bulk via CSV rather than one by one. We have 200+ users to migrate.',ts:'11:00'},
       {from:'AI Agent',r:'ai',t:'Thanks Priya — logged as high-priority. It\'s on the Q3 roadmap and you\'ll be notified when it ships.',ts:'11:01'},
     ]},
-  {id:'TK-007',subject:'iOS app very slow on iPhone 14',customerId:'M006',status:'resolved',priority:'normal',category:'Technical',agent:'James Webb',created:'2025-04-14',updated:'2d ago',sla:'ok',tags:['mobile','performance'],aiTags:[{tag:'mobile-bug',conf:88,accepted:true}],csat:5,csatStars:5,csatSubmittedAt:'2025-04-14',csatRequestedAt:'2025-04-14',csatComment:'James was incredibly responsive and the fix worked first try. Best support I\'ve had.',
+  {id:'TK-007',subject:'iOS app very slow on iPhone 14',customerId:'M006',status:'resolved',priority:'normal',category:'Technical',agent:'James Webb',created:'2025-04-14',updated:'2d ago',sla:'ok',tags:['mobile','performance'],aiTags:[{tag:'mobile-bug',conf:88,accepted:true}],csat:5,csatStars:5,csatSubmittedAt:'2025-04-14',csatRequestedAt:'2025-04-14',csatComment:'James was incredibly responsive and the fix worked first try. Best support I\'ve had.',timeEntries:[{id:'TE-D4E5F6',agent:'James Webb',minutes:45,note:'Reproduced on iPhone 14, traced to image cache',billable:true,ts:'2025-04-14 10:30'},{id:'TE-G7H8I9',agent:'James Webb',minutes:30,note:'Wrote test, deployed fix',billable:true,ts:'2025-04-14 13:15'}],
     msgs:[
       {from:'Carlos Diaz',r:'customer',t:'The mobile app is unusably slow on my iPhone 14. The dashboard takes 8+ seconds to load.',ts:'10:00'},
       {from:'AI Agent',r:'ai',t:'Hi Carlos, we patched a performance regression affecting iOS 17 devices earlier today in v4.2.1. Could you update the app?',ts:'10:01'},
@@ -1405,10 +1405,10 @@ function bulkAddTag() {
 function bulkExportTickets() {
   if (TICKET_SELECTED_IDS.size === 0) return;
   const list = TICKETS.filter(t => TICKET_SELECTED_IDS.has(t.id));
-  const headers = ['ID','Customer','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','Tags','CSAT'];
+  const headers = ['ID','Customer','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','Tags','CSAT','Time logged','Time billable'];
   const rows = list.map(t => {
     const cust = CUSTOMERS.find(c => c.id === t.customerId);
-    return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? ''];
+    return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? '', fmtMinutes(ticketTotalMinutes(t)), fmtMinutes(ticketBillableMinutes(t))];
   });
   const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   // UTF-8 BOM so Excel on Windows recognises the encoding for accented names/tags.
@@ -1444,10 +1444,10 @@ function bulkDeleteTickets() {
 
 function exportTicketList() {
   const list = getFilteredTickets();
-  const headers = ['ID','Customer','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','Tags','CSAT'];
+  const headers = ['ID','Customer','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','Tags','CSAT','Time logged','Time billable'];
   const rows = list.map(t => {
     const cust = CUSTOMERS.find(c => c.id === t.customerId);
-    return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? ''];
+    return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? '', fmtMinutes(ticketTotalMinutes(t)), fmtMinutes(ticketBillableMinutes(t))];
   });
   const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
@@ -1583,6 +1583,32 @@ function openTicket(id) {
           <div style="font-size:12px;color:var(--ink);font-weight:500;line-height:1.3">${a.title}</div>
         </div>`).join('')}
     </div>` : '';
+
+  const totalTimeMin    = ticketTotalMinutes(t);
+  const billableTimeMin = ticketBillableMinutes(t);
+  const recentTime      = (t.timeEntries || []).slice(0, 4);
+  const timeLogBlock = `
+    <div class="ts-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="ts-heading" style="margin:0">Time logged${totalTimeMin ? ` · ${fmtMinutes(totalTimeMin)}` : ''}</div>
+        <span class="link" onclick="showLogTimeModal('${id}')" style="font-size:11px">+ Log time</span>
+      </div>
+      ${totalTimeMin ? `
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink2);margin-bottom:8px">
+          <span>Total <strong style="color:var(--ink)">${fmtMinutes(totalTimeMin)}</strong></span>
+          <span>Billable <strong style="color:${billableTimeMin === totalTimeMin ? 'var(--ink)' : 'var(--amber)'}">${fmtMinutes(billableTimeMin)}</strong></span>
+        </div>
+        ${recentTime.map(e => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--rule)">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11.5px;color:var(--ink);font-weight:500">${fmtMinutes(e.minutes)}${e.billable === false ? ' <span style="color:var(--ink3);font-weight:400;font-size:10px">· non-billable</span>' : ''}</div>
+              ${e.note ? `<div style="font-size:11px;color:var(--ink2);font-style:italic;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${escHtml(e.note)}"</div>` : ''}
+              <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);margin-top:2px">${escHtml(e.agent)} · ${escHtml(e.ts)}</div>
+            </div>
+            <button onclick="removeTimeEntry(${escHtml(JSON.stringify(id))},${escHtml(JSON.stringify(e.id))})" style="background:transparent;border:none;color:var(--ink3);cursor:pointer;font-size:14px;padding:4px 6px;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--ink3)'" title="Remove entry">×</button>
+          </div>`).join('')}
+      ` : `<div style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 0">No time logged yet</div>`}
+    </div>`;
 
   const linkedIds = t.linked || [];
   const linkedBlock = `
@@ -1818,6 +1844,7 @@ function openTicket(id) {
           ${aiTagsHtml}
           ${followersBlock}
           ${kbBlock}
+          ${timeLogBlock}
           <div class="ts-section">
             <div class="ts-heading">Properties</div>
             <select class="ts-select" onchange="changeTicketStatus('${id}',this.value)">
@@ -2321,6 +2348,85 @@ function refreshTicketSLA(t) {
 }
 
 function refreshAllSLA() { TICKETS.forEach(refreshTicketSLA); }
+
+// ─── Time tracking ──────────────────────────────────────────────────────────
+// Each ticket can carry a timeEntries[] of {id, agent, minutes, note, ts, billable}.
+// Entries roll up into per-ticket totals shown in the sidebar, per-agent and
+// per-customer totals in reports, and a CSV column on tickets export.
+function timeEntryNextId() {
+  return 'TE-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function ticketTotalMinutes(t) {
+  return (t?.timeEntries || []).reduce((s, e) => s + (e.minutes || 0), 0);
+}
+
+function ticketBillableMinutes(t) {
+  return (t?.timeEntries || []).filter(e => e.billable !== false).reduce((s, e) => s + (e.minutes || 0), 0);
+}
+
+function addTimeEntry(ticketId, minutes, note, billable) {
+  const t = TICKETS.find(x => x.id === ticketId);
+  if (!t) return;
+  const m = parseInt(minutes, 10);
+  if (!Number.isFinite(m) || m <= 0) { alert('Enter a positive number of minutes.'); return; }
+  if (!t.timeEntries) t.timeEntries = [];
+  const entry = {
+    id: timeEntryNextId(),
+    agent: SESSION?.name || 'Agent',
+    minutes: m,
+    note: (note || '').trim() || null,
+    billable: billable !== false,
+    ts: new Date().toISOString().slice(0, 16).replace('T', ' '),
+  };
+  t.timeEntries.unshift(entry);
+  logTicketEvent(ticketId, 'system', `Logged ${fmtMinutes(m)}${entry.billable ? '' : ' (non-billable)'}${entry.note ? ' · ' + entry.note : ''}`);
+  if (CURRENT_TICKET === ticketId) openTicket(ticketId);
+}
+
+function removeTimeEntry(ticketId, entryId) {
+  const t = TICKETS.find(x => x.id === ticketId);
+  if (!t || !t.timeEntries) return;
+  const idx = t.timeEntries.findIndex(e => e.id === entryId);
+  if (idx < 0) return;
+  const entry = t.timeEntries[idx];
+  if (SESSION?.name && entry.agent !== SESSION.name && !isAdmin()) {
+    alert('Only the agent who logged this entry (or an admin) can remove it.');
+    return;
+  }
+  t.timeEntries.splice(idx, 1);
+  logTicketEvent(ticketId, 'system', `Removed time entry · ${fmtMinutes(entry.minutes)}`);
+  if (CURRENT_TICKET === ticketId) openTicket(ticketId);
+}
+
+function showLogTimeModal(ticketId) {
+  const t = TICKETS.find(x => x.id === ticketId);
+  if (!t) return;
+  showModal(`Log time on ${escHtml(t.id)}`, `
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">Logged time rolls up in the ticket sidebar, the agent's totals, and the Reports page.</div>
+    <div class="form-row"><label class="form-label">Quick presets</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${[5, 15, 30, 60, 120].map(m => `<button type="button" class="btn btn-sm" style="flex:1" onclick="document.getElementById('te-min').value=${m}">${fmtMinutes(m)}</button>`).join('')}
+      </div>
+    </div>
+    <div class="form-row"><label class="form-label">Minutes</label>
+      <input class="form-input" type="number" id="te-min" min="1" max="1440" value="15"/>
+    </div>
+    <div class="form-row"><label class="form-label">Note (optional)</label>
+      <input class="form-input" id="te-note" placeholder="e.g. Investigated payment gateway logs"/>
+    </div>
+    <div class="form-row" style="display:flex;align-items:center;gap:8px">
+      <label class="toggle"><input type="checkbox" id="te-billable" checked><span class="toggle-slider"></span></label>
+      <label class="form-label" style="margin:0">Billable</label>
+    </div>
+  `, () => {
+    const min = document.getElementById('te-min').value;
+    const note = document.getElementById('te-note').value;
+    const billable = document.getElementById('te-billable').checked;
+    addTimeEntry(ticketId, min, note, billable);
+    closeModal();
+  }, 'Log time');
+}
 
 // ─── Snooze ──────────────────────────────────────────────────────────────────
 // Snoozing pauses a ticket until a chosen wall-clock time. While snoozed:
@@ -5839,7 +5945,9 @@ function getReportTickets() {
 function computeReportStats(tickets) {
   const byStatus = {}, byPriority = {}, byCategory = {}, byAgent = {};
   const csatScores = [];
+  const timeByAgent = {};
   let slaOk = 0, slaWarn = 0, slaBreach = 0;
+  let timeTotal = 0, timeBillable = 0;
   for (const t of tickets) {
     byStatus[t.status]     = (byStatus[t.status]     ||0) + 1;
     byPriority[t.priority] = (byPriority[t.priority] ||0) + 1;
@@ -5849,13 +5957,20 @@ function computeReportStats(tickets) {
     if      (t.sla === 'ok')     slaOk++;
     else if (t.sla === 'warn')   slaWarn++;
     else if (t.sla === 'breach') slaBreach++;
+    (t.timeEntries || []).forEach(e => {
+      timeTotal += e.minutes || 0;
+      if (e.billable !== false) timeBillable += e.minutes || 0;
+      if (!timeByAgent[e.agent]) timeByAgent[e.agent] = { total: 0, billable: 0 };
+      timeByAgent[e.agent].total += e.minutes || 0;
+      if (e.billable !== false) timeByAgent[e.agent].billable += e.minutes || 0;
+    });
   }
   const total = tickets.length;
   const resolved = byStatus.resolved || 0;
   const resolutionRate = total ? Math.round(resolved/total*100) : 0;
   const avgCSAT = csatScores.length ? csatScores.reduce((a,b)=>a+b,0)/csatScores.length : 0;
   const slaCompliance = total ? Math.round((slaOk + slaWarn)/total*100) : 0;
-  return { total, byStatus, byPriority, byCategory, byAgent, csatScores, csatCount:csatScores.length, avgCSAT, slaOk, slaWarn, slaBreach, slaCompliance, resolved, resolutionRate };
+  return { total, byStatus, byPriority, byCategory, byAgent, csatScores, csatCount:csatScores.length, avgCSAT, slaOk, slaWarn, slaBreach, slaCompliance, resolved, resolutionRate, timeTotal, timeBillable, timeByAgent };
 }
 
 const STATUS_COLORS   = { open:'var(--cyan)', pending:'var(--amber)', escalated:'var(--purple)', gdpr:'var(--red)', resolved:'var(--green)' };
@@ -5919,6 +6034,30 @@ function reportCSAT(s) {
     </div>`;
 }
 
+function reportTime(s) {
+  const items = Object.entries(s.timeByAgent || {}).sort((a, b) => b[1].total - a[1].total);
+  const max = Math.max(...items.map(i => i[1].total), 1);
+  const rows = items.map(([name, vals]) => {
+    const pct = (vals.total / max) * 100;
+    const billPct = vals.total ? (vals.billable / vals.total) * 100 : 0;
+    return `<div class="r-bar-row">
+      <div style="font-size:11px;color:var(--ink2);width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(name || 'Unassigned')}</div>
+      <div class="r-bar-track" title="${escHtml(fmtMinutes(vals.billable))} billable of ${escHtml(fmtMinutes(vals.total))}"><div class="r-bar-fill" style="background:var(--purple);width:${pct}%;position:relative"><div style="background:var(--amber);height:100%;width:${billPct}%"></div></div></div>
+      <div class="r-bar-val" style="font-family:'DM Mono',monospace">${fmtMinutes(vals.total)}</div>
+    </div>`;
+  }).join('');
+  const billPct = s.timeTotal ? Math.round((s.timeBillable / s.timeTotal) * 100) : 0;
+  return `
+    <div class="card">
+      <div class="card-title">Time logged</div>
+      <div style="display:flex;align-items:flex-end;gap:14px;margin:6px 0 14px">
+        <div style="font-size:30px;font-weight:700;line-height:1;color:var(--purple);font-family:'Inter',sans-serif;letter-spacing:-.02em">${s.timeTotal ? fmtMinutes(s.timeTotal) : '—'}</div>
+        <div style="font-size:11px;color:var(--ink3);padding-bottom:4px">${fmtMinutes(s.timeBillable)} billable · ${billPct}%</div>
+      </div>
+      ${rows || '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:16px 0">No time logged in this range</div>'}
+    </div>`;
+}
+
 function reportSLA(s) {
   return `
     <div class="card">
@@ -5934,8 +6073,8 @@ function reportSLA(s) {
 
 function exportReport() {
   const tickets = getReportTickets();
-  const headers = ['ID','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','CSAT'];
-  const rows = tickets.map(t => [t.id, t.subject, t.status, t.priority, t.category, t.agent, t.created, t.updated, t.sla, t.csat ?? '']);
+  const headers = ['ID','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','CSAT','Time logged','Time billable'];
+  const rows = tickets.map(t => [t.id, t.subject, t.status, t.priority, t.category, t.agent, t.created, t.updated, t.sla, t.csat ?? '', fmtMinutes(ticketTotalMinutes(t)), fmtMinutes(ticketBillableMinutes(t))]);
   const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -5966,6 +6105,7 @@ function renderReports() {
         <div class="kpi"><div class="kpi-n c-green">${s.resolutionRate}%</div><div class="kpi-l">Resolved</div></div>
         <div class="kpi"><div class="kpi-n c-amber">${s.avgCSAT?s.avgCSAT.toFixed(1):'—'}</div><div class="kpi-l">Avg CSAT</div></div>
         <div class="kpi"><div class="kpi-n c-blue">${s.slaCompliance}%</div><div class="kpi-l">SLA compliance</div></div>
+        <div class="kpi"><div class="kpi-n c-purple">${fmtMinutes(s.timeTotal)}</div><div class="kpi-l">Time logged</div></div>
       </div>
       <div class="page-scroll">
         <div class="report-grid">
@@ -5975,6 +6115,7 @@ function renderReports() {
           ${reportCategory(s)}
           ${reportAgents(s)}
           ${reportCSAT(s)}
+          ${reportTime(s)}
         </div>
       </div>
     </div>`;

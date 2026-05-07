@@ -261,6 +261,16 @@ mark{background:rgba(251,191,36,0.35);color:var(--ink);padding:0 2px;border-radi
 .kpi-n{font-family:'Inter',sans-serif;font-size:28px;font-weight:700;letter-spacing:-.03em;line-height:1}
 .kpi-n.c-blue{color:var(--cyan)}.kpi-n.c-red{color:var(--red)}.kpi-n.c-green{color:var(--green)}.kpi-n.c-amber{color:var(--amber)}.kpi-n.c-purple{color:var(--purple)}
 .kpi-l{font-family:'Inter',sans-serif;font-size:12px;font-weight:400;letter-spacing:.05em;text-transform:uppercase;color:var(--ink3);margin-top:4px}
+/* ── Collapsible sections ── */
+/* Carets are injected after each .kpi-bar / .filter-bar / .tab-bar by
+   applyCollapsibleHeaders(); per-section state lives in localStorage so the
+   layout sticks across reloads and page changes. */
+.sec-caret{position:absolute;top:6px;right:8px;background:transparent;border:none;cursor:pointer;color:var(--ink3);font-size:11px;padding:2px 6px;border-radius:3px;line-height:1;z-index:2;font-family:'Inter',sans-serif}
+.sec-caret:hover{color:var(--ink);background:var(--off2)}
+.sec-collapsed{padding:6px 14px!important;min-height:0!important;cursor:pointer;display:flex!important;align-items:center;gap:8px;grid-template-columns:none!important;flex-wrap:nowrap}
+.sec-collapsed > *:not(.sec-caret){display:none!important}
+.sec-collapsed::before{content:attr(data-collapsed-label);color:var(--ink3);font-size:11px;font-style:italic;font-family:'Inter',sans-serif}
+.sec-collapsed:hover{background:var(--off2)!important}
 /* ── Tags / Pills ── */
 .tag{font-family:'Inter',sans-serif;font-size:10px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:4px;display:inline-flex;align-items:center;gap:3px}
 .tag-open{border:1px solid rgba(34,211,238,.3);color:var(--cyan);background:var(--cyan-lt)}
@@ -1157,7 +1167,92 @@ function renderPage(page) {
   if (page === 'ai') initAI();
   if (page === 'reports') drawReportCharts();
   if (page === 'tickets') initTicketsPage();
+  applyCollapsibleHeaders(page);
   updateNavBadges();
+}
+
+// ─── Collapsible sections ───────────────────────────────────────────────────
+// After each renderPage we inject a small caret into every .kpi-bar /
+// .filter-bar / .tab-bar so an agent can hide chrome they don't need today.
+// Section IDs are page-scoped + indexed within the page, so a page with
+// multiple filter bars (e.g. tickets has two) tracks them independently.
+let COLLAPSED_SECTIONS = new Set(JSON.parse(localStorage.getItem('collapsed_sections') || '[]'));
+const SEC_LABELS = {
+  'kpi-bar':    'KPIs',
+  'filter-bar': 'Filters',
+  'tab-bar':    'Tabs',
+};
+
+function persistCollapsedSections() {
+  localStorage.setItem('collapsed_sections', JSON.stringify([...COLLAPSED_SECTIONS]));
+}
+
+function toggleSection(id, event) {
+  if (event) event.stopPropagation();
+  if (COLLAPSED_SECTIONS.has(id)) COLLAPSED_SECTIONS.delete(id);
+  else COLLAPSED_SECTIONS.add(id);
+  persistCollapsedSections();
+  // Find the section live in the DOM and toggle the class without a full
+  // re-render so any input focus / scroll position is preserved.
+  const el = document.querySelector(`[data-sec-id="${CSS.escape(id)}"]`);
+  if (el) {
+    const collapsed = COLLAPSED_SECTIONS.has(id);
+    el.classList.toggle('sec-collapsed', collapsed);
+    const caret = el.querySelector(':scope > .sec-caret');
+    if (caret) {
+      caret.textContent = collapsed ? '▸' : '▾';
+      caret.title = collapsed ? 'Show section' : 'Hide section';
+    }
+  }
+}
+
+function applyCollapsibleHeaders(page) {
+  const sels = ['.kpi-bar', '.filter-bar', '.tab-bar'];
+  sels.forEach(sel => {
+    const els = document.querySelectorAll(sel);
+    els.forEach((el, i) => {
+      // Each section gets a stable id per page + kind + index. Tab bars and
+      // multiple filter bars on the same page each get their own slot.
+      const kind = sel.slice(1);
+      const id = `${page || CURRENT_PAGE || 'page'}:${kind}:${i}`;
+      el.dataset.secId = id;
+      el.dataset.collapsedLabel = '▸ Show ' + (SEC_LABELS[kind] || 'section');
+      // Make positioned for the absolute caret.
+      if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+      // Inject caret if not present.
+      if (!el.querySelector(':scope > .sec-caret')) {
+        const btn = document.createElement('button');
+        btn.className = 'sec-caret';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Toggle section');
+        btn.addEventListener('click', e => toggleSection(id, e));
+        el.appendChild(btn);
+      }
+      // Make the whole collapsed bar click-to-expand.
+      if (!el._collapsibleClick) {
+        el._collapsibleClick = true;
+        el.addEventListener('click', e => {
+          if (!el.classList.contains('sec-collapsed')) return;
+          if (e.target.closest('.sec-caret')) return;
+          toggleSection(id, e);
+        });
+      }
+      // Sync state.
+      const collapsed = COLLAPSED_SECTIONS.has(id);
+      el.classList.toggle('sec-collapsed', collapsed);
+      const caret = el.querySelector(':scope > .sec-caret');
+      if (caret) {
+        caret.textContent = collapsed ? '▸' : '▾';
+        caret.title = collapsed ? 'Show section' : 'Hide section';
+      }
+    });
+  });
+}
+
+function resetAllCollapsedSections() {
+  COLLAPSED_SECTIONS.clear();
+  persistCollapsedSections();
+  renderPage(CURRENT_PAGE || 'dashboard');
 }
 
 function initTicketsPage() {
@@ -5052,6 +5147,17 @@ function settingsAppearance() {
           <input type="checkbox" ${isSystem?'checked':''} onchange="setTheme(this.checked?'system':'${fallback}');renderPage('settings')">
           <span class="toggle-slider"></span>
         </label>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-h">Page chrome</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px">Click the small caret in the top-right of any KPI bar, filter bar, or tab bar to collapse it. Collapsed sections shrink to a one-line "▸ Show …" pill — click anywhere on the pill to expand again. Choices stick across reloads.</div>
+      <div class="settings-row">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--ink)">Hidden sections</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:2px">${COLLAPSED_SECTIONS.size} section${COLLAPSED_SECTIONS.size===1?'':'s'} collapsed across pages</div>
+        </div>
+        <button class="btn btn-sm" ${COLLAPSED_SECTIONS.size===0?'disabled':''} onclick="resetAllCollapsedSections()">Show all</button>
       </div>
     </div>`;
 }

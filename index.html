@@ -371,6 +371,7 @@ textarea.form-input{resize:vertical;min-height:72px}
 .msg-agent .msg-from{color:var(--purple)}.msg-ai .msg-from{color:var(--green)}.msg-note .msg-from{color:var(--amber)}
 .ai-mark{font-size:8px;padding:0 4px;border:1px solid var(--green);color:var(--green);border-radius:3px;background:rgba(52,211,153,0.1)}
 .note-mark{font-size:8px;padding:0 4px;border:1px solid var(--amber);color:var(--amber);border-radius:1px}
+.ts-stale-badge{font-weight:400;text-transform:none;letter-spacing:0;color:var(--amber);font-size:10px;font-style:italic;margin-left:6px}
 .portal-banner{padding:8px 20px;background:var(--purple-lt);border-bottom:1px solid var(--purple);color:var(--purple);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:10px;flex-shrink:0}
 .portal-tabs{display:flex;gap:2px;padding:8px 20px;border-bottom:1px solid var(--rule);background:var(--off);flex-shrink:0}
 .portal-tab{padding:8px 14px;font-size:12px;color:var(--ink2);cursor:pointer;border-radius:6px;transition:all .15s}
@@ -1575,7 +1576,7 @@ function openTicket(id) {
 
   const summarizing = t.aiSummary && t.aiSummary.summarizing;
   const summary = t.aiSummary && !t.aiSummary.summarizing ? t.aiSummary : null;
-  const summaryStale = summary && summary.coveredMsgCount != null && (t.msgs || []).length > summary.coveredMsgCount;
+  const summaryStale = summary && summary.coveredMsgCount !== undefined && summary.coveredMsgCount !== null && (t.msgs || []).length > summary.coveredMsgCount;
   const aiSummaryBlock = summarizing ? `
     <div class="ts-section">
       <div class="ts-heading">AI Summary <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--purple);font-size:10px;font-style:italic;margin-left:4px">generating…</span></div>
@@ -1583,7 +1584,7 @@ function openTicket(id) {
     </div>` : (summary ? `
     <div class="ts-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div class="ts-heading" style="margin:0">AI Summary${summaryStale ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--amber);font-size:10px;font-style:italic;margin-left:4px">stale</span>' : ''}</div>
+        <div class="ts-heading" style="margin:0">AI Summary${summaryStale ? '<span class="ts-stale-badge">stale</span>' : ''}</div>
         <span style="display:flex;gap:10px">
           <span class="link" onclick="summarizeTicket('${escAttr(id)}')" style="font-size:11px">Refresh</span>
           <span class="link" onclick="clearTicketSummary('${escAttr(id)}')" style="font-size:11px;color:var(--ink3)">×</span>

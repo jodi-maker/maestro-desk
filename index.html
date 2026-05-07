@@ -3425,12 +3425,12 @@ function showNewTicketModal(templateId) {
       </select>
     </div>` : ''}
     ${customerRow || categoryRow ? `<div class="form-grid">${customerRow}${categoryRow}</div>` : ''}
-    <div class="form-row"><label class="form-label">Subject${req('subject')}</label><input class="form-input" id="nt-subj" value="${esc(tpl?.subject)}" placeholder="Describe the issue…"/></div>
+    ${visible('subject') ? `<div class="form-row"><label class="form-label">Subject${req('subject')}</label><input class="form-input" id="nt-subj" value="${esc(tpl?.subject)}" placeholder="Describe the issue…"/></div>` : ''}
     ${priorityRow || agentRow ? `<div class="form-grid">${priorityRow}${agentRow}</div>` : ''}
     ${messageRow}
   `, () => {
-    const subj = document.getElementById('nt-subj').value.trim();
-    if (!subj) { alert('Subject is required.'); return; }
+    const subj = document.getElementById('nt-subj')?.value.trim() || '';
+    if (visible('subject') && isFieldRequired('ticket', 'subject') && !subj) { alert('Subject is required.'); return; }
     const custInput = document.getElementById('nt-cust');
     const custId = custInput ? (custInput.value.trim() || 'M001') : 'M001';
     if (visible('customerId') && isFieldRequired('ticket', 'customerId') && !custInput?.value.trim()) {
@@ -3444,7 +3444,17 @@ function showNewTicketModal(templateId) {
     if (visible('category') && isFieldRequired('ticket', 'category') && !document.getElementById('nt-cat')?.value) {
       alert('Category is required.'); return;
     }
-    const newId = 'TK-' + String(Math.max(0, ...TICKETS.map(t => parseInt((t.id||'').split('-')[1] || '0', 10))) + 1).padStart(3,'0');
+    if (visible('priority') && isFieldRequired('ticket', 'priority') && !document.getElementById('nt-pri')?.value) {
+      alert('Priority is required.'); return;
+    }
+    if (visible('agent') && isFieldRequired('ticket', 'agent')) {
+      const v = document.getElementById('nt-agent')?.value;
+      if (!v || v === '__auto__') { alert('Assignee is required (Auto does not satisfy a required assignment).'); return; }
+    }
+    // parseInt on non-numeric IDs returns NaN; filter them out so a stray
+    // ticket like "TK-foo" can't poison Math.max into NaN.
+    const ticketNums = TICKETS.map(t => parseInt((t.id||'').split('-')[1] || '0', 10)).filter(n => Number.isFinite(n));
+    const newId = 'TK-' + String(Math.max(0, ...ticketNums) + 1).padStart(3,'0');
     const agentPick = document.getElementById('nt-agent')?.value || '__auto__';
     TICKETS.unshift({
       id:newId, subject:subj, customerId:custId,
@@ -3731,15 +3741,14 @@ let CUST_VIP_FILTER = 'all';
 let CUST_BRAND_FILTER = 'all';
 let CUST_VIEW_FILTER = 'all';
 let CUST_GROUP_BY = 'none';
-let CUST_SHOW_MERGED = false;
 let CUSTOMER_SELECTED = null;
 const CUSTOMER_SELECTED_IDS = new Set();
 
 function applyCustFilters() {
   let list = [...CUSTOMERS];
-  // Hide merged-into duplicates by default; the "Show merged" view chip surfaces them.
-  if (CUST_VIEW_FILTER === 'merged')           list = list.filter(c => c.mergedInto);
-  else if (!CUST_SHOW_MERGED)                  list = list.filter(c => !c.mergedInto);
+  // Hide merged-into duplicates by default; the "Merged" view chip surfaces them on demand.
+  if (CUST_VIEW_FILTER === 'merged') list = list.filter(c => c.mergedInto);
+  else                               list = list.filter(c => !c.mergedInto);
   if (CUST_VIEW_FILTER === 'premium')         list = list.filter(c => c.vip === 'Platinum' || c.vip === 'Gold');
   else if (CUST_VIEW_FILTER === 'kyc-pending') list = list.filter(c => c.kyc !== 'Verified');
   else if (CUST_VIEW_FILTER === 'no-consent')  list = list.filter(c => !c.consent);
@@ -4018,8 +4027,10 @@ function showMergeCustomerModal(custId) {
   const src = CUSTOMERS.find(x => x.id === custId);
   if (!src) return;
   if (src.mergedInto) { alert(`Already merged into ${src.mergedInto}.`); return; }
-  // Candidates: not self, not already merged, not previously merged into this one.
-  const candidates = CUSTOMERS.filter(x => x.id !== custId && !x.mergedInto && x.mergedFrom?.includes(custId) !== true);
+  // Candidates: not self and not themselves a merged duplicate. A previously-
+  // unmerged customer that used to have custId merged in is still a valid
+  // primary, so we don't filter that out.
+  const candidates = CUSTOMERS.filter(x => x.id !== custId && !x.mergedInto);
   if (!candidates.length) {
     showModal('Merge customer into…', '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px 0">No primary candidates available.</div>', null, null);
     return;
@@ -4064,15 +4075,24 @@ function mergeCustomers(srcId, primaryId) {
     primary.notes.push({ author:'System', ts: new Date().toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }), text: `── Notes merged from ${srcId} ──`, mergedFromCustomerId: srcId });
     src.notes.forEach(n => primary.notes.push({ ...n, mergedFromCustomerId: srcId }));
   }
-  // Backfill primary fields from src where primary is blank.
+  // Backfill primary fields from src where primary is blank, recording which
+  // fields we touched so unmergeCustomer can put the primary back the way it
+  // was instead of leaving it carrying the source's data forever.
+  primary._mergeBackfilled = primary._mergeBackfilled || {};
+  primary._mergeBackfilled[srcId] = { fields: [], custom: [] };
   ['email','mobile','username','brand','vip','jurisdiction','kyc','since','bo'].forEach(f => {
-    if (!primary[f] && src[f]) primary[f] = src[f];
+    if (!primary[f] && src[f]) {
+      primary[f] = src[f];
+      primary._mergeBackfilled[srcId].fields.push(f);
+    }
   });
-  // Backfill custom fields where primary doesn't have a value.
   if (src.custom) {
     primary.custom = primary.custom || {};
     Object.keys(src.custom).forEach(k => {
-      if (primary.custom[k] === undefined || primary.custom[k] === '') primary.custom[k] = src.custom[k];
+      if (primary.custom[k] === undefined || primary.custom[k] === '') {
+        primary.custom[k] = src.custom[k];
+        primary._mergeBackfilled[srcId].custom.push(k);
+      }
     });
   }
   src.mergedInto = primaryId;
@@ -4100,6 +4120,14 @@ function unmergeCustomer(srcId) {
   // Strip notes that came from src, including the separator marker.
   if (primary && primary.notes) {
     primary.notes = primary.notes.filter(n => n.mergedFromCustomerId !== srcId);
+  }
+  // Roll back fields the merge backfilled from this source, so the primary
+  // returns to the state it was in pre-merge for those fields.
+  if (primary && primary._mergeBackfilled?.[srcId]) {
+    const back = primary._mergeBackfilled[srcId];
+    (back.fields || []).forEach(f => { primary[f] = ''; });
+    if (primary.custom && back.custom) (back.custom || []).forEach(k => { delete primary.custom[k]; });
+    delete primary._mergeBackfilled[srcId];
   }
   if (primary && primary.mergedFrom) primary.mergedFrom = primary.mergedFrom.filter(x => x !== srcId);
   delete src.mergedInto;

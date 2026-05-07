@@ -382,6 +382,12 @@ textarea.form-input{resize:vertical;min-height:72px}
 .portal-card--static:hover{border-color:var(--rule);box-shadow:none}
 .portal-msg-customer{background:var(--purple-lt);color:var(--ink);padding:10px 14px;border-radius:var(--r2);max-width:75%;align-self:flex-end;margin-left:auto;font-size:13px;line-height:1.55}
 .portal-msg-agent{background:var(--off2);color:var(--ink);padding:10px 14px;border-radius:var(--r2);max-width:75%;font-size:13px;line-height:1.55}
+.mention{display:inline-block;padding:1px 4px;border-radius:3px;background:var(--purple-lt);color:var(--purple);font-weight:500}
+.mention.self{background:var(--amber-lt);color:var(--amber)}
+.mention-dd{position:absolute;background:var(--off);border:1px solid var(--rule2);border-radius:var(--r);max-height:220px;overflow-y:auto;z-index:30;box-shadow:0 8px 18px rgba(0,0,0,.18);min-width:200px}
+.mention-dd-item{padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px}
+.mention-dd-item:hover,.mention-dd-item.active{background:var(--purple-lt);color:var(--purple)}
+.mention-dd-empty{padding:10px 12px;color:var(--ink3);font-size:12px;font-style:italic}
 /* ── Composer ── */
 .composer{border-top:1px solid var(--rule);flex-shrink:0}
 .composer-tabs{display:flex;padding:0 16px;border-bottom:1px solid var(--rule)}
@@ -898,12 +904,12 @@ const TICKETS = [
     msgs:[
       {from:'Priya Sharma',r:'customer',t:'I am formally requesting erasure of all my personal data under GDPR Article 17. Please confirm within the statutory timeframe.',ts:'14:00'},
     ]},
-  {id:'TK-006',subject:'Bulk user import feature request',customerId:'M005',status:'resolved',priority:'low',category:'Feature',agent:'Tom Bates',created:'2025-04-14',updated:'2d ago',sla:'ok',tags:['feature-request'],aiTags:[{tag:'feature-request',conf:95,accepted:true}],csat:4,csatStars:4,csatSubmittedAt:'2025-04-14',csatRequestedAt:'2025-04-14',csatComment:'Quick acknowledgement and clear roadmap. Would have liked an exact ETA.',
+  {id:'TK-006',subject:'Bulk user import feature request',customerId:'M005',status:'resolved',priority:'low',category:'Feature',agent:'Tom Bates',created:'2025-04-14',updated:'2d ago',sla:'ok',tags:['feature-request'],aiTags:[{tag:'feature-request',conf:95,accepted:true}],csat:4,csatStars:4,csatSubmittedAt:'2025-04-14',csatRequestedAt:'2025-04-14',csatComment:'Quick acknowledgement and clear roadmap. Would have liked an exact ETA.',timeEntries:[{id:'TE-A1B2C3',agent:'Tom Bates',minutes:25,note:'Logged feature request, replied to customer',billable:true,ts:'2025-04-14 11:05'}],
     msgs:[
       {from:'Priya Sharma',r:'customer',t:'It would be really helpful to import users in bulk via CSV rather than one by one. We have 200+ users to migrate.',ts:'11:00'},
       {from:'AI Agent',r:'ai',t:'Thanks Priya — logged as high-priority. It\'s on the Q3 roadmap and you\'ll be notified when it ships.',ts:'11:01'},
     ]},
-  {id:'TK-007',subject:'iOS app very slow on iPhone 14',customerId:'M006',status:'resolved',priority:'normal',category:'Technical',agent:'James Webb',created:'2025-04-14',updated:'2d ago',sla:'ok',tags:['mobile','performance'],aiTags:[{tag:'mobile-bug',conf:88,accepted:true}],csat:5,csatStars:5,csatSubmittedAt:'2025-04-14',csatRequestedAt:'2025-04-14',csatComment:'James was incredibly responsive and the fix worked first try. Best support I\'ve had.',
+  {id:'TK-007',subject:'iOS app very slow on iPhone 14',customerId:'M006',status:'resolved',priority:'normal',category:'Technical',agent:'James Webb',created:'2025-04-14',updated:'2d ago',sla:'ok',tags:['mobile','performance'],aiTags:[{tag:'mobile-bug',conf:88,accepted:true}],csat:5,csatStars:5,csatSubmittedAt:'2025-04-14',csatRequestedAt:'2025-04-14',csatComment:'James was incredibly responsive and the fix worked first try. Best support I\'ve had.',timeEntries:[{id:'TE-D4E5F6',agent:'James Webb',minutes:45,note:'Reproduced on iPhone 14, traced to image cache',billable:true,ts:'2025-04-14 10:30'},{id:'TE-G7H8I9',agent:'James Webb',minutes:30,note:'Wrote test, deployed fix',billable:true,ts:'2025-04-14 13:15'}],
     msgs:[
       {from:'Carlos Diaz',r:'customer',t:'The mobile app is unusably slow on my iPhone 14. The dashboard takes 8+ seconds to load.',ts:'10:00'},
       {from:'AI Agent',r:'ai',t:'Hi Carlos, we patched a performance regression affecting iOS 17 devices earlier today in v4.2.1. Could you update the app?',ts:'10:01'},
@@ -1415,10 +1421,10 @@ function bulkAddTag() {
 function bulkExportTickets() {
   if (TICKET_SELECTED_IDS.size === 0) return;
   const list = TICKETS.filter(t => TICKET_SELECTED_IDS.has(t.id));
-  const headers = ['ID','Customer','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','Tags','CSAT'];
+  const headers = ['ID','Customer','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','Tags','CSAT','Time logged','Time billable'];
   const rows = list.map(t => {
     const cust = CUSTOMERS.find(c => c.id === t.customerId);
-    return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? ''];
+    return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? '', fmtMinutes(ticketTotalMinutes(t)), fmtMinutes(ticketBillableMinutes(t))];
   });
   const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   // UTF-8 BOM so Excel on Windows recognises the encoding for accented names/tags.
@@ -1454,10 +1460,10 @@ function bulkDeleteTickets() {
 
 function exportTicketList() {
   const list = getFilteredTickets();
-  const headers = ['ID','Customer','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','Tags','CSAT'];
+  const headers = ['ID','Customer','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','Tags','CSAT','Time logged','Time billable'];
   const rows = list.map(t => {
     const cust = CUSTOMERS.find(c => c.id === t.customerId);
-    return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? ''];
+    return [t.id, cust ? cust.first + ' ' + cust.last : '', t.subject, t.status, t.priority, t.category, t.agent || '', t.created, t.updated, t.sla, (t.tags || []).join(';'), t.csat ?? '', fmtMinutes(ticketTotalMinutes(t)), fmtMinutes(ticketBillableMinutes(t))];
   });
   const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
@@ -1594,6 +1600,32 @@ function openTicket(id) {
         </div>`).join('')}
     </div>` : '';
 
+  const totalTimeMin    = ticketTotalMinutes(t);
+  const billableTimeMin = ticketBillableMinutes(t);
+  const recentTime      = (t.timeEntries || []).slice(0, 4);
+  const timeLogBlock = `
+    <div class="ts-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="ts-heading" style="margin:0">Time logged${totalTimeMin ? ` · ${fmtMinutes(totalTimeMin)}` : ''}</div>
+        <span class="link" onclick="showLogTimeModal('${id}')" style="font-size:11px">+ Log time</span>
+      </div>
+      ${totalTimeMin ? `
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink2);margin-bottom:8px">
+          <span>Total <strong style="color:var(--ink)">${fmtMinutes(totalTimeMin)}</strong></span>
+          <span>Billable <strong style="color:${billableTimeMin === totalTimeMin ? 'var(--ink)' : 'var(--amber)'}">${fmtMinutes(billableTimeMin)}</strong></span>
+        </div>
+        ${recentTime.map(e => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--rule)">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11.5px;color:var(--ink);font-weight:500">${fmtMinutes(e.minutes)}${e.billable === false ? ' <span style="color:var(--ink3);font-weight:400;font-size:10px">· non-billable</span>' : ''}</div>
+              ${e.note ? `<div style="font-size:11px;color:var(--ink2);font-style:italic;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">"${escHtml(e.note)}"</div>` : ''}
+              <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);margin-top:2px">${escHtml(e.agent)} · ${escHtml(e.ts)}</div>
+            </div>
+            <button onclick="removeTimeEntry(${escHtml(JSON.stringify(id))},${escHtml(JSON.stringify(e.id))})" style="background:transparent;border:none;color:var(--ink3);cursor:pointer;font-size:14px;padding:4px 6px;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--ink3)'" title="Remove entry">×</button>
+          </div>`).join('')}
+      ` : `<div style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 0">No time logged yet</div>`}
+    </div>`;
+
   const linkedIds = t.linked || [];
   const linkedBlock = `
     <div class="ts-section">
@@ -1666,10 +1698,13 @@ function openTicket(id) {
       bodyNote = `<div style="margin-top:6px;font-size:10px;color:var(--ink3);font-style:italic">→ Sent to customer in ${escHtml(m.translatedTo || 'their language')} · <span class="link" onclick="showSentTextModal('${escAttr(id)}',${i})">view sent text</span></div>`;
     }
 
+    const bodyHtml = m.r === 'note'
+      ? renderTextWithMentions(bodyText)
+      : escHtml(bodyText).replace(/\n/g, '<br>');
     return `
     <div class="msg msg-${m.r}">
       <div class="msg-from">${escHtml(m.from)} ${m.r==='ai'?'<span class="ai-mark">AI</span>':''} ${m.r==='note'?'<span class="note-mark">Note</span>':''}<span style="margin-left:auto;font-family:'Inter',sans-serif;font-size:11px;color:var(--ink3)">${escHtml(m.ts)}</span></div>
-      ${escHtml(bodyText).replace(/\n/g, '<br>')}
+      ${bodyHtml}
       ${bodyNote}
       ${translateBlock}
     </div>`;
@@ -1751,7 +1786,7 @@ function openTicket(id) {
               </div>
             </div>
             <div class="composer-body">
-              <textarea class="compose-area" id="compose-${id}" placeholder="${COMPOSE_TAB==='reply'?'Write a reply or use AI…':'Add an internal note…'}" oninput="onComposeInput('${id}')">${escHtml(loadDraft(id))}</textarea>
+              <textarea class="compose-area" id="compose-${id}" placeholder="${COMPOSE_TAB==='reply'?'Write a reply or use AI…':'Add an internal note… type @ to mention an agent'}" oninput="onComposeInput('${id}')" onkeydown="if(mentionDropdownKey(event,'${id}'))return;" onblur="setTimeout(hideMentionDropdown,150)">${escHtml(loadDraft(id))}</textarea>
               <div class="comp-meta">
                 <span id="draft-status-${id}">${loadDraft(id) ? 'Draft restored' : ''}</span>
                 <span id="char-count-${id}">${loadDraft(id).length} chars</span>
@@ -1825,6 +1860,7 @@ function openTicket(id) {
           ${aiTagsHtml}
           ${followersBlock}
           ${kbBlock}
+          ${timeLogBlock}
           <div class="ts-section">
             <div class="ts-heading">Properties</div>
             <select class="ts-select" onchange="changeTicketStatus('${id}',this.value)">
@@ -2329,6 +2365,85 @@ function refreshTicketSLA(t) {
 
 function refreshAllSLA() { TICKETS.forEach(refreshTicketSLA); }
 
+// ─── Time tracking ──────────────────────────────────────────────────────────
+// Each ticket can carry a timeEntries[] of {id, agent, minutes, note, ts, billable}.
+// Entries roll up into per-ticket totals shown in the sidebar, per-agent and
+// per-customer totals in reports, and a CSV column on tickets export.
+function timeEntryNextId() {
+  return 'TE-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function ticketTotalMinutes(t) {
+  return (t?.timeEntries || []).reduce((s, e) => s + (e.minutes || 0), 0);
+}
+
+function ticketBillableMinutes(t) {
+  return (t?.timeEntries || []).filter(e => e.billable !== false).reduce((s, e) => s + (e.minutes || 0), 0);
+}
+
+function addTimeEntry(ticketId, minutes, note, billable) {
+  const t = TICKETS.find(x => x.id === ticketId);
+  if (!t) return;
+  const m = parseInt(minutes, 10);
+  if (!Number.isFinite(m) || m <= 0) { alert('Enter a positive number of minutes.'); return; }
+  if (!t.timeEntries) t.timeEntries = [];
+  const entry = {
+    id: timeEntryNextId(),
+    agent: SESSION?.name || 'Agent',
+    minutes: m,
+    note: (note || '').trim() || null,
+    billable: billable !== false,
+    ts: new Date().toISOString().slice(0, 16).replace('T', ' '),
+  };
+  t.timeEntries.unshift(entry);
+  logTicketEvent(ticketId, 'system', `Logged ${fmtMinutes(m)}${entry.billable ? '' : ' (non-billable)'}${entry.note ? ' · ' + entry.note : ''}`);
+  if (CURRENT_TICKET === ticketId) openTicket(ticketId);
+}
+
+function removeTimeEntry(ticketId, entryId) {
+  const t = TICKETS.find(x => x.id === ticketId);
+  if (!t || !t.timeEntries) return;
+  const idx = t.timeEntries.findIndex(e => e.id === entryId);
+  if (idx < 0) return;
+  const entry = t.timeEntries[idx];
+  if (SESSION?.name && entry.agent !== SESSION.name && !isAdmin()) {
+    alert('Only the agent who logged this entry (or an admin) can remove it.');
+    return;
+  }
+  t.timeEntries.splice(idx, 1);
+  logTicketEvent(ticketId, 'system', `Removed time entry · ${fmtMinutes(entry.minutes)}`);
+  if (CURRENT_TICKET === ticketId) openTicket(ticketId);
+}
+
+function showLogTimeModal(ticketId) {
+  const t = TICKETS.find(x => x.id === ticketId);
+  if (!t) return;
+  showModal(`Log time on ${escHtml(t.id)}`, `
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">Logged time rolls up in the ticket sidebar, the agent's totals, and the Reports page.</div>
+    <div class="form-row"><label class="form-label">Quick presets</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${[5, 15, 30, 60, 120].map(m => `<button type="button" class="btn btn-sm" style="flex:1" onclick="document.getElementById('te-min').value=${m}">${fmtMinutes(m)}</button>`).join('')}
+      </div>
+    </div>
+    <div class="form-row"><label class="form-label">Minutes</label>
+      <input class="form-input" type="number" id="te-min" min="1" max="1440" value="15"/>
+    </div>
+    <div class="form-row"><label class="form-label">Note (optional)</label>
+      <input class="form-input" id="te-note" placeholder="e.g. Investigated payment gateway logs"/>
+    </div>
+    <div class="form-row" style="display:flex;align-items:center;gap:8px">
+      <label class="toggle"><input type="checkbox" id="te-billable" checked><span class="toggle-slider"></span></label>
+      <label class="form-label" style="margin:0">Billable</label>
+    </div>
+  `, () => {
+    const min = document.getElementById('te-min').value;
+    const note = document.getElementById('te-note').value;
+    const billable = document.getElementById('te-billable').checked;
+    addTimeEntry(ticketId, min, note, billable);
+    closeModal();
+  }, 'Log time');
+}
+
 // ─── Snooze ──────────────────────────────────────────────────────────────────
 // Snoozing pauses a ticket until a chosen wall-clock time. While snoozed:
 //  - SLA evaluation returns 'snoozed' instead of running the timers
@@ -2704,6 +2819,164 @@ function onComposeInput(id) {
   if (cc) cc.textContent = `${el.value.length} chars`;
   const ds = document.getElementById('draft-status-' + id);
   if (ds) ds.textContent = el.value.length ? 'Draft saved' : '';
+  if (COMPOSE_TAB === 'note') updateMentionDropdown(id, el);
+  else hideMentionDropdown();
+}
+
+// ─── @mentions ───────────────────────────────────────────────────────────────
+// Parse @Full Name tokens out of a note body, returning an array of agent
+// names that actually exist. Used both at submit time (to seed the message's
+// mentions array for notifications) and during render to highlight tokens.
+function parseMentions(text) {
+  const out = [];
+  if (!text) return out;
+  // Match longer names first so "Tom Bates Jr" wins over "Tom Bates" if both exist.
+  const names = AGENTS.map(a => a.name).sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const re = new RegExp('(^|[^A-Za-z0-9_@])@' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_])');
+    if (re.test(text) && !out.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+function renderTextWithMentions(text) {
+  // Scan the ORIGINAL (unescaped) text for mention positions, then build the
+  // output by escaping segments between mentions independently. Avoids the
+  // class of bug where regex over already-escaped HTML can interleave a span
+  // into the middle of an entity (&amp;, &lt;, etc).
+  if (!text) return '';
+  const me = SESSION?.name;
+  const names = AGENTS.map(a => a.name).sort((a, b) => b.length - a.length);
+  const isWord = c => /[A-Za-z0-9_]/.test(c);
+  const found = [];
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === '@' && (i === 0 || !isWord(text[i - 1]))) {
+      let matched = null;
+      for (const name of names) {
+        if (text.slice(i + 1, i + 1 + name.length) === name) {
+          const after = text[i + 1 + name.length] || '';
+          if (!isWord(after)) { matched = name; break; }
+        }
+      }
+      if (matched) {
+        found.push({ pos: i, name: matched });
+        i += 1 + matched.length;
+        continue;
+      }
+    }
+    i++;
+  }
+  if (!found.length) return escHtml(text).replace(/\n/g, '<br>');
+  let out = '';
+  let pos = 0;
+  for (const m of found) {
+    out += escHtml(text.slice(pos, m.pos));
+    const cls = m.name === me ? 'mention self' : 'mention';
+    out += `<span class="${cls}">@${escHtml(m.name)}</span>`;
+    pos = m.pos + 1 + m.name.length;
+  }
+  out += escHtml(text.slice(pos));
+  return out.replace(/\n/g, '<br>');
+}
+
+let MENTION_DD_ACTIVE_INDEX = 0;
+let MENTION_DD_MATCHES = [];
+
+function updateMentionDropdown(ticketId, el) {
+  const cursor = el.selectionStart || 0;
+  const before = el.value.slice(0, cursor);
+  // Match an @-token at the cursor: optional preceding space/start, '@', then up to one word.
+  const m = before.match(/(?:^|\s)@([A-Za-z]*)$/);
+  if (!m) { hideMentionDropdown(); return; }
+  const query = m[1].toLowerCase();
+  const matches = AGENTS
+    .map(a => a.name)
+    .filter(name => name !== SESSION?.name)
+    .filter(name => name.toLowerCase().includes(query))
+    .slice(0, 6);
+  MENTION_DD_MATCHES = matches;
+  MENTION_DD_ACTIVE_INDEX = 0;
+  showMentionDropdown(ticketId, el, matches, query);
+}
+
+function showMentionDropdown(ticketId, el, matches, query) {
+  let dd = document.getElementById('mention-dd');
+  if (!dd) {
+    dd = document.createElement('div');
+    dd.id = 'mention-dd';
+    dd.className = 'mention-dd';
+    document.body.appendChild(dd);
+  }
+  if (!matches.length) {
+    dd.innerHTML = `<div class="mention-dd-empty">No agents match "${escHtml(query)}"</div>`;
+  } else {
+    dd.innerHTML = matches.map((name, i) => `
+      <div class="mention-dd-item ${i === MENTION_DD_ACTIVE_INDEX ? 'active' : ''}" onmousedown="insertMention('${escAttr(ticketId)}', ${i})">
+        <span style="width:20px;height:20px;border-radius:50%;background:var(--ink);color:var(--w);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;flex-shrink:0">${escHtml(name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase())}</span>
+        <span>${escHtml(name)}</span>
+      </div>`).join('');
+  }
+  // Position above the textarea (simple anchoring; matches the modal-portal approach used elsewhere).
+  const r = el.getBoundingClientRect();
+  dd.style.left = `${Math.round(r.left)}px`;
+  dd.style.top  = `${Math.round(r.bottom + 4)}px`;
+  dd.style.display = 'block';
+}
+
+function hideMentionDropdown() {
+  const dd = document.getElementById('mention-dd');
+  if (dd) dd.style.display = 'none';
+  MENTION_DD_MATCHES = [];
+}
+
+function insertMention(ticketId, idx) {
+  const name = MENTION_DD_MATCHES[idx];
+  const el = document.getElementById('compose-' + ticketId);
+  if (!el || !name) return;
+  const cursor = el.selectionStart || 0;
+  const before = el.value.slice(0, cursor);
+  const after  = el.value.slice(cursor);
+  // Replace the @partial at cursor with @Full Name plus a trailing space.
+  const replaced = before.replace(/@([A-Za-z]*)$/, `@${name} `);
+  el.value = replaced + after;
+  const newPos = replaced.length;
+  el.focus();
+  el.setSelectionRange(newPos, newPos);
+  hideMentionDropdown();
+  onComposeInput(ticketId);
+}
+
+function mentionDropdownKey(e, ticketId) {
+  const dd = document.getElementById('mention-dd');
+  if (!dd || dd.style.display === 'none' || !MENTION_DD_MATCHES.length) return false;
+  if (e.key === 'ArrowDown') {
+    MENTION_DD_ACTIVE_INDEX = (MENTION_DD_ACTIVE_INDEX + 1) % MENTION_DD_MATCHES.length;
+    e.preventDefault();
+    updateMentionDDActive();
+    return true;
+  }
+  if (e.key === 'ArrowUp') {
+    MENTION_DD_ACTIVE_INDEX = (MENTION_DD_ACTIVE_INDEX - 1 + MENTION_DD_MATCHES.length) % MENTION_DD_MATCHES.length;
+    e.preventDefault();
+    updateMentionDDActive();
+    return true;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    insertMention(ticketId, MENTION_DD_ACTIVE_INDEX);
+    return true;
+  }
+  if (e.key === 'Escape') {
+    hideMentionDropdown();
+    return true;
+  }
+  return false;
+}
+
+function updateMentionDDActive() {
+  const items = document.querySelectorAll('#mention-dd .mention-dd-item');
+  items.forEach((el, i) => el.classList.toggle('active', i === MENTION_DD_ACTIVE_INDEX));
 }
 
 function insertVar(id, token) {
@@ -2852,12 +3125,15 @@ async function sendCompose(id) {
     }
   }
 
+  const isNote = COMPOSE_TAB === 'note';
+  const mentions = isNote ? parseMentions(outgoing) : null;
   t.msgs.push({
     from: SESSION.name,
-    r: COMPOSE_TAB==='note' ? 'note' : 'agent',
+    r: isNote ? 'note' : 'agent',
     t: outgoing,
     tOriginal: original,
     translatedTo,
+    mentions,
     ts: new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),
   });
   el.value = '';
@@ -4025,6 +4301,19 @@ let NOTIF_PAGE_FILTER_READ = 'all';
 function getNotifications() {
   const out = [];
   const wakeWindowMs = 24 * 60 * 60 * 1000;
+  // Mentions of the current session user across all tickets — emit before per-ticket
+  // status notifications so they're not crowded out when an SLA breach also exists.
+  if (SESSION?.name && NOTIF_PREFS.mention !== false) {
+    for (const t of TICKETS) {
+      (t.msgs || []).forEach((m, i) => {
+        if (m.r !== 'note' || !m.mentions || !m.mentions.includes(SESSION.name)) return;
+        if (m.from === SESSION.name) return;
+        const mid = `mention-${t.id}-${i}`;
+        if (NOTIFICATIONS_DISMISSED.has(mid)) return;
+        out.push({id:mid, type:'mention', color:'var(--purple)', title:`Mentioned by ${m.from}`, body:`${t.id} — ${t.subject}`, ticketId:t.id, ts:m.ts});
+      });
+    }
+  }
   for (const t of TICKETS) {
     let n = null;
     // Snooze wake-up takes priority for ~24h after firing so an agent doesn't miss it.
@@ -4221,8 +4510,9 @@ function renderNotificationsPage() {
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 let SETTINGS_TAB = 'profile';
-let NOTIF_PREFS = JSON.parse(localStorage.getItem('notif_prefs') || 'null') || { breach:true, escalated:true, gdpr:true, warn:true, wake:true };
+let NOTIF_PREFS = JSON.parse(localStorage.getItem('notif_prefs') || 'null') || { breach:true, escalated:true, gdpr:true, warn:true, wake:true, mention:true };
 if (typeof NOTIF_PREFS.wake === 'undefined') NOTIF_PREFS.wake = true;
+if (typeof NOTIF_PREFS.mention === 'undefined') NOTIF_PREFS.mention = true;
 let AI_API_KEY = localStorage.getItem('ai_api_key') || '';
 let AI_MODEL = localStorage.getItem('ai_model') || 'claude-sonnet-4-6';
 let AGENT_PREFERRED_LANG = localStorage.getItem('agent_preferred_lang') || 'English';
@@ -4342,6 +4632,7 @@ function settingsNotifications() {
     {k:'gdpr',      l:'GDPR requests', d:'Data subject access and erasure requests'},
     {k:'warn',      l:'SLA warnings',  d:'Tickets approaching SLA breach'},
     {k:'wake',      l:'Snooze wake-ups', d:'Tickets that have come back from a snooze'},
+    {k:'mention',   l:'@mentions',     d:'You were @-mentioned in an internal note'},
   ];
   return `
     <div class="settings-section">
@@ -5931,7 +6222,9 @@ function getReportTickets() {
 function computeReportStats(tickets) {
   const byStatus = {}, byPriority = {}, byCategory = {}, byAgent = {};
   const csatScores = [];
+  const timeByAgent = {};
   let slaOk = 0, slaWarn = 0, slaBreach = 0;
+  let timeTotal = 0, timeBillable = 0;
   for (const t of tickets) {
     byStatus[t.status]     = (byStatus[t.status]     ||0) + 1;
     byPriority[t.priority] = (byPriority[t.priority] ||0) + 1;
@@ -5941,13 +6234,20 @@ function computeReportStats(tickets) {
     if      (t.sla === 'ok')     slaOk++;
     else if (t.sla === 'warn')   slaWarn++;
     else if (t.sla === 'breach') slaBreach++;
+    (t.timeEntries || []).forEach(e => {
+      timeTotal += e.minutes || 0;
+      if (e.billable !== false) timeBillable += e.minutes || 0;
+      if (!timeByAgent[e.agent]) timeByAgent[e.agent] = { total: 0, billable: 0 };
+      timeByAgent[e.agent].total += e.minutes || 0;
+      if (e.billable !== false) timeByAgent[e.agent].billable += e.minutes || 0;
+    });
   }
   const total = tickets.length;
   const resolved = byStatus.resolved || 0;
   const resolutionRate = total ? Math.round(resolved/total*100) : 0;
   const avgCSAT = csatScores.length ? csatScores.reduce((a,b)=>a+b,0)/csatScores.length : 0;
   const slaCompliance = total ? Math.round((slaOk + slaWarn)/total*100) : 0;
-  return { total, byStatus, byPriority, byCategory, byAgent, csatScores, csatCount:csatScores.length, avgCSAT, slaOk, slaWarn, slaBreach, slaCompliance, resolved, resolutionRate };
+  return { total, byStatus, byPriority, byCategory, byAgent, csatScores, csatCount:csatScores.length, avgCSAT, slaOk, slaWarn, slaBreach, slaCompliance, resolved, resolutionRate, timeTotal, timeBillable, timeByAgent };
 }
 
 const STATUS_COLORS   = { open:'var(--cyan)', pending:'var(--amber)', escalated:'var(--purple)', gdpr:'var(--red)', resolved:'var(--green)' };
@@ -6011,6 +6311,30 @@ function reportCSAT(s) {
     </div>`;
 }
 
+function reportTime(s) {
+  const items = Object.entries(s.timeByAgent || {}).sort((a, b) => b[1].total - a[1].total);
+  const max = Math.max(...items.map(i => i[1].total), 1);
+  const rows = items.map(([name, vals]) => {
+    const pct = (vals.total / max) * 100;
+    const billPct = vals.total ? (vals.billable / vals.total) * 100 : 0;
+    return `<div class="r-bar-row">
+      <div style="font-size:11px;color:var(--ink2);width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(name || 'Unassigned')}</div>
+      <div class="r-bar-track" title="${escHtml(fmtMinutes(vals.billable))} billable of ${escHtml(fmtMinutes(vals.total))}"><div class="r-bar-fill" style="background:var(--purple);width:${pct}%;position:relative"><div style="background:var(--amber);height:100%;width:${billPct}%"></div></div></div>
+      <div class="r-bar-val" style="font-family:'DM Mono',monospace">${fmtMinutes(vals.total)}</div>
+    </div>`;
+  }).join('');
+  const billPct = s.timeTotal ? Math.round((s.timeBillable / s.timeTotal) * 100) : 0;
+  return `
+    <div class="card">
+      <div class="card-title">Time logged</div>
+      <div style="display:flex;align-items:flex-end;gap:14px;margin:6px 0 14px">
+        <div style="font-size:30px;font-weight:700;line-height:1;color:var(--purple);font-family:'Inter',sans-serif;letter-spacing:-.02em">${s.timeTotal ? fmtMinutes(s.timeTotal) : '—'}</div>
+        <div style="font-size:11px;color:var(--ink3);padding-bottom:4px">${fmtMinutes(s.timeBillable)} billable · ${billPct}%</div>
+      </div>
+      ${rows || '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:16px 0">No time logged in this range</div>'}
+    </div>`;
+}
+
 function reportSLA(s) {
   return `
     <div class="card">
@@ -6026,8 +6350,8 @@ function reportSLA(s) {
 
 function exportReport() {
   const tickets = getReportTickets();
-  const headers = ['ID','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','CSAT'];
-  const rows = tickets.map(t => [t.id, t.subject, t.status, t.priority, t.category, t.agent, t.created, t.updated, t.sla, t.csat ?? '']);
+  const headers = ['ID','Subject','Status','Priority','Category','Agent','Created','Updated','SLA','CSAT','Time logged','Time billable'];
+  const rows = tickets.map(t => [t.id, t.subject, t.status, t.priority, t.category, t.agent, t.created, t.updated, t.sla, t.csat ?? '', fmtMinutes(ticketTotalMinutes(t)), fmtMinutes(ticketBillableMinutes(t))]);
   const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -6058,6 +6382,7 @@ function renderReports() {
         <div class="kpi"><div class="kpi-n c-green">${s.resolutionRate}%</div><div class="kpi-l">Resolved</div></div>
         <div class="kpi"><div class="kpi-n c-amber">${s.avgCSAT?s.avgCSAT.toFixed(1):'—'}</div><div class="kpi-l">Avg CSAT</div></div>
         <div class="kpi"><div class="kpi-n c-blue">${s.slaCompliance}%</div><div class="kpi-l">SLA compliance</div></div>
+        <div class="kpi"><div class="kpi-n c-purple">${fmtMinutes(s.timeTotal)}</div><div class="kpi-l">Time logged</div></div>
       </div>
       <div class="page-scroll">
         <div class="report-grid">
@@ -6067,6 +6392,7 @@ function renderReports() {
           ${reportCategory(s)}
           ${reportAgents(s)}
           ${reportCSAT(s)}
+          ${reportTime(s)}
         </div>
       </div>
     </div>`;

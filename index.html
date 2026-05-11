@@ -1809,6 +1809,29 @@ function openTicket(id) {
         </div>`).join('')}
     </div>` : '';
 
+  // External-KB suggestions are fetched lazily and cached by ticket id. The
+  // sidebar shows a loading shimmer first paint, then the results on the
+  // re-render. If the integration is disabled the whole block stays hidden.
+  let extKbBlock = '';
+  if (KB_INTEGRATION.enabled) {
+    const cache = KB_TICKET_CACHE.get(t.id);
+    if (cache === undefined) setTimeout(() => refreshTicketKbSuggestions(t.id), 0);
+    const head = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="ts-heading" style="margin:0">External KB</div>
+        <span class="link" onclick="refreshTicketKbSuggestions('${escAttr(t.id)}')" style="font-size:11px">Refresh</span>
+      </div>`;
+    let body = '';
+    if (!cache || cache.loading) body = '<div style="font-size:11px;color:var(--ink3);font-style:italic">Searching your KB…</div>';
+    else if (cache.error)        body = `<div style="font-size:11px;color:var(--red);font-style:italic">${escHtml(cache.error)}</div>`;
+    else if (!cache.articles.length) body = '<div style="font-size:11px;color:var(--ink3);font-style:italic">No matching articles.</div>';
+    else body = cache.articles.map(a => `
+      <div style="padding:8px 10px;border:1px solid var(--rule);border-radius:var(--r);margin-bottom:5px;background:var(--off2)">
+        ${a.url ? `<a href="${escAttr(a.url)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--ink);font-weight:500;text-decoration:none;line-height:1.3">${escHtml(a.title)} ↗</a>` : `<div style="font-size:12px;color:var(--ink);font-weight:500;line-height:1.3">${escHtml(a.title)}</div>`}
+        ${a.body ? `<div style="font-size:11px;color:var(--ink3);margin-top:4px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(String(a.body).slice(0, 200))}</div>` : ''}
+      </div>`).join('');
+    extKbBlock = `<div class="ts-section">${head}${body}</div>`;
+  }
+
   const totalTimeMin    = ticketTotalMinutes(t);
   const billableTimeMin = ticketBillableMinutes(t);
   const recentTime      = (t.timeEntries || []).slice(0, 4);
@@ -2020,6 +2043,7 @@ function openTicket(id) {
                     <button class="btn btn-sm" onclick="toggleAIMenu('${id}')">AI ▾</button>
                     <div id="ai-menu-${id}" class="comp-menu">
                       <div class="comp-menu-item" onclick="aiAction('${id}','draft')">Draft reply</div>
+                      ${KB_INTEGRATION.enabled ? `<div class="comp-menu-item" onclick="aiAction('${id}','kb-reply')" title="Draft a reply grounded in your external KB">Draft reply with KB</div>` : ''}
                       <div class="comp-menu-item" onclick="aiAction('${id}','improve')">Improve writing</div>
                       <div class="comp-menu-item" onclick="aiAction('${id}','shorten')">Shorten</div>
                       <div class="comp-menu-item" onclick="aiAction('${id}','lengthen')">Add detail</div>
@@ -2071,6 +2095,7 @@ function openTicket(id) {
           ${aiTagsHtml}
           ${followersBlock}
           ${kbBlock}
+          ${extKbBlock}
           ${timeLogBlock}
           <div class="ts-section">
             <div class="ts-heading">Properties</div>
@@ -3399,6 +3424,23 @@ async function aiAction(id, action) {
     const hist = (t.msgs || []).map(m => `${m.from}: ${m.t}`).join('\n\n');
     systemMsg = 'You are a professional B2B SaaS support agent. Draft a concise, helpful reply. Output ONLY the reply text — no labels, no preamble.';
     userMsg = `Ticket: ${t.subject}\n\n${hist}\n\nDraft a reply:`;
+  } else if (action === 'kb-reply') {
+    const hist = (t.msgs || []).map(m => `${m.from}: ${m.t}`).join('\n\n');
+    const firstCust = (t.msgs || []).find(m => m.r === 'customer');
+    const query = firstCust ? firstCust.t : t.subject;
+    const kb = await fetchKbArticles(query);
+    if (kb.error) {
+      el.value = `KB lookup failed: ${kb.error}\n\n(Check Settings → Knowledge Base.)`;
+      onComposeInput(id);
+      AI_THINKING = false;
+      if (th) th.classList.remove('show');
+      return;
+    }
+    const kbContext = kb.articles.length
+      ? kb.articles.map((a, i) => `[${i + 1}] ${a.title}\n${(a.body || '').slice(0, 800)}${a.url ? `\n(Source: ${a.url})` : ''}`).join('\n\n---\n\n')
+      : '(No matching KB articles found.)';
+    systemMsg = 'You are a professional B2B SaaS support agent. Draft a concise reply grounded in the KB excerpts provided. Cite article titles inline in brackets like [Article Title] when relevant. If the KB does not cover the question, say so plainly and offer to escalate. Output ONLY the reply text — no labels, no preamble.';
+    userMsg = `Ticket: ${t.subject}\n\nConversation so far:\n${hist}\n\n=== Knowledge base excerpts (top ${kb.articles.length}) ===\n${kbContext}\n\nDraft a reply using the KB excerpts where they apply:`;
   } else {
     const instructions = {
       improve:   'Rewrite the following text to improve clarity and professionalism. Keep the same meaning and roughly the same length. Output ONLY the rewritten text.',
@@ -5066,12 +5108,89 @@ let AI_API_KEY = localStorage.getItem('ai_api_key') || '';
 let AI_MODEL = localStorage.getItem('ai_model') || 'claude-sonnet-4-6';
 let AGENT_PREFERRED_LANG = localStorage.getItem('agent_preferred_lang') || 'English';
 
+// ─── Third-party KB integration ─────────────────────────────────────────────
+// Admins point this at their own KB service. The adapter is intentionally
+// generic: configure a base URL + path template (with {query} placeholder),
+// an optional auth header, and which JSON fields hold the title/body/URL.
+// Composer's "AI Reply with KB" action and the ticket sidebar "External KB"
+// block both consume the same fetchKbArticles() result.
+const KB_INTEGRATION_DEFAULTS = {
+  enabled: false,
+  baseUrl: '',
+  searchPath: '/articles?q={query}',
+  apiKey: '',
+  authHeader: 'Authorization',
+  authPrefix: 'Bearer ',
+  resultsField: '',   // dot-path into response, e.g. "data" or "data.items"; blank = root
+  idField: 'id',
+  titleField: 'title',
+  bodyField: 'body',
+  urlField: 'url',
+  maxResults: 3,
+};
+let KB_INTEGRATION = Object.assign({}, KB_INTEGRATION_DEFAULTS, (() => {
+  try { return JSON.parse(localStorage.getItem('kb_integration') || '{}') || {}; }
+  catch (e) { return {}; }
+})());
+
+function saveKbIntegration() {
+  try { localStorage.setItem('kb_integration', JSON.stringify(KB_INTEGRATION)); }
+  catch (e) { console.warn('[kb] persist failed', e); }
+}
+
+function getByPath(obj, path) {
+  if (!path) return obj;
+  return path.split('.').reduce((acc, k) => (acc == null ? acc : acc[k]), obj);
+}
+
+async function fetchKbArticles(query) {
+  const cfg = KB_INTEGRATION;
+  if (!cfg.enabled || !cfg.baseUrl || !cfg.searchPath) return { articles: [], error: 'KB integration is disabled or unconfigured.' };
+  if (!query || !query.trim()) return { articles: [], error: 'Empty query.' };
+  const url = cfg.baseUrl.replace(/\/$/, '') + cfg.searchPath.replace(/\{query\}/g, encodeURIComponent(query.trim().slice(0, 300)));
+  const headers = { 'Accept': 'application/json' };
+  if (cfg.apiKey && cfg.authHeader) headers[cfg.authHeader] = (cfg.authPrefix || '') + cfg.apiKey;
+  try {
+    const res = await fetch(url, { headers });
+    if (!res.ok) return { articles: [], error: `KB request failed: HTTP ${res.status}` };
+    const data = await res.json();
+    let list = getByPath(data, cfg.resultsField);
+    if (!Array.isArray(list)) list = Array.isArray(data) ? data : [];
+    const max = Math.max(1, Math.min(20, parseInt(cfg.maxResults, 10) || 3));
+    const articles = list.slice(0, max).map(item => ({
+      id:    getByPath(item, cfg.idField)    ?? '',
+      title: getByPath(item, cfg.titleField) ?? '(untitled)',
+      body:  getByPath(item, cfg.bodyField)  ?? '',
+      url:   getByPath(item, cfg.urlField)   ?? '',
+    }));
+    return { articles };
+  } catch (e) {
+    return { articles: [], error: 'KB fetch failed: ' + (e?.message || 'network error') };
+  }
+}
+
+// Cache by ticket id so opening a ticket doesn't refetch on every render.
+const KB_TICKET_CACHE = new Map();
+async function refreshTicketKbSuggestions(ticketId) {
+  const t = TICKETS.find(x => x.id === ticketId);
+  if (!t || !KB_INTEGRATION.enabled) return;
+  const firstCust = (t.msgs || []).find(m => m.r === 'customer');
+  const query = firstCust ? firstCust.t : t.subject;
+  if (!query) return;
+  KB_TICKET_CACHE.set(ticketId, { loading: true, articles: [], error: null });
+  if (CURRENT_TICKET === ticketId) openTicket(ticketId);
+  const result = await fetchKbArticles(query);
+  KB_TICKET_CACHE.set(ticketId, { loading: false, articles: result.articles, error: result.error || null });
+  if (CURRENT_TICKET === ticketId) openTicket(ticketId);
+}
+
 function renderSettings() {
   const tabs = [
     {k:'profile',       l:'Profile'},
     {k:'appearance',    l:'Appearance'},
     {k:'notifications', l:'Notifications'},
     {k:'ai',            l:'AI Assistant'},
+    {k:'knowledge-base', l:'Knowledge Base'},
     {k:'language',      l:'Language'},
   ];
   const tabbar = tabs.map(t => `<div class="settings-tab ${SETTINGS_TAB===t.k?'active':''}" onclick="setSettingsTab('${t.k}')">${t.l}</div>`).join('');
@@ -5080,6 +5199,7 @@ function renderSettings() {
   else if (SETTINGS_TAB === 'appearance')    panel = settingsAppearance();
   else if (SETTINGS_TAB === 'notifications') panel = settingsNotifications();
   else if (SETTINGS_TAB === 'ai')            panel = settingsAI();
+  else if (SETTINGS_TAB === 'knowledge-base') panel = settingsKnowledgeBase();
   else if (SETTINGS_TAB === 'language')      panel = settingsLanguage();
   return `
     <div class="page">
@@ -5242,6 +5362,91 @@ function settingsAI() {
         ${AI_API_KEY ? '✓ Key saved' : 'No key configured — AI Draft will return a fallback message'}
       </div>
     </div>`;
+}
+
+function settingsKnowledgeBase() {
+  const cfg = KB_INTEGRATION;
+  const esc = s => String(s||'').replace(/"/g,'&quot;');
+  const testState = window._kbTestState || null;
+  return `
+    <div class="settings-section">
+      <div class="settings-h">External Knowledge Base</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">Connect a third-party KB so the composer can ground AI replies in your own articles. Configure the endpoint + JSON field mapping; the adapter is generic and works with any REST API that returns a list of articles per query. Credentials stay in this browser.</div>
+      <div class="settings-row">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--ink)">Integration enabled</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:2px">When on, the composer shows an "AI Reply with KB" action and the ticket sidebar lists matching articles.</div>
+        </div>
+        <label class="toggle"><input type="checkbox" ${cfg.enabled?'checked':''} onchange="setKbCfg('enabled',this.checked)"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="form-row"><label class="form-label">Base URL</label>
+        <input class="form-input" id="kb-base-url" placeholder="https://kb.example.com/api/v1" value="${esc(cfg.baseUrl)}" oninput="setKbCfg('baseUrl',this.value)"/>
+      </div>
+      <div class="form-row"><label class="form-label">Search path <span style="color:var(--ink3);font-family:'DM Mono',monospace;font-size:11px;font-weight:400">— use {query} as placeholder</span></label>
+        <input class="form-input" id="kb-search-path" placeholder="/articles?q={query}&amp;limit=5" value="${esc(cfg.searchPath)}" oninput="setKbCfg('searchPath',this.value)"/>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label class="form-label">Auth header (optional)</label>
+          <input class="form-input" placeholder="Authorization" value="${esc(cfg.authHeader)}" oninput="setKbCfg('authHeader',this.value)"/>
+        </div>
+        <div class="form-row"><label class="form-label">Header prefix</label>
+          <input class="form-input" placeholder="Bearer " value="${esc(cfg.authPrefix)}" oninput="setKbCfg('authPrefix',this.value)"/>
+        </div>
+      </div>
+      <div class="form-row"><label class="form-label">API key / token (optional)</label>
+        <input class="form-input" type="password" placeholder="—" value="${esc(cfg.apiKey)}" oninput="setKbCfg('apiKey',this.value)" autocomplete="off"/>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-h">Response shape</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">Tell the adapter where to find articles inside the JSON response. Field names support dot notation (e.g. <code style="font-family:'DM Mono',monospace">data.items</code>).</div>
+      <div class="form-grid">
+        <div class="form-row"><label class="form-label">Results path</label>
+          <input class="form-input" placeholder="(empty = response root)" value="${esc(cfg.resultsField)}" oninput="setKbCfg('resultsField',this.value)"/>
+        </div>
+        <div class="form-row"><label class="form-label">Max results</label>
+          <input class="form-input" type="number" min="1" max="20" value="${cfg.maxResults}" oninput="setKbCfg('maxResults',parseInt(this.value,10)||3)"/>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label class="form-label">ID field</label><input class="form-input" value="${esc(cfg.idField)}" oninput="setKbCfg('idField',this.value)"/></div>
+        <div class="form-row"><label class="form-label">Title field</label><input class="form-input" value="${esc(cfg.titleField)}" oninput="setKbCfg('titleField',this.value)"/></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-row"><label class="form-label">Body field</label><input class="form-input" value="${esc(cfg.bodyField)}" oninput="setKbCfg('bodyField',this.value)"/></div>
+        <div class="form-row"><label class="form-label">URL field</label><input class="form-input" value="${esc(cfg.urlField)}" oninput="setKbCfg('urlField',this.value)"/></div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <div class="settings-h">Test connection</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">Send a sample query against the configured endpoint to verify the path, auth, and field mapping.</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input class="form-input" id="kb-test-q" placeholder="e.g. password reset" style="flex:1;min-width:200px" value="${esc(testState?.query || 'password reset')}"/>
+        <button class="btn btn-sm" onclick="testKbConnection()" ${cfg.enabled?'':'disabled'}>Run test</button>
+      </div>
+      ${testState ? `
+        <div style="margin-top:14px;padding:12px;border:1px solid ${testState.error?'var(--red)':'var(--green)'};border-radius:var(--r);background:${testState.error?'var(--red-lt)':'var(--green-lt)'}">
+          ${testState.error ? `<div style="font-size:12px;color:var(--red);font-family:'DM Mono',monospace">${escHtml(testState.error)}</div>` : `
+            <div style="font-size:12px;color:var(--green);font-weight:500;margin-bottom:8px">✓ ${testState.articles.length} article${testState.articles.length===1?'':'s'} returned</div>
+            ${testState.articles.map(a => `<div style="padding:6px 8px;background:var(--off);border:1px solid var(--rule);border-radius:3px;margin-bottom:4px"><div style="font-size:12px;font-weight:500;color:var(--ink)">${escHtml(a.title)}</div><div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);margin-top:2px">${escHtml(a.id)} · ${escHtml(a.url || '(no url)')}</div></div>`).join('')}
+          `}
+        </div>` : ''}
+    </div>`;
+}
+
+function setKbCfg(key, value) {
+  KB_INTEGRATION[key] = value;
+  saveKbIntegration();
+  KB_TICKET_CACHE.clear();
+}
+
+async function testKbConnection() {
+  const q = document.getElementById('kb-test-q')?.value?.trim() || 'password reset';
+  window._kbTestState = { query: q, loading: true };
+  renderPage('settings');
+  const result = await fetchKbArticles(q);
+  window._kbTestState = { query: q, articles: result.articles || [], error: result.error || null };
+  renderPage('settings');
 }
 
 function settingsLanguage() {

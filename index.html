@@ -496,7 +496,7 @@ textarea.form-input{resize:vertical;min-height:72px}
 .widget.dragging{opacity:.45;transform:scale(.985)}
 .widget.drop-target-before{box-shadow:-4px 0 0 var(--purple)}
 .widget.drop-target-after{box-shadow:4px 0 0 var(--purple)}
-.widget-menu{position:absolute;top:30px;right:8px;background:var(--off);border:1px solid var(--rule2);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.12);padding:4px;min-width:140px;z-index:20}
+.widget-menu{position:fixed;background:var(--off);border:1px solid var(--rule2);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.12);padding:4px;min-width:140px;z-index:200}
 .widget-menu-item{padding:6px 10px;font-size:12px;color:var(--ink2);cursor:pointer;border-radius:3px;display:flex;align-items:center;gap:8px}
 .widget-menu-item:hover{background:var(--off2);color:var(--ink)}
 .widget-menu-item.active{color:var(--purple);font-weight:500}
@@ -6093,18 +6093,30 @@ const DEFAULT_DASH_LAYOUT   = { order: DASH_WIDGETS.map(w => w.id), hidden: [], 
 const DEFAULT_REPORT_LAYOUT = { order: REPORT_WIDGETS.map(w => w.id), hidden: [], charts: {} };
 
 function loadLayout(key, fallback) {
+  // Always deep-clone the fallback so any mutation through the returned
+  // object can't bleed into DEFAULT_*_LAYOUT (or affect a sibling page using
+  // the same fallback).
+  const cloneFallback = () => ({
+    order:  [...fallback.order],
+    hidden: [...fallback.hidden],
+    charts: { ...fallback.charts },
+  });
   try {
     const raw = JSON.parse(localStorage.getItem(key) || 'null');
-    if (!raw || typeof raw !== 'object') return { ...fallback, hidden: [...fallback.hidden], order: [...fallback.order], charts: { ...fallback.charts } };
+    if (!raw || typeof raw !== 'object') return cloneFallback();
     return {
       order:  Array.isArray(raw.order)  ? raw.order  : [...fallback.order],
       hidden: Array.isArray(raw.hidden) ? raw.hidden : [...fallback.hidden],
       charts: (raw.charts && typeof raw.charts === 'object') ? raw.charts : { ...fallback.charts },
     };
-  } catch (e) { return { ...fallback }; }
+  } catch (e) { return cloneFallback(); }
 }
 function saveLayout(key, layout) {
-  localStorage.setItem(key, JSON.stringify(layout));
+  // Quota errors (private mode / disk full) shouldn't crash the page. Log so
+  // a developer can see it in console, but let the in-memory layout keep
+  // working for the rest of the session.
+  try { localStorage.setItem(key, JSON.stringify(layout)); }
+  catch (e) { console.warn('[layout] persist failed', key, e); }
 }
 
 let DASH_LAYOUT   = loadLayout('dash_layout',   DEFAULT_DASH_LAYOUT);
@@ -6138,20 +6150,26 @@ function widgetChrome(scope, w, innerHtml, chartType) {
   } else if (w.span) {
     spanClass = w.span;
   }
-  const chartMenu = (w.charts && w.charts.length > 1) ? `<button title="Chart type" onclick="event.stopPropagation();showWidgetMenu(this,'${scope}','${w.id}','chart')">📊</button>` : '';
+  // scope and widget id flow into inline onclick attributes; escAttr neutralises
+  // single quotes so a malicious id can't close the JS string and inject code.
+  // Today every id is machine-generated, but defense-in-depth keeps the layout
+  // engine safe against future widgets sourced from user input.
+  const sid = escAttr(scope);
+  const wid = escAttr(w.id);
+  const chartMenu = (w.charts && w.charts.length > 1) ? `<button title="Chart type" onclick="event.stopPropagation();showWidgetMenu(this,'${sid}','${wid}','chart')">📊</button>` : '';
   return `
-    <div class="widget card ${spanClass}" data-widget-scope="${scope}" data-widget-id="${w.id}" draggable="true"
-         ondragstart="widgetDragStart(event,'${scope}','${w.id}')"
+    <div class="widget card ${escAttr(spanClass)}" data-widget-scope="${sid}" data-widget-id="${wid}" draggable="true"
+         ondragstart="widgetDragStart(event,'${sid}','${wid}')"
          ondragend="widgetDragEnd(event)"
-         ondragover="widgetDragOver(event,'${scope}','${w.id}')"
+         ondragover="widgetDragOver(event,'${sid}','${wid}')"
          ondragleave="widgetDragLeave(event)"
-         ondrop="widgetDragDrop(event,'${scope}','${w.id}')">
+         ondrop="widgetDragDrop(event,'${sid}','${wid}')">
       <div class="widget-head" title="Drag to reorder">
         <span class="widget-handle">⋮⋮</span>
         <span class="widget-title">${escHtml(w.title)}${chartType ? ` · <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink3);font-style:italic">${escHtml(chartType)}</span>` : ''}</span>
         <div class="widget-actions">
           ${chartMenu}
-          <button title="Hide widget" onclick="event.stopPropagation();hideWidgetById('${scope}','${w.id}')">×</button>
+          <button title="Hide widget" onclick="event.stopPropagation();hideWidgetById('${sid}','${wid}')">×</button>
         </div>
       </div>
       <div class="widget-body">${body}</div>
@@ -6247,7 +6265,8 @@ function setWidgetChart(scope, id, chartType) {
 }
 function resetWidgetLayout(scope) {
   const isDash = scope === 'dash';
-  const layout = isDash ? { ...DEFAULT_DASH_LAYOUT, order:[...DEFAULT_DASH_LAYOUT.order], hidden:[] } : { ...DEFAULT_REPORT_LAYOUT, order:[...DEFAULT_REPORT_LAYOUT.order], hidden:[] };
+  const src = isDash ? DEFAULT_DASH_LAYOUT : DEFAULT_REPORT_LAYOUT;
+  const layout = { order: [...src.order], hidden: [...src.hidden], charts: { ...src.charts } };
   if (isDash) DASH_LAYOUT = layout; else REPORT_LAYOUT = layout;
   saveLayout(isDash ? 'dash_layout' : 'report_layout', layout);
   closeModal();

@@ -6098,7 +6098,10 @@ function renderQuickSwitcher() {
       flatIdx++;
       const active = flatIdx === QS_ACTIVE_INDEX;
       const icon = { page:'⌘', ticket:'⊕', customer:'☻', agent:'★', kb:'⚙' }[item.kind] || '·';
-      return `<div class="qs-item ${active?'qs-active':''}" data-idx="${flatIdx}" onclick="quickSwitcherPick(${flatIdx})" onmouseenter="QS_ACTIVE_INDEX=${flatIdx};renderQuickSwitcher()">
+      // flatIdx is a counter integer — safe to inline. Hover updates the
+      // active row via class swap (qsSetActive) instead of a full rebuild
+      // so DOM thrash on mouse movement is eliminated.
+      return `<div class="qs-item ${active?'qs-active':''}" data-idx="${flatIdx}" onclick="quickSwitcherPick(${flatIdx})" onmouseenter="qsSetActive(${flatIdx})">
         <span class="qs-kind">${icon}</span>
         <span class="qs-text">
           <span class="qs-label">${escHtml(item.label)}</span>
@@ -6119,8 +6122,24 @@ function renderQuickSwitcher() {
                autocomplete="off"/>
         <span class="qs-hint">↑↓ navigate · ↵ open · esc close</span>
       </div>
-      <div class="qs-list">${groupsHtml}${empty}</div>
+      <div class="qs-list" id="qs-list">${groupsHtml}${empty}</div>
     </div>`;
+}
+
+// Swap the qs-active class without rebuilding the overlay. Called from
+// hover (often, fast) and keyboard navigation; cheap class toggles only.
+function qsSetActive(idx) {
+  QS_ACTIVE_INDEX = idx;
+  const items = document.querySelectorAll('#quick-switcher .qs-item');
+  items.forEach((el, i) => {
+    const active = i === idx;
+    el.classList.toggle('qs-active', active);
+    const go = el.querySelector('.qs-go');
+    if (go) go.textContent = active ? '↵' : '';
+  });
+  // Keep the active row visible when arrow-keying through a long list.
+  const active = items[idx];
+  if (active) active.scrollIntoView({ block: 'nearest' });
 }
 
 function quickSwitcherInput(v) {
@@ -6134,8 +6153,8 @@ function quickSwitcherKey(e) {
   const flat = quickSwitcherFlatItems();
   if (e.key === 'Escape') { e.preventDefault(); toggleQuickSwitcher(false); return; }
   if (!flat.length) return;
-  if (e.key === 'ArrowDown') { e.preventDefault(); QS_ACTIVE_INDEX = (QS_ACTIVE_INDEX + 1) % flat.length; renderQuickSwitcher(); return; }
-  if (e.key === 'ArrowUp')   { e.preventDefault(); QS_ACTIVE_INDEX = (QS_ACTIVE_INDEX - 1 + flat.length) % flat.length; renderQuickSwitcher(); return; }
+  if (e.key === 'ArrowDown') { e.preventDefault(); qsSetActive((QS_ACTIVE_INDEX + 1) % flat.length); return; }
+  if (e.key === 'ArrowUp')   { e.preventDefault(); qsSetActive((QS_ACTIVE_INDEX - 1 + flat.length) % flat.length); return; }
   if (e.key === 'Enter')     { e.preventDefault(); quickSwitcherPick(QS_ACTIVE_INDEX); return; }
 }
 

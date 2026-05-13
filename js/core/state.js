@@ -1,19 +1,19 @@
-// ─── State (inline-handler surface) ──────────────────────────────────────────
-// Module-scope state read or written by inline HTML attribute handlers
-// (e.g. `onchange="FILTER_CATEGORY=this.value;renderPage('tickets')"`).
+// ─── Shared state ────────────────────────────────────────────────────────────
+// State that needs to be visible across module boundaries — either because
+// inline HTML attribute handlers touch it directly (e.g.
+// `onchange="FILTER_CATEGORY=this.value;renderPage('tickets')"`), or because
+// multiple feature modules need to read/write it (e.g. CURRENT_TICKET, which
+// app.js sets on open and ai/summarize.js reads to decide whether to refresh).
 //
 // Lives in a classic <script src> so its top-level `let`/`const` bindings
 // land in the global lexical environment. That env is visible to:
 //   • inline event handler functions (their scope chain ends at globalEnv)
 //   • ES modules (identifier lookup walks module env → globalEnv)
 //
-// Result: inline handlers can read/write these names directly; app.js (a
-// module) reads/writes them via plain identifier reference, no window.X
-// prefix needed. The bindings stay in sync because there's only one of them.
-//
-// Only the inline-handler-visible slice of state migrated here. The rest
-// of app.js's module-scope state stays where it is for now.
+// One binding, every world. No `window.X` prefix needed from modules, no
+// setter-shims needed from inline handlers, no import declarations needed.
 let CURRENT_PAGE = 'dashboard';
+let CURRENT_TICKET = null;
 let FILTER_CATEGORY = 'all';
 let FILTER_PRIORITY = 'all';
 let FILTER_AGENT = 'all';

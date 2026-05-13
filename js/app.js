@@ -48,6 +48,7 @@ import {
   macAddStep, macRemoveStep, macStepKindChange,
   macNew, macEdit, macDelete, renderMacros,
 } from './tickets/macros.js';
+import { addMockAttachment, removeAttachment, showAttachPanel } from './tickets/attachments.js';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let FILTER_STATUS = 'all';
@@ -1181,26 +1182,6 @@ function insertMacro(ticketId, idx) {
   closeModal();
 }
 
-function addMockAttachment(id) {
-  const t = TICKETS.find(x => x.id === id);
-  if (!t) return;
-  if (!t.attachments) t.attachments = [];
-  const samples = [
-    { name: 'screenshot.png', size: '142 KB' },
-    { name: 'error-log.txt',  size: '8 KB'   },
-    { name: 'invoice.pdf',    size: '218 KB' },
-    { name: 'export.csv',     size: '47 KB'  },
-    { name: 'recording.mp4',  size: '2.4 MB' },
-  ];
-  t.attachments.push(samples[t.attachments.length % samples.length]);
-  showAttachPanel(id);
-}
-
-function removeAttachment(id, idx) {
-  const t = TICKETS.find(x => x.id === id);
-  if (t && t.attachments) t.attachments.splice(idx, 1);
-  showAttachPanel(id);
-}
 function changeTicketStatus(id, val) {
   const t = TICKETS.find(x => x.id === id);
   if (!t || t.status === val) return;
@@ -8747,24 +8728,6 @@ function showMacroPanel(id) {
   showModal('Insert canned response', `<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">{name} placeholders are auto-filled with the customer\'s first name.</div>${items}`, null, null);
 }
 
-function showAttachPanel(id) {
-  const t = TICKETS.find(x => x.id === id);
-  if (!t.attachments) t.attachments = [];
-  const list = t.attachments.length
-    ? t.attachments.map((a, i) => `
-        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--rule);border-radius:var(--r);margin-bottom:6px;background:var(--off2)">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 1.5h5l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 1.5v3h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
-          <span style="flex:1;font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.name}</span>
-          <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${a.size}</span>
-          <button class="btn btn-sm btn-danger" onclick="removeAttachment('${escAttr(id)}',${i})" style="padding:2px 8px;font-size:11px">Remove</button>
-        </div>`).join('')
-    : '<div style="font-size:12px;color:var(--ink3);text-align:center;padding:18px 0">No attachments yet</div>';
-  showModal('Attachments', `
-    <div class="attach-zone" onclick="addMockAttachment('${escAttr(id)}')">Click to add a sample attachment</div>
-    <div style="margin-top:14px;font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;font-weight:500;margin-bottom:8px">${t.attachments.length} file${t.attachments.length===1?'':'s'}</div>
-    ${list}
-  `, null, null);
-}
 function showGDPRModal(id) {
   showModal('GDPR actions', `
     <div class="gdpr-action"><div class="gdpr-action-title">Request erasure</div><div class="gdpr-action-desc">Permanently delete this customer's personal data under Article 17.</div><button class="btn btn-sm btn-danger" onclick="closeModal()">Request erasure</button></div>

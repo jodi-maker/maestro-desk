@@ -12,6 +12,7 @@
 //
 // One binding, every world. No `window.X` prefix needed from modules, no
 // setter-shims needed from inline handlers, no import declarations needed.
+let SESSION = null;
 let CURRENT_PAGE = 'dashboard';
 let CURRENT_TICKET = null;
 let AI_THINKING = false;

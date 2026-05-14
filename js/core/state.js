@@ -36,6 +36,9 @@ let INBOX_SELECTED_ID = null;
 let WF_SELECTED = null;
 let WF_FILTER = 'all';
 let WF_QUERY = '';
+let NOTIF_PREFS = JSON.parse(localStorage.getItem('notif_prefs') || 'null') || { breach:true, escalated:true, gdpr:true, warn:true, wake:true, mention:true };
+if (typeof NOTIF_PREFS.wake === 'undefined') NOTIF_PREFS.wake = true;
+if (typeof NOTIF_PREFS.mention === 'undefined') NOTIF_PREFS.mention = true;
 let ROLES_VIEW_AGENTS = null; // role name → show agents-in-role page; null → matrix
 let SETTINGS_TAB = 'profile';
 let LAYOUTS_TAB = 'ticket';

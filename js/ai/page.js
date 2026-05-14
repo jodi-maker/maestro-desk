@@ -48,7 +48,7 @@ let AI_CURRENT_ID = localStorage.getItem('ai_current_id') || null;
   if (c) AI_MESSAGES = [...(c.messages || [])];
 })();
 
-function renderMarkdown(text) {
+export function renderMarkdown(text) {
   let html = window.escHtml(text);
   // Code blocks (fenced)
   html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>

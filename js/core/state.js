@@ -18,6 +18,7 @@ let CURRENT_TICKET = null;
 const TICKET_SELECTED_IDS = new Set();
 let AI_THINKING = false;
 let COMPOSE_TAB = 'reply';
+let AI_MESSAGES = [];
 let FILTER_CATEGORY = 'all';
 let FILTER_PRIORITY = 'all';
 let FILTER_AGENT = 'all';

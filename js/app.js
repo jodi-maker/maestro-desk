@@ -49,6 +49,11 @@ import {
   macNew, macEdit, macDelete, renderMacros,
 } from './tickets/macros.js';
 import { addMockAttachment, removeAttachment, showAttachPanel } from './tickets/attachments.js';
+import {
+  newAIConv, selectAIConv, deleteAIConv,
+  copyAIMessage, useFollowUp, renderAI, initAI,
+  aiToggleSource, aiUsePrompt, aiClear, aiInputKey, aiSend,
+} from './ai/page.js';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let FILTER_STATUS = 'all';
@@ -59,7 +64,6 @@ let SORT_COL = 'id';
 let SORT_DIR = 1;
 let REPORT_TF = '30d';
 let CUST_TAB = 'all';
-let AI_MESSAGES = [];
 
 function login(role, name, initials) {
   SESSION = {role, name, initials};
@@ -3313,22 +3317,6 @@ function settingsLanguage() {
 let KB_QUERY = '';
 let KB_FILTER_CAT = 'all';
 
-const KB_ARTICLES = [
-  {id:'KB-001', title:'How to reset your account password', category:'Account', author:'Emma Clarke', updated:'2025-04-10',
-   body:`Lost access to your account? Follow these steps to regain it.\n\nStep 1: Click "Forgot password?" on the sign-in screen.\n\nStep 2: Enter your work email address and submit. The reset link is sent only to addresses on your organisation's allowlist.\n\nStep 3: Check your inbox for a reset link. The link expires after 30 minutes.\n\nStep 4: Set a new password — minimum 12 characters, must include a number and a symbol.\n\nIf you don't receive an email within 5 minutes, check your spam folder. If it's still missing, contact your administrator — your account may be temporarily locked after multiple failed attempts.`},
-  {id:'KB-002', title:'Understanding SLA breach alerts', category:'Best Practices', author:'James Webb', updated:'2025-04-12',
-   body:`SLA breaches indicate tickets that have exceeded their contractual response or resolution window. They appear as red badges in the ticket list, in the notifications bell, and on the dashboard KPI bar.\n\nWhen an SLA is in "warn" state, the ticket is approaching but has not yet missed its deadline. When it moves to "breach", customer-facing escalation paths typically engage automatically depending on workflow rules.\n\nTo prioritise effectively: filter the Tickets page by SLA status, then sort by Updated descending. Reach out to the customer first, then update the ticket status to acknowledge the breach internally.`},
-  {id:'KB-003', title:'Submitting a GDPR data erasure request', category:'GDPR', author:'Sofia Reyes', updated:'2025-03-28',
-   body:`Customers in the EU/UK have the right to request erasure of their personal data under Article 17 of the GDPR.\n\nWhen a ticket is flagged with category GDPR, the ticket sidebar exposes three actions: Request Erasure, Redact Data, and SAR Export.\n\nErasure is a hard delete and is irreversible. Redaction masks identifying fields in the ticket thread but preserves the audit trail. SAR Export packages all data held about the customer into a downloadable archive within 30 days, as required by law.\n\nAll GDPR actions are logged with the requesting agent's name and timestamp.`},
-  {id:'KB-004', title:'Exporting transaction history to CSV', category:'Technical', author:'Priya Nair', updated:'2025-04-05',
-   body:`Customers can export their transaction history as CSV from the customer portal.\n\nIn the agent UI, open the customer's profile from any ticket sidebar, then use the "Export" action. The CSV will be emailed to the customer's verified address within a few minutes.\n\nIf the customer reports the file did not arrive, first verify the email address is correct, then check whether the export job timed out — exports for accounts with more than 50,000 transactions are generated overnight.`},
-  {id:'KB-005', title:'Setting up the Claude API key for AI Draft', category:'Getting Started', author:'Emma Clarke', updated:'2025-04-15',
-   body:`The "AI Draft" button in the ticket composer uses the Anthropic Claude API to draft a reply based on the conversation history.\n\nTo enable it:\n\n1. Go to Settings → AI Assistant.\n2. Paste your Claude API key in the API key field. It should start with "sk-ant-".\n3. Choose a model. Sonnet 4.6 is the default and a good balance of speed and quality.\n\nThe key is stored locally in your browser via localStorage. It is never transmitted to our servers — requests go directly from your browser to api.anthropic.com.\n\nIf the API rejects your request, the composer surfaces the error message returned by Anthropic.`},
-  {id:'KB-006', title:'Creating custom roles and permissions', category:'Best Practices', author:'Emma Clarke', updated:'2025-04-08',
-   body:`Out of the box, this workspace ships with Admin, Senior Agent and Read Only roles. You can extend this for your team's needs.\n\nTo add a permission: Roles & Permissions → "+ Permission". Pick a label and an internal key. The new permission is added as a column on every existing role with default off.\n\nTo add a role: Roles & Permissions → "+ Role". Optionally copy the permissions of an existing role as a starting point.\n\nThe Admin role is protected — you cannot delete it, and the Roles & Permissions toggle on the Admin row is locked on to prevent accidental self-lockout.`},
-  {id:'KB-007', title:'Resending invoices and billing documents', category:'Billing', author:'Tom Bates', updated:'2025-04-02',
-   body:`Customers occasionally request a resend of their invoice or other billing documents.\n\nFor invoices from the current and previous quarter, use the customer portal action — these are regenerated on demand.\n\nFor older documents, raise an internal billing ticket with the customer ID and the invoice month. The finance team typically responds within one business day.\n\nNever attach billing documents directly to support tickets — always send via the secure document portal to maintain the audit trail.`},
-];
 
 function articleSnippet(a) { return a.body.replace(/\n+/g, ' ').slice(0, 180); }
 
@@ -6200,332 +6188,8 @@ function agentNew() {
     closeModal(); renderPage('agents');
   }, 'Add');
 }
-// ─── AI Intelligence ─────────────────────────────────────────────────────────
-let AI_CONTEXT_SOURCES = { tickets:true, customers:false, agents:false, kb:false };
-const AI_PROMPT_CARDS = [
-  "Summarise today's open tickets and flag any that look urgent",
-  "Which categories have the highest ticket volume right now?",
-  "Draft a 3-point CSAT improvement plan based on recent tickets",
-  "List customers with multiple open tickets and the common themes",
-];
-const AI_FOLLOWUPS = [
-  "Tell me more",
-  "Summarise as a bulleted list",
-  "What are the next actions?",
-  "Show me the ticket IDs",
-];
-
-let AI_CONVERSATIONS = (() => {
-  try { return JSON.parse(localStorage.getItem('ai_conversations') || '[]'); }
-  catch { return []; }
-})();
-let AI_CURRENT_ID = localStorage.getItem('ai_current_id') || null;
-// Hydrate AI_MESSAGES from the persisted current conversation
-(function hydrateAIMessages() {
-  if (!AI_CURRENT_ID) return;
-  const c = AI_CONVERSATIONS.find(x => x.id === AI_CURRENT_ID);
-  if (c) AI_MESSAGES = [...(c.messages || [])];
-})();
-
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function renderMarkdown(text) {
-  let html = escHtml(text);
-  // Code blocks (fenced)
-  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-    `<pre><code>${code.replace(/\n$/, '')}</code></pre>`);
-  // Inline code
-  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-  // Headers
-  html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^# (.+)$/gm, '<h3>$1</h3>');
-  // Bold then italic
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/(?<![*\w])\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
-  // Bullet lists (consecutive lines starting with - or *)
-  html = html.replace(/(?:^[-*] .+(?:\n|$))+/gm, match => {
-    const items = match.trim().split('\n').map(l => `<li>${l.replace(/^[-*] /, '')}</li>`).join('');
-    return `<ul>${items}</ul>`;
-  });
-  // Numbered lists
-  html = html.replace(/(?:^\d+\. .+(?:\n|$))+/gm, match => {
-    const items = match.trim().split('\n').map(l => `<li>${l.replace(/^\d+\. /, '')}</li>`).join('');
-    return `<ol>${items}</ol>`;
-  });
-  // Paragraphs from blank-line splits — wrap chunks not already wrapped in block element
-  const blocks = html.split(/\n{2,}/).map(b => {
-    const trimmed = b.trim();
-    if (!trimmed) return '';
-    if (/^<(ul|ol|pre|h[1-6])/.test(trimmed)) return trimmed;
-    return `<p>${trimmed.replace(/\n/g, '<br>')}</p>`;
-  });
-  return blocks.join('');
-}
-
-function saveAIConversations() {
-  try {
-    localStorage.setItem('ai_conversations', JSON.stringify(AI_CONVERSATIONS));
-    if (AI_CURRENT_ID) localStorage.setItem('ai_current_id', AI_CURRENT_ID);
-    else localStorage.removeItem('ai_current_id');
-  } catch {}
-}
-
-function getCurrentAIConv() {
-  return AI_CURRENT_ID ? AI_CONVERSATIONS.find(c => c.id === AI_CURRENT_ID) : null;
-}
-
-function syncCurrentAIConv() {
-  let c = getCurrentAIConv();
-  if (!c && AI_MESSAGES.length) {
-    // Auto-create a conversation when the user sends without selecting one
-    c = { id: 'ai-' + Date.now(), title: 'New chat', messages: [], createdAt: Date.now() };
-    AI_CONVERSATIONS.unshift(c);
-    AI_CURRENT_ID = c.id;
-  }
-  if (c) {
-    c.messages = [...AI_MESSAGES];
-    if (c.title === 'New chat') {
-      const first = AI_MESSAGES.find(m => m.r === 'user');
-      if (first) c.title = first.t.slice(0, 48) + (first.t.length > 48 ? '…' : '');
-    }
-    c.updatedAt = Date.now();
-    saveAIConversations();
-  }
-}
-
-function newAIConv() {
-  const id = 'ai-' + Date.now();
-  AI_CONVERSATIONS.unshift({ id, title: 'New chat', messages: [], createdAt: Date.now() });
-  AI_CURRENT_ID = id;
-  AI_MESSAGES = [];
-  saveAIConversations();
-  renderPage('ai');
-}
-
-function selectAIConv(id) {
-  AI_CURRENT_ID = id;
-  const c = getCurrentAIConv();
-  AI_MESSAGES = c ? [...(c.messages || [])] : [];
-  saveAIConversations();
-  renderPage('ai');
-}
-
-function deleteAIConv(id) {
-  const i = AI_CONVERSATIONS.findIndex(c => c.id === id);
-  if (i < 0) return;
-  AI_CONVERSATIONS.splice(i, 1);
-  if (AI_CURRENT_ID === id) {
-    AI_CURRENT_ID = AI_CONVERSATIONS[0]?.id || null;
-    const c = getCurrentAIConv();
-    AI_MESSAGES = c ? [...(c.messages || [])] : [];
-  }
-  saveAIConversations();
-  renderPage('ai');
-}
-
-function copyAIMessage(idx) {
-  const m = AI_MESSAGES[idx];
-  if (!m) return;
-  navigator.clipboard?.writeText(m.t).then(() => {
-    const btn = document.getElementById('ai-copy-' + idx);
-    if (btn) {
-      const original = btn.textContent;
-      btn.textContent = 'Copied';
-      setTimeout(() => { btn.textContent = original; }, 1200);
-    }
-  });
-}
-
-function useFollowUp(text) {
-  const input = document.getElementById('ai-input');
-  if (input) { input.value = text; input.focus(); }
-}
-
-function renderAI() {
-  const empty = AI_MESSAGES.length === 0;
-  const sources = [
-    {k:'tickets',   l:`Tickets · ${TICKETS.length}`},
-    {k:'customers', l:`Customers · ${CUSTOMERS.length}`},
-    {k:'agents',    l:`Agents · ${AGENTS.length}`},
-    {k:'kb',        l:`KB · ${KB_ARTICLES.length}`},
-  ];
-  const chips = sources.map(s => `<span class="source-chip ${AI_CONTEXT_SOURCES[s.k]?'on':''}" onclick="aiToggleSource('${s.k}')" style="cursor:pointer">${s.l}</span>`).join('');
-  const noKeyMsg = AI_API_KEY ? '' : ` Add a Claude API key in <span class="link" onclick="navTo('settings');setSettingsTab('ai')">Settings → AI Assistant</span> to get started.`;
-
-  const msgs = AI_MESSAGES.map((m, i) => {
-    const body = m.r === 'user'
-      ? `<div style="white-space:pre-wrap;word-wrap:break-word">${escHtml(m.t)}</div>`
-      : `<div class="ai-md">${renderMarkdown(m.t)}</div>`;
-    return `
-      <div class="ai-msg ai-msg-${m.r==='user'?'user':'ai'}">
-        <div class="ai-msg-from">${m.r==='user' ? escHtml(SESSION?.name||'You') : 'AI Assistant'}</div>
-        ${body}
-        ${m.r === 'ai' ? `<button class="ai-msg-copy" id="ai-copy-${i}" onclick="copyAIMessage(${i})">Copy</button>` : ''}
-      </div>`;
-  }).join('');
-
-  const thinkingMsg = AI_THINKING ? `
-    <div class="ai-msg ai-msg-ai">
-      <div class="ai-msg-from">AI Assistant</div>
-      <div style="display:flex;gap:4px;align-items:center;color:var(--purple);font-size:18px;line-height:1"><span class="dot">·</span><span class="dot">·</span><span class="dot">·</span></div>
-    </div>` : '';
-
-  const last = AI_MESSAGES[AI_MESSAGES.length - 1];
-  const showFollowUps = last && last.r === 'ai' && !AI_THINKING;
-  const followUpsHtml = showFollowUps ? `
-    <div class="ai-followups">
-      ${AI_FOLLOWUPS.map(f => `<span class="ai-followup" onclick="useFollowUp(${JSON.stringify(f)})">${f}</span>`).join('')}
-    </div>` : '';
-
-  const sortedConvs = [...AI_CONVERSATIONS].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
-  const convList = sortedConvs.length
-    ? sortedConvs.map(c => `
-        <div class="ai-conv-item ${c.id===AI_CURRENT_ID?'active':''}" onclick="selectAIConv('${escAttr(c.id)}')">
-          <div class="ai-conv-title" title="${escHtml(c.title)}">${escHtml(c.title)}</div>
-          <button class="ai-conv-del" onclick="event.stopPropagation();deleteAIConv('${escAttr(c.id)}')" title="Delete">×</button>
-        </div>`).join('')
-    : '<div class="ai-conv-empty">No conversations yet — send a message to start one.</div>';
-
-  return `
-    <div class="page">
-      <div class="topbar">
-        <div class="tb-title">AI Intelligence</div>
-        ${AI_MESSAGES.length ? `<button class="btn btn-sm" onclick="aiClear()">Clear chat</button>` : ''}
-        <span style="font-size:11px;color:${AI_API_KEY?'var(--green)':'var(--amber)'};font-family:'DM Mono',monospace;display:flex;align-items:center;gap:6px;margin-left:auto">
-          <span style="width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor"></span>
-          ${AI_API_KEY ? `${AI_MODEL || 'claude-sonnet-4-6'}` : 'No API key'}
-        </span>
-      </div>
-      <div class="ai-layout">
-        <aside class="ai-sidebar">
-          <div class="ai-sidebar-header">
-            <button class="btn btn-solid btn-sm" onclick="newAIConv()" style="width:100%;justify-content:center">+ New chat</button>
-          </div>
-          <div class="ai-conv-list">${convList}</div>
-        </aside>
-        <div class="ai-main">
-          <div class="filter-bar">
-            <span class="filter-label">Context</span>
-            ${chips}
-            <span style="font-size:11px;color:var(--ink3);margin-left:auto">Toggle which workspace data the AI can see</span>
-          </div>
-          ${empty ? `
-            <div class="page-scroll" style="padding:48px 20px">
-              <div style="max-width:680px;margin:0 auto;text-align:center">
-                <div style="font-family:'Inter',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--ink);margin-bottom:8px">How can I help?</div>
-                <div style="font-size:13px;color:var(--ink3);margin-bottom:28px">Ask about your workspace data — tickets, customers, agents or knowledge base.${noKeyMsg}</div>
-              </div>
-              <div class="prompt-cards" style="justify-content:center;padding:0">
-                ${AI_PROMPT_CARDS.map(p => `<div class="prompt-card" onclick="aiUsePrompt(${JSON.stringify(p)})">${p}</div>`).join('')}
-              </div>
-            </div>
-          ` : `<div class="ai-chat" id="ai-chat">${msgs}${thinkingMsg}</div>${followUpsHtml}`}
-          <div class="ai-input-row">
-            <textarea id="ai-input" placeholder="${AI_API_KEY?'Ask about your workspace… (Enter to send, Shift+Enter for new line)':'Add an API key in Settings → AI Assistant to chat'}" style="flex:1;font-family:'Inter',sans-serif;font-size:13px;line-height:1.5;color:var(--ink);background:var(--off2);border:1px solid var(--rule);border-radius:var(--r);padding:9px 12px;resize:none;outline:none;height:46px" onkeydown="aiInputKey(event)" ${AI_THINKING?'disabled':''}></textarea>
-            <button class="btn btn-solid" onclick="aiSend()" ${AI_THINKING?'disabled':''}>${AI_THINKING?'…':'Send'}</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
-}
-
-function aiToggleSource(k) {
-  AI_CONTEXT_SOURCES[k] = !AI_CONTEXT_SOURCES[k];
-  renderPage('ai');
-}
-
-function aiUsePrompt(p) {
-  const input = document.getElementById('ai-input');
-  if (input) { input.value = p; input.focus(); }
-}
-
-function aiClear() {
-  AI_MESSAGES = [];
-  const c = getCurrentAIConv();
-  if (c) { c.messages = []; saveAIConversations(); }
-  renderPage('ai');
-}
-
-function aiInputKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    aiSend();
-  }
-}
-
-function scrollAIBottom() {
-  const chat = document.getElementById('ai-chat');
-  if (chat) chat.scrollTop = chat.scrollHeight;
-}
-
-function buildAIContext() {
-  const parts = [];
-  if (AI_CONTEXT_SOURCES.tickets) {
-    parts.push(`TICKETS (${TICKETS.length}):\n` + TICKETS.map(t => {
-      const c = CUSTOMERS.find(x => x.id === t.customerId);
-      return `- ${t.id}: "${t.subject}" | status=${t.status} | priority=${t.priority} | category=${t.category} | sla=${t.sla} | agent=${t.agent} | customer=${c?c.first+' '+c.last:t.customerId} | tags=[${t.tags.join(',')}] | csat=${t.csat??'n/a'}`;
-    }).join('\n'));
-  }
-  if (AI_CONTEXT_SOURCES.customers) {
-    parts.push(`CUSTOMERS (${CUSTOMERS.length}):\n` + CUSTOMERS.map(c =>
-      `- ${c.id}: ${c.first} ${c.last} | brand=${c.brand} | vip=${c.vip} | jurisdiction=${c.jurisdiction} | kyc=${c.kyc} | consent=${c.consent} | since=${c.since}`
-    ).join('\n'));
-  }
-  if (AI_CONTEXT_SOURCES.agents) {
-    parts.push(`AGENTS (${AGENTS.length}):\n` + AGENTS.map(a =>
-      `- ${a.name} (${a.initials}) | role=${a.role} | active=${a.active}`
-    ).join('\n'));
-  }
-  if (AI_CONTEXT_SOURCES.kb) {
-    parts.push(`KNOWLEDGE BASE (${KB_ARTICLES.length}):\n` + KB_ARTICLES.map(a =>
-      `- ${a.id}: "${a.title}" | category=${a.category}`
-    ).join('\n'));
-  }
-  return parts.length ? parts.join('\n\n') : 'No workspace data context selected.';
-}
-
-async function aiSend() {
-  if (AI_THINKING) return;
-  const input = document.getElementById('ai-input');
-  const text = input?.value.trim();
-  if (!text) return;
-
-  AI_MESSAGES.push({r:'user', t:text});
-  if (input) input.value = '';
-  syncCurrentAIConv();
-
-  if (!AI_API_KEY) {
-    AI_MESSAGES.push({r:'ai', t:'No Claude API key configured. Add one in Settings → AI Assistant to enable the assistant.'});
-    syncCurrentAIConv();
-    renderPage('ai');
-    return;
-  }
-
-  AI_THINKING = true;
-  renderPage('ai');
-
-  const ctx = buildAIContext();
-  const conv = AI_MESSAGES
-    .filter(m => m.r === 'user' || m.r === 'ai')
-    .map(m => ({ role: m.r === 'user' ? 'user' : 'assistant', content: m.t }));
-
-  try {
-    const { text, error } = await callClaude({
-      system: `You are an AI analyst embedded in a service desk app. Answer questions about the workspace data provided below. Be concise and concrete — when you reference tickets, customers or agents, use their identifiers (e.g. TK-001, M003). If a question can't be answered from the data provided, say so plainly.\n\n${ctx}`,
-      messages: conv,
-      maxTokens: 1024,
-    });
-    const reply = text || error || 'Could not generate a response.';
-    AI_MESSAGES.push({r:'ai', t:reply});
-  } catch (e) {
-    AI_MESSAGES.push({r:'ai', t:'AI unavailable: ' + (e?.message || 'network error')});
-  }
-  AI_THINKING = false;
-  syncCurrentAIConv();
-  renderPage('ai');
 }
 
 // ─── Workflows ───────────────────────────────────────────────────────────────
@@ -8465,11 +8129,6 @@ function deleteRolePrompt(role) {
     delete ROLES_MATRIX[role];
     closeModal(); renderPage('roles');
   }, 'Delete');
-}
-function initAI() {
-  scrollAIBottom();
-  const input = document.getElementById('ai-input');
-  if (input && !AI_THINKING) input.focus();
 }
 function drawReportCharts() {}
 

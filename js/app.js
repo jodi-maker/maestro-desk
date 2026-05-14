@@ -74,6 +74,7 @@ import {
   fireWebhook, ticketPayload, renderWebhooks,
   whNew, whEdit, whApplyTemplate, whToggle, whDelete, whTestFire,
 } from './webhooks/index.js';
+import { showModal, closeModal } from './core/modal.js';
 import {
   COLLAPSED_SECTIONS,
   applyCollapsibleHeaders, resetAllCollapsedSections,
@@ -2198,24 +2199,6 @@ function renderCustomerDetail(custId) {
 }
 
 
-// ─── Modal helpers ─────────────────────────────────────────────────────────────
-function showModal(title, body, onConfirm, confirmLabel='Save', isLarge=false) {
-  document.getElementById('modal-container').innerHTML = `
-    <div class="modal-bg" onclick="closeModal()">
-      <div class="${isLarge?'modal modal-lg':'modal'}" onclick="event.stopPropagation()">
-        <div class="modal-head">
-          <div class="modal-title">${title}</div>
-          <div class="modal-close" onclick="closeModal()">×</div>
-        </div>
-        <div class="modal-body">${body}</div>
-        ${onConfirm?`<div class="modal-foot">
-          <button class="btn" onclick="closeModal()">Cancel</button>
-          <button class="btn btn-solid" onclick="(${onConfirm.toString()})()">${confirmLabel}</button>
-        </div>`:''}
-      </div>
-    </div>`;
-}
-function closeModal() { document.getElementById('modal-container').innerHTML=''; }
 
 
 document.addEventListener('mousedown', e => {

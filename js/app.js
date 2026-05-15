@@ -1595,7 +1595,6 @@ function placeholderPage(title, blurb) {
     </div>`;
 }
 
-
 // Render a categorical breakdown as bar / donut / list. Used by the dash and
 // report widgets that have a `charts:['bar','donut','list']` registry entry.
 function renderCategoricalChart(items, colorFor, chart) {
@@ -1625,7 +1624,6 @@ function renderCategoricalChart(items, colorFor, chart) {
   }).join('');
   return `<div class="r-stack">${segs}</div><div style="margin-top:12px">${legend}</div>`;
 }
-
 
 // ─── Customisable widget shell (dashboard + reports) ───────────────────────
 // Each widget on the dashboard or reports page is wrapped with a chrome that

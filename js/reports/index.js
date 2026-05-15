@@ -67,7 +67,7 @@ export function computeReportStats(tickets) {
 
 function rBarRow(label, count, max, color) {
   const pct = max ? (count/max)*100 : 0;
-  return `<div class="r-bar-row"><div class="r-bar-lbl">${label}</div><div class="r-bar-track"><div class="r-bar-fill" style="background:${color||'var(--purple)'};width:${pct}%"></div></div><div class="r-bar-val">${count}</div></div>`;
+  return `<div class="r-bar-row"><div class="r-bar-lbl">${window.escHtml(label)}</div><div class="r-bar-track"><div class="r-bar-fill" style="background:${color||'var(--purple)'};width:${pct}%"></div></div><div class="r-bar-val">${count}</div></div>`;
 }
 
 function reportStatus(s) {

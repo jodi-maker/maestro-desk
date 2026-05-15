@@ -26,11 +26,13 @@ let FILTER_QUERY = '';
 let AGENT_SELECTED = null;
 let CUSTOMER_SELECTED = null;
 const CUSTOMER_SELECTED_IDS = new Set();
-// Dashboard layout — null until first renderDashboard runs and hydrates it
-// from localStorage. Lives here so the widget-shell handlers in app.js and
-// the dashboard module both share one binding (both reassign on reset and
-// reorder).
+// Dashboard and Reports layouts — null until app.js hydrates them at
+// startup from localStorage. Live here so the widget-shell module and the
+// per-page render code (dashboard module + reports renderers in app.js)
+// share one binding (widget-shell handlers reassign on reset; reorder
+// mutates in-place).
 let DASH_LAYOUT = null;
+let REPORT_LAYOUT = null;
 let KB_SELECTED = null;
 let TAG_SELECTED = null;
 let TAG_FILTER_TYPE = 'all';

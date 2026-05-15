@@ -25,6 +25,7 @@ let FILTER_AGENT = 'all';
 let FILTER_QUERY = '';
 let AGENT_SELECTED = null;
 let CUSTOMER_SELECTED = null;
+const CUSTOMER_SELECTED_IDS = new Set();
 let KB_SELECTED = null;
 let TAG_SELECTED = null;
 let TAG_FILTER_TYPE = 'all';

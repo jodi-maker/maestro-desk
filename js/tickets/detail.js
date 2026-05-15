@@ -278,14 +278,14 @@ export function openTicket(id) {
         if (!lt) return '';
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--rule)">
-            <div style="flex:1;min-width:0;cursor:pointer" onclick="openTicket('${linkedId}')">
+            <div style="flex:1;min-width:0;cursor:pointer" onclick="openTicket('${window.escAttr(linkedId)}')">
               <div style="font-size:11.5px;color:var(--ink2);line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lt.subject}</div>
               <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
                 <span class="tag tag-${lt.status}" style="font-size:9px">${lt.status}</span>
-                <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${linkedId}</span>
+                <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${window.escHtml(linkedId)}</span>
               </div>
             </div>
-            <button onclick="unlinkTicket('${id}','${linkedId}')" style="background:transparent;border:none;color:var(--ink3);cursor:pointer;font-size:14px;padding:4px 6px;flex-shrink:0;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--ink3)'" title="Unlink">×</button>
+            <button onclick="unlinkTicket('${window.escAttr(id)}','${window.escAttr(linkedId)}')" style="background:transparent;border:none;color:var(--ink3);cursor:pointer;font-size:14px;padding:4px 6px;flex-shrink:0;line-height:1" onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--ink3)'" title="Unlink">×</button>
           </div>`;
       }).join('') : '<div style="font-size:11px;color:var(--ink3);text-align:center;padding:8px 0">No linked tickets</div>'}
     </div>`;

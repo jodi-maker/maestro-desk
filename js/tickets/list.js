@@ -70,23 +70,23 @@ export function renderTickets() {
   const rowFor = t => {
     const cust = CUSTOMERS.find(c => c.id === t.customerId);
     const checked = TICKET_SELECTED_IDS.has(t.id);
-    return `<tr onclick="openTicket('${t.id}')" style="cursor:pointer${checked?';background:var(--purple-lt)':''}">
+    return `<tr onclick="openTicket('${window.escAttr(t.id)}')" style="cursor:pointer${checked?';background:var(--purple-lt)':''}">
       <td style="width:32px;padding-right:0" onclick="event.stopPropagation()">
-        <input type="checkbox" ${checked?'checked':''} onchange="toggleTicketSelected('${t.id}')" style="cursor:pointer;accent-color:var(--purple)" />
+        <input type="checkbox" ${checked?'checked':''} onchange="toggleTicketSelected('${window.escAttr(t.id)}')" style="cursor:pointer;accent-color:var(--purple)" />
       </td>
-      <td class="bold">${t.id}</td>
-      <td>${cust ? cust.first+' '+cust.last : '—'}</td>
-      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--ink)">${t.subject}${t.snoozedUntil && new Date(t.snoozedUntil).getTime() > Date.now() ? ` <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);font-weight:400" title="Snoozed">💤 ${window.escHtml(formatSnoozeUntil(t.snoozedUntil))}</span>` : ''}</td>
-      <td><span class="tag tag-${t.status}">${t.status}</span></td>
-      <td><span class="tag tag-${t.priority}">${t.priority}</span></td>
-      <td>${t.category}</td>
-      <td>${t.agent || '<span style="color:var(--ink3)">Unassigned</span>'}</td>
-      <td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${t.updated}</td>
-      <td><span class="sla-${t.sla}" style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;text-transform:uppercase">${t.sla}</span></td>
+      <td class="bold">${window.escHtml(t.id)}</td>
+      <td>${cust ? window.escHtml(cust.first+' '+cust.last) : '—'}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--ink)">${window.escHtml(t.subject)}${t.snoozedUntil && new Date(t.snoozedUntil).getTime() > Date.now() ? ` <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3);font-weight:400" title="Snoozed">💤 ${window.escHtml(formatSnoozeUntil(t.snoozedUntil))}</span>` : ''}</td>
+      <td><span class="tag tag-${window.escAttr(t.status)}">${window.escHtml(t.status)}</span></td>
+      <td><span class="tag tag-${window.escAttr(t.priority)}">${window.escHtml(t.priority)}</span></td>
+      <td>${window.escHtml(t.category)}</td>
+      <td>${t.agent ? window.escHtml(t.agent) : '<span style="color:var(--ink3)">Unassigned</span>'}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:10px;color:var(--ink3)">${window.escHtml(t.updated)}</td>
+      <td><span class="sla-${window.escAttr(t.sla)}" style="font-family:'Inter',sans-serif;font-size:11px;font-weight:500;text-transform:uppercase">${window.escHtml(t.sla)}</span></td>
     </tr>`;
   };
 
-  const groupHeader = key => `<tr style="background:var(--off2)"><td colspan="10" style="padding:8px 14px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);text-transform:capitalize">${key}</td></tr>`;
+  const groupHeader = key => `<tr style="background:var(--off2)"><td colspan="10" style="padding:8px 14px;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--ink3);text-transform:capitalize">${window.escHtml(key)}</td></tr>`;
   const tableBody = groups.map(g => `${g.key !== null ? groupHeader(`${g.key} · ${g.items.length}`) : ''}${g.items.map(rowFor).join('')}`).join('');
 
   const filteredIds = list.map(t => t.id);

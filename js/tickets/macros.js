@@ -6,8 +6,8 @@
 //
 // External reaches (interim, via window): changeTicketStatus,
 // changeTicketPriority, changeTicketAgent, addTicketTag, openTicket,
-// isAdmin, escHtml, escAttr, showModal, closeModal, navTo, renderPage —
-// all still live in app.js.
+// isAdmin, escHtml, escAttr, closeModal, navTo, renderPage — still in
+// app.js. showModal is a direct ES import from core/modal.js.
 //
 // logTicketEvent is imported from core/activity-log.js since that's already
 // extracted.
@@ -17,6 +17,7 @@
 // MACRO_FILTER_QUERY come from core/state.js the same way.
 
 import { logTicketEvent } from '../core/activity-log.js';
+import { showModal } from '../core/modal.js';
 
 export const MACROS = [
   { id:'MAC-001', name:'Waiting on customer', icon:'⏸', description:'Pause for customer reply',
@@ -67,6 +68,22 @@ function macActionSummary(a) {
     return `+ note <em style="color:var(--ink3)">"${window.escHtml(preview)}"</em>`;
   }
   return window.escHtml(a.kind);
+}
+
+// Picker for inserting a CANNED_RESPONSES entry into the compose box of
+// ticket `id`. Inline onclick=insertMacro(...) resolves through window;
+// the surrounding labels go through escAttr/escHtml on the way in.
+export function showMacroPanel(id) {
+  const items = CANNED_RESPONSES.map((r, i) => {
+    const preview = r.text.replace(/\n+/g, ' ').slice(0, 100);
+    return `<div class="macro-item" onclick="insertMacro('${window.escAttr(id)}',${i})">
+      <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${window.escHtml(r.name)}</div>
+        <div style="font-size:11px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${window.escHtml(preview)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  showModal('Insert canned response', `<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">{name} placeholders are auto-filled with the customer\'s first name.</div>${items}`, null, null);
 }
 
 export function runMacro(macroId, ticketId) {

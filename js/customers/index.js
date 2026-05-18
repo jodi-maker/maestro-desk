@@ -6,8 +6,8 @@
 // the reversal can restore them, and primary-record backfill is undoable.
 //
 // External reaches (interim, via window): escAttr, escHtml, isAdmin,
-// renderPage, openTicket, showManageFieldsModal, showCSVModal,
-// showNewCustomerModal — all still in app.js.
+// renderPage, openTicket, showManageFieldsModal — all still in app.js.
+// showCSVModal / showNewCustomerModal moved to ./modals.js.
 //
 // CUSTOMERS, TICKETS, CUSTOM_FIELDS, SESSION come from data.js / state.js via
 // the global lexical env; CUSTOMER_SELECTED, CUSTOMER_SELECTED_IDS,

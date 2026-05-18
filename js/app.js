@@ -48,7 +48,7 @@ import {
 } from './core/activity-log.js';
 import {
   MACROS,
-  runMacro, bulkRunMacro, showApplyMacroModal,
+  runMacro, bulkRunMacro, showApplyMacroModal, showMacroPanel,
   macAddStep, macRemoveStep, macStepKindChange,
   macNew, macEdit, macDelete, renderMacros,
 } from './tickets/macros.js';
@@ -465,21 +465,6 @@ function escHtml(s) {
 // Roles was extracted so they stay reachable across feature modules.
 function isAdmin() { return SESSION?.role === 'Admin'; }
 function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
-
-// ─── Modal/panel stubs (referenced by inline onclick) ────────────────────────
-function showMacroPanel(id) {
-  const items = CANNED_RESPONSES.map((r, i) => {
-    const preview = r.text.replace(/\n+/g, ' ').slice(0, 100);
-    return `<div class="macro-item" onclick="insertMacro('${escAttr(id)}',${i})">
-      <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;color:var(--ink)">${r.name}</div>
-        <div style="font-size:11px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</div>
-      </div>
-    </div>`;
-  }).join('');
-  showModal('Insert canned response', `<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">{name} placeholders are auto-filled with the customer\'s first name.</div>${items}`, null, null);
-}
-
 
 // ─── Window bridge ─────────────────────────────────────────────────────────────
 // Re-exposes module-scope functions onto window. Two reasons an entry exists:

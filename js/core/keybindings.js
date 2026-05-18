@@ -1,0 +1,45 @@
+// ─── App-wide keybindings + navigation helpers ──────────────────────────────
+// Two named exports plus a side-effect keydown listener:
+//
+//   - navTo(page)            — sidebar-style nav from any context. Finds the
+//                              matching .sb-item by its onclick attribute and
+//                              calls window.nav(page, target). `nav` stays in
+//                              app.js (it's part of the bootstrap/routing).
+//   - focusGlobalSearch()    — focuses the #gs-input and selects it. Called
+//                              from an inline onclick in help/index.js, so
+//                              the window-bridge entry is required.
+//   - keydown listener       — `/` focuses global search when not typing in a
+//                              field; Cmd-K / Ctrl-K opens the quick switcher
+//                              from anywhere, including inside text inputs.
+
+import { toggleQuickSwitcher } from '../quick-switcher/index.js';
+
+export function navTo(page) {
+  let target = null;
+  document.querySelectorAll('.sb-item').forEach(i => {
+    const a = i.getAttribute('onclick') || '';
+    if (a.includes(`'${page}'`)) target = i;
+  });
+  window.nav(page, target);
+}
+
+export function focusGlobalSearch() {
+  const input = document.getElementById('gs-input');
+  if (input) { input.focus(); input.select(); }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+    const tag = document.activeElement?.tagName;
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      const input = document.getElementById('gs-input');
+      if (input) { e.preventDefault(); input.focus(); input.select(); }
+    }
+  }
+  // Cmd+K / Ctrl+K opens the quick switcher from anywhere — including inside
+  // text inputs, since this is the standard shortcut agents reach for.
+  if (e.key === 'k' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+    e.preventDefault();
+    toggleQuickSwitcher(true);
+  }
+});

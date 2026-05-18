@@ -84,6 +84,7 @@ import {
   applyCollapsibleHeaders, resetAllCollapsedSections,
 } from './core/collapsible.js';
 import './core/dismiss.js';
+import { navTo, focusGlobalSearch } from './core/keybindings.js';
 import { renderProfile } from './profile/index.js';
 import {
   renderAgents, renderAgentDetail,
@@ -330,39 +331,6 @@ function updateNavBadges() {
   refreshNotifBadge();
 }
 
-// ─── App-wide navigation helpers ─────────────────────────────────────────────
-// navTo + focusGlobalSearch + the / and ⌘K keydown listeners live here.
-// Not Help-page code — they sit next to it for historical reasons.
-function navTo(page) {
-  let target = null;
-  document.querySelectorAll('.sb-item').forEach(i => {
-    const a = i.getAttribute('onclick') || '';
-    if (a.includes(`'${page}'`)) target = i;
-  });
-  nav(page, target);
-}
-
-function focusGlobalSearch() {
-  const input = document.getElementById('gs-input');
-  if (input) { input.focus(); input.select(); }
-}
-
-
-document.addEventListener('keydown', e => {
-  if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
-    const tag = document.activeElement?.tagName;
-    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
-      const input = document.getElementById('gs-input');
-      if (input) { e.preventDefault(); input.focus(); input.select(); }
-    }
-  }
-  // Cmd+K / Ctrl+K opens the quick switcher from anywhere — including inside
-  // text inputs, since this is the standard shortcut agents reach for.
-  if (e.key === 'k' && (e.metaKey || e.ctrlKey) && !e.altKey) {
-    e.preventDefault();
-    toggleQuickSwitcher(true);
-  }
-});
 
 // ─── Stub pages (placeholders so sidebar nav renders) ────────────────────────
 function placeholderPage(title, blurb) {
@@ -554,6 +522,7 @@ Object.assign(window, {
   exportReport,
   exportTicketList,
   filterCustomers,
+  focusGlobalSearch,
   globalSearch,
   gsGo,
   gsKey,

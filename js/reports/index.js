@@ -5,13 +5,14 @@
 // imported by app.js for the startup layout-hydration block alongside
 // DASH_WIDGETS / DEFAULT_DASH_LAYOUT.
 //
-// External reaches (interim, via window): escHtml, fmtMinutes,
-// renderCategoricalChart, renderPage — all still in app.js.
+// External reaches (interim, via window): escHtml, fmtMinutes, renderPage
+// — still in app.js.
 //
 // TICKETS comes from data.js via the global lexical env; REPORT_LAYOUT
 // comes from core/state.js the same way.
 
 import { renderWidgetGrid } from '../core/widget-shell.js';
+import { renderCategoricalChart } from '../core/chart.js';
 import { ticketTotalMinutes, ticketBillableMinutes } from '../tickets/time-tracking.js';
 
 import { STATUS_COLORS, PRIORITY_COLORS } from '../core/colors.js';
@@ -70,19 +71,19 @@ function rBarRow(label, count, max, color) {
 function reportStatus(s) {
   const items = Object.entries(s.byStatus).sort((a,b) => b[1] - a[1]);
   const chart = REPORT_LAYOUT.charts['r-status'] || 'bar';
-  return `<div class="card"><div class="card-title">Status distribution</div>${window.renderCategoricalChart(items, k => STATUS_COLORS[k] || 'var(--ink3)', chart)}</div>`;
+  return `<div class="card"><div class="card-title">Status distribution</div>${renderCategoricalChart(items, k => STATUS_COLORS[k] || 'var(--ink3)', chart)}</div>`;
 }
 
 function reportPriority(s) {
   const items = ['urgent','high','normal','low'].filter(p => s.byPriority[p]).map(p => [p, s.byPriority[p]]);
   const chart = REPORT_LAYOUT.charts['r-priority'] || 'bar';
-  return `<div class="card"><div class="card-title">Priority breakdown</div>${window.renderCategoricalChart(items, k => PRIORITY_COLORS[k] || 'var(--ink3)', chart)}</div>`;
+  return `<div class="card"><div class="card-title">Priority breakdown</div>${renderCategoricalChart(items, k => PRIORITY_COLORS[k] || 'var(--ink3)', chart)}</div>`;
 }
 
 function reportCategory(s) {
   const items = Object.entries(s.byCategory).sort((a,b) => b[1] - a[1]);
   const chart = REPORT_LAYOUT.charts['r-category'] || 'bar';
-  return `<div class="card"><div class="card-title">Category volume</div>${window.renderCategoricalChart(items, () => 'var(--cyan)', chart)}</div>`;
+  return `<div class="card"><div class="card-title">Category volume</div>${renderCategoricalChart(items, () => 'var(--cyan)', chart)}</div>`;
 }
 
 function reportAgents(s) {

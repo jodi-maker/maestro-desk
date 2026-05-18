@@ -6,8 +6,8 @@
 // chart-type switcher, layout persistence) lives in `core/widget-shell.js`
 // and is shared with the Reports page.
 //
-// External reaches (interim, via window): escAttr, escHtml, navTo,
-// renderCategoricalChart — all still in app.js.
+// External reaches (interim, via window): escAttr, escHtml, navTo —
+// still in app.js.
 //
 // TICKETS, AGENTS, WORKFLOWS, KB_ARTICLES, CUSTOMERS come from data.js via
 // the global lexical env; SESSION, AGENT_SELECTED, KB_SELECTED, DASH_LAYOUT
@@ -15,6 +15,7 @@
 
 import { STATUS_COLORS, PRIORITY_COLORS } from '../core/colors.js';
 import { renderWidgetGrid } from '../core/widget-shell.js';
+import { renderCategoricalChart } from '../core/chart.js';
 import { computeReportStats } from '../reports/index.js';
 
 export function openAgentFromDash(name) { AGENT_SELECTED = name; window.navTo('agents'); }
@@ -47,7 +48,7 @@ function dashStatus(s) {
   return `
     <div class="card span-4">
       <div class="card-title">Status</div>
-      ${window.renderCategoricalChart(items, k => STATUS_COLORS[k] || 'var(--ink3)', chart)}
+      ${renderCategoricalChart(items, k => STATUS_COLORS[k] || 'var(--ink3)', chart)}
     </div>`;
 }
 
@@ -59,7 +60,7 @@ function dashSLA(s) {
       <div class="r-tile" style="border-color:rgba(251,191,36,0.3);background:var(--amber-lt);padding:10px"><div class="r-tile-n" style="color:var(--amber);font-size:20px">${s.slaWarn}</div><div class="r-tile-l" style="color:var(--amber);font-size:10px">Warning</div></div>
       <div class="r-tile" style="border-color:rgba(248,113,113,0.3);background:var(--red-lt);padding:10px"><div class="r-tile-n" style="color:var(--red);font-size:20px">${s.slaBreach}</div><div class="r-tile-l" style="color:var(--red);font-size:10px">Breach</div></div>
     </div>`;
-  const barBody = window.renderCategoricalChart(
+  const barBody = renderCategoricalChart(
     [['on track', s.slaOk], ['warning', s.slaWarn], ['breach', s.slaBreach]],
     k => k === 'on track' ? 'var(--green)' : k === 'warning' ? 'var(--amber)' : 'var(--red)',
     'bar'
@@ -191,7 +192,7 @@ function dashPriority(s) {
   return `
     <div class="card span-4">
       <div class="card-title">Priority</div>
-      ${window.renderCategoricalChart(items, k => PRIORITY_COLORS[k] || 'var(--ink3)', chart)}
+      ${renderCategoricalChart(items, k => PRIORITY_COLORS[k] || 'var(--ink3)', chart)}
     </div>`;
 }
 

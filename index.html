@@ -37,27 +37,29 @@
         </button>
       </div>
 
-      <div class="auth-divider"><span>or with email</span></div>
+      <div class="auth-email-section email-collapsed" id="auth-email-section">
+        <div class="auth-divider auth-divider-toggle" onclick="document.getElementById('auth-email-section').classList.toggle('email-collapsed')"><span>or with email <span class="auth-email-chev">▾</span></span></div>
 
-      <div class="form-row">
-        <label class="form-label">Work email</label>
-        <input class="form-input" id="login-email" type="email" placeholder="you@company.com" autocomplete="username"/>
-      </div>
-      <div class="form-row">
-        <label class="form-label">Password</label>
-        <div class="pw-input-wrap">
-          <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" style="padding-right:38px" onkeydown="if(event.key==='Enter')submitLogin()"/>
-          <button type="button" class="pw-toggle" onclick="togglePassword('login-password')" tabindex="-1" aria-label="Toggle password visibility">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.2"/></svg>
-          </button>
+        <div class="form-row">
+          <label class="form-label">Work email</label>
+          <input class="form-input" id="login-email" type="email" placeholder="you@company.com" autocomplete="username"/>
         </div>
+        <div class="form-row">
+          <label class="form-label">Password</label>
+          <div class="pw-input-wrap">
+            <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" style="padding-right:38px" onkeydown="if(event.key==='Enter')submitLogin()"/>
+            <button type="button" class="pw-toggle" onclick="togglePassword('login-password')" tabindex="-1" aria-label="Toggle password visibility">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7s2-4 6-4 6 4 6 4-2 4-6 4-6-4-6-4z" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.2"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="auth-remember">
+          <label class="auth-check"><input type="checkbox" id="remember-me"/><span>Remember me</span></label>
+          <span class="auth-link" style="margin:0;font-size:12px" onclick="showAuthPanel('forgot')">Forgot password?</span>
+        </div>
+        <button class="btn btn-solid" onclick="submitLogin()" style="width:100%;justify-content:center;margin-top:12px;padding:10px 16px">Sign in</button>
+        <div id="login-error" class="auth-error" style="display:none"></div>
       </div>
-      <div class="auth-remember">
-        <label class="auth-check"><input type="checkbox" id="remember-me"/><span>Remember me</span></label>
-        <span class="auth-link" style="margin:0;font-size:12px" onclick="showAuthPanel('forgot')">Forgot password?</span>
-      </div>
-      <button class="btn btn-solid" onclick="submitLogin()" style="width:100%;justify-content:center;margin-top:12px;padding:10px 16px">Sign in</button>
-      <div id="login-error" class="auth-error" style="display:none"></div>
 
       <div class="auth-divider"><span>or try the demo</span></div>
 

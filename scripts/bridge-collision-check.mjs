@@ -38,7 +38,6 @@ const modules = [
   ['TicketDetail',           '../js/tickets/detail.js'],
   ['WidgetShell',            '../js/core/widget-shell.js'],
   ['AssignmentRules',        '../js/tickets/assignment-rules.js'],
-  ['Templates',              '../js/tickets/templates.js'],
   ['CSAT',                   '../js/tickets/csat.js'],
 ];
 

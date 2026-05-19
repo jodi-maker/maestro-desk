@@ -3,11 +3,16 @@
 // composer's "Insert canned response" panel; macros (tickets/macros.js)
 // reference them by id for reply-step actions.
 //
+// Click/change/input handlers route through core/event-delegation.js.
+// `renderTemplates` is the only export (the app.js router calls it).
+//
 // External reaches (interim, via window): isAdmin, escHtml, escAttr,
 // showModal, closeModal, renderPage — all still in app.js.
 //
 // CANNED_RESPONSES comes from data.js via the global lexical env;
 // TPL_FILTER_CAT and TPL_QUERY come from core/state.js the same way.
+
+import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
 
 export function renderTemplates() {
   const admin = window.isAdmin();
@@ -28,9 +33,9 @@ export function renderTemplates() {
       <td><span class="tag tag-neutral" style="font-size:10px">${window.escHtml(t.category||'—')}</span></td>
       <td style="font-size:12px;color:var(--ink2);max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${window.escHtml(preview)}</td>
       ${admin ? `<td style="text-align:right;white-space:nowrap">
-        <button class="btn btn-sm" onclick="tplEdit('${window.escAttr(t.id)}')">Edit</button>
-        <button class="btn btn-sm" onclick="tplDuplicate('${window.escAttr(t.id)}')">Copy</button>
-        <button class="btn btn-sm btn-danger" onclick="tplDelete('${window.escAttr(t.id)}')">Delete</button>
+        <button class="btn btn-sm" data-action="templates.edit" data-tpl-id="${window.escAttr(t.id)}">Edit</button>
+        <button class="btn btn-sm" data-action="templates.duplicate" data-tpl-id="${window.escAttr(t.id)}">Copy</button>
+        <button class="btn btn-sm btn-danger" data-action="templates.delete" data-tpl-id="${window.escAttr(t.id)}">Delete</button>
       </td>` : ''}
     </tr>`;
   }).join('');
@@ -40,7 +45,7 @@ export function renderTemplates() {
       <div class="topbar">
         <div class="tb-title">Response Templates</div>
         ${admin
-          ? `<button class="btn btn-solid btn-sm" onclick="tplNew()">+ New Template</button>`
+          ? `<button class="btn btn-solid btn-sm" data-action="templates.new">+ New Template</button>`
           : `<span style="font-size:11px;color:var(--ink3);font-style:italic">Read-only — admin access required to edit</span>`}
       </div>
       <div class="kpi-bar">
@@ -51,8 +56,8 @@ export function renderTemplates() {
       </div>
       <div class="filter-bar">
         <span class="filter-label">Filter</span>
-        <input class="filter-select" placeholder="Search templates…" style="width:240px" value="${TPL_QUERY}" oninput="tplSetQuery(this.value)" id="tpl-search"/>
-        <select class="filter-select" onchange="TPL_FILTER_CAT=this.value;renderPage('templates')">
+        <input class="filter-select" placeholder="Search templates…" style="width:240px" value="${TPL_QUERY}" data-input-action="templates.setQuery" id="tpl-search"/>
+        <select class="filter-select" data-change-action="templates.setFilterCat">
           <option value="all" ${TPL_FILTER_CAT==='all'?'selected':''}>All categories</option>
           ${cats.map(c => `<option value="${c}" ${TPL_FILTER_CAT===c?'selected':''}>${c}</option>`).join('')}
         </select>
@@ -72,7 +77,7 @@ export function renderTemplates() {
     </div>`;
 }
 
-export function tplSetQuery(q) {
+function tplSetQuery(q) {
   TPL_QUERY = q;
   window.renderPage('templates');
   const input = document.getElementById('tpl-search');
@@ -101,7 +106,7 @@ function tplNextId() {
   return 'TPL-' + String(max + 1).padStart(3, '0');
 }
 
-export function tplNew() {
+function tplNew() {
   if (!window.isAdmin()) return;
   window.showModal('New template', tplFormBody(null), () => {
     const name = document.getElementById('tpl-name').value.trim();
@@ -113,7 +118,7 @@ export function tplNew() {
   }, 'Create');
 }
 
-export function tplEdit(id) {
+function tplEdit(id) {
   if (!window.isAdmin()) return;
   const t = CANNED_RESPONSES.find(x => x.id === id); if (!t) return;
   window.showModal(`Edit ${t.id}`, tplFormBody(t), () => {
@@ -126,14 +131,14 @@ export function tplEdit(id) {
   }, 'Save');
 }
 
-export function tplDuplicate(id) {
+function tplDuplicate(id) {
   if (!window.isAdmin()) return;
   const orig = CANNED_RESPONSES.find(x => x.id === id); if (!orig) return;
   CANNED_RESPONSES.unshift({ id:tplNextId(), name:orig.name + ' (copy)', category:orig.category, text:orig.text });
   window.renderPage('templates');
 }
 
-export function tplDelete(id) {
+function tplDelete(id) {
   if (!window.isAdmin()) return;
   const t = CANNED_RESPONSES.find(x => x.id === id); if (!t) return;
   window.showModal('Delete template', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(t.name)}</strong>?</div>`, () => {
@@ -142,3 +147,18 @@ export function tplDelete(id) {
     window.closeModal(); window.renderPage('templates');
   }, 'Delete');
 }
+
+registerActions({
+  'templates.new':       () => tplNew(),
+  'templates.edit':      (ds) => tplEdit(ds.tplId),
+  'templates.duplicate': (ds) => tplDuplicate(ds.tplId),
+  'templates.delete':    (ds) => tplDelete(ds.tplId),
+});
+
+registerChangeActions({
+  'templates.setFilterCat': (ds, el) => { TPL_FILTER_CAT = el.value; window.renderPage('templates'); },
+});
+
+registerInputActions({
+  'templates.setQuery': (ds, el) => tplSetQuery(el.value),
+});

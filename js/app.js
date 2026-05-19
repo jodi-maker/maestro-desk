@@ -187,10 +187,7 @@ import {
   applyAssignmentRules, runAssignmentRulesOnTicket, bulkApplyAssignmentRules,
   arToggle, arModeChanged, arNew, arEdit, arDelete, renderAssignmentRules,
 } from './tickets/assignment-rules.js';
-import {
-  renderTemplates, tplSetQuery,
-  tplNew, tplEdit, tplDuplicate, tplDelete,
-} from './tickets/templates.js';
+import { renderTemplates } from './tickets/templates.js';
 import {
   ticketCSATBlock, requestCSAT, openCSATSurveyModal,
   csatHover, csatPick, submitCSAT, renderCSAT,
@@ -237,7 +234,6 @@ import * as TicketsList from './tickets/list.js';
 import * as TicketDetail from './tickets/detail.js';
 import * as WidgetShell from './core/widget-shell.js';
 import * as AssignmentRules from './tickets/assignment-rules.js';
-import * as Templates from './tickets/templates.js';
 import * as CSAT from './tickets/csat.js';
 
 function login(role, name, initials) {
@@ -423,6 +419,6 @@ Object.assign(
   Settings, CustomFields, Roles, Workflows,
   Tags, Customers, CustomerModals, Dashboard,
   TicketsList, TicketDetail, WidgetShell,
-  AssignmentRules, Templates, CSAT,
+  AssignmentRules, CSAT,
 );
 

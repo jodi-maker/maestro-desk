@@ -6,12 +6,15 @@
 // an event, refreshes SLA, and stamps snoozeWokenAt so a wake notification
 // shows in the bell for ~24h.
 //
-// External reaches (interim, via window): refreshTicketSLA, refreshNotifBadge,
+// External reaches (interim, via window): refreshTicketSLA,
 // logTicketEvent, openTicket, renderPage, showModal, escHtml, closeModal. All
-// still live in app.js and are bridged.
+// still live in app.js and are bridged. refreshNotifBadge is a direct ES
+// import from notifications/index.js.
 //
 // SESSION, CURRENT_TICKET, CURRENT_PAGE, TICKET_SELECTED_IDS come from
 // core/state.js via the global lexical env.
+
+import { refreshNotifBadge } from '../notifications/index.js';
 
 export function snoozeTicket(id, untilIso, reason) {
   const t = TICKETS.find(x => x.id === id);
@@ -30,7 +33,7 @@ export function snoozeTicket(id, untilIso, reason) {
   window.logTicketEvent(id, 'system', `Snoozed until ${formatSnoozeUntil(t.snoozedUntil)}${reason ? ' · ' + reason : ''}`);
   if (CURRENT_TICKET === id) window.openTicket(id);
   else window.renderPage(CURRENT_PAGE || 'tickets');
-  window.refreshNotifBadge();
+  refreshNotifBadge();
 }
 
 export function unsnoozeTicket(id, viaWakeup) {
@@ -44,7 +47,7 @@ export function unsnoozeTicket(id, viaWakeup) {
   window.refreshTicketSLA(t);
   window.logTicketEvent(id, 'system', viaWakeup ? 'Snooze elapsed — ticket woke up' : 'Snooze cleared by agent');
   if (CURRENT_TICKET === id) window.openTicket(id);
-  window.refreshNotifBadge();
+  refreshNotifBadge();
 }
 
 export function checkSnoozeWakeups() {

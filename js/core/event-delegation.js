@@ -5,9 +5,14 @@
 // `onclick=`/`onchange=` handlers (which only resolve through window) so
 // feature modules don't need a namespace spread on the window bridge.
 //
-// Two event types are supported today:
-//   - click  via `data-action` and `registerActions({...})`
-//   - change via `data-change-action` and `registerChangeActions({...})`
+// Three event types are supported today:
+//   - click     via `data-action`           and `registerActions({...})`
+//   - change    via `data-change-action`    and `registerChangeActions({...})`
+//   - mousedown via `data-mousedown-action` and `registerMousedownActions({...})`
+//
+// mousedown is used for menus/dropdowns where the action should fire before
+// the click would, so the surrounding dismiss/blur logic (core/dismiss.js
+// also listens on mousedown) sees the menu in the right state.
 //
 // Add more (input, keydown, ...) here only when more than one module needs
 // them. One-off cases are better served by direct addEventListener after
@@ -29,8 +34,9 @@
 // unique per event type — registering a duplicate throws so silent
 // shadowing can't happen.
 
-const CLICK_ACTIONS  = Object.create(null);
-const CHANGE_ACTIONS = Object.create(null);
+const CLICK_ACTIONS     = Object.create(null);
+const CHANGE_ACTIONS    = Object.create(null);
+const MOUSEDOWN_ACTIONS = Object.create(null);
 
 function registerInto(registry, attrName, map) {
   for (const name of Object.keys(map)) {
@@ -40,21 +46,18 @@ function registerInto(registry, attrName, map) {
   }
 }
 
-export function registerActions(map)        { registerInto(CLICK_ACTIONS,  'data-action',        map); }
-export function registerChangeActions(map)  { registerInto(CHANGE_ACTIONS, 'data-change-action', map); }
+export function registerActions(map)           { registerInto(CLICK_ACTIONS,     'data-action',           map); }
+export function registerChangeActions(map)     { registerInto(CHANGE_ACTIONS,    'data-change-action',    map); }
+export function registerMousedownActions(map)  { registerInto(MOUSEDOWN_ACTIONS, 'data-mousedown-action', map); }
 
-document.addEventListener('click', e => {
-  const el = e.target.closest('[data-action]');
+function dispatch(registry, attr, e) {
+  const el = e.target.closest(`[${attr}]`);
   if (!el) return;
-  const fn = CLICK_ACTIONS[el.dataset.action];
+  const fn = registry[el.getAttribute(attr)];
   if (!fn) return;
   fn(el.dataset, el, e);
-});
+}
 
-document.addEventListener('change', e => {
-  const el = e.target.closest('[data-change-action]');
-  if (!el) return;
-  const fn = CHANGE_ACTIONS[el.dataset.changeAction];
-  if (!fn) return;
-  fn(el.dataset, el, e);
-});
+document.addEventListener('click',     e => dispatch(CLICK_ACTIONS,     'data-action',           e));
+document.addEventListener('change',    e => dispatch(CHANGE_ACTIONS,    'data-change-action',    e));
+document.addEventListener('mousedown', e => dispatch(MOUSEDOWN_ACTIONS, 'data-mousedown-action', e));

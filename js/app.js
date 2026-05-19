@@ -100,12 +100,7 @@ import {
   ttNew, ttEdit, ttDuplicate, ttDelete,
 } from './ticket-templates/index.js';
 import {
-  refreshNotifBadge, renderNotificationsPage,
-  toggleNotifications, openNotification, closeNotifAndGo,
-  markAllNotifRead, markAllNotifReadAndRender,
-  notifPageSetType, notifPageSetRead,
-  markNotifRead, dismissNotif, clearAllNotifications,
-  openNotificationFromPage,
+  refreshNotifBadge, renderNotificationsPage, toggleNotifications,
 } from './notifications/index.js';
 import {
   renderKB, voteKB, toggleKBFeatured,
@@ -251,7 +246,6 @@ import * as ProfileMenu from './profile-menu/index.js';
 import * as GlobalSearch from './global-search/index.js';
 import * as Auth from './auth/index.js';
 import * as TicketTemplates from './ticket-templates/index.js';
-import * as Notifications from './notifications/index.js';
 import * as KB from './kb/index.js';
 import * as Settings from './settings/index.js';
 import * as Layouts from './layouts/index.js';
@@ -442,14 +436,15 @@ function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
 Object.assign(
   window,
   { login, logout, nav, renderPage, updateNavBadges,
-    fmtMinutes, escHtml, escAttr, isAdmin },
+    fmtMinutes, escHtml, escAttr, isAdmin,
+    toggleNotifications },
   Theme, AIClient, Summarize, Translate, AIReply,
   TimeTracking, Snooze, SLA, SLAPolicies, Linked, Mentions, Drafts,
   ActivityLog, Macros, Attachments, AIPage, Portal,
   Webhooks, KBIntegration,
   Modal, Collapsible, Keybindings,
   Profile, Agents, ProfileMenu, GlobalSearch,
-  Auth, TicketTemplates, Notifications, KB,
+  Auth, TicketTemplates, KB,
   Settings, Layouts, CustomFields, Roles, Workflows,
   Tags, Customers, CustomerModals, Dashboard,
   TicketsList, TicketDetail, WidgetShell, Reports,

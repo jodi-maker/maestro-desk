@@ -30,7 +30,6 @@ const modules = [
   ['GlobalSearch',           '../js/global-search/index.js'],
   ['Auth',                   '../js/auth/index.js'],
   ['TicketTemplates',        '../js/ticket-templates/index.js'],
-  ['Notifications',          '../js/notifications/index.js'],
   ['KB',                     '../js/kb/index.js'],
   ['Settings',               '../js/settings/index.js'],
   ['Layouts',                '../js/layouts/index.js'],

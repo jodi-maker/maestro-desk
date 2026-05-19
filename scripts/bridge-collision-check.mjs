@@ -19,7 +19,6 @@ const modules = [
   ['Collapsible',            '../js/core/collapsible.js'],
   ['Keybindings',            '../js/core/keybindings.js'],
   ['GlobalSearch',           '../js/global-search/index.js'],
-  ['KB',                     '../js/kb/index.js'],
   ['Settings',               '../js/settings/index.js'],
   ['CustomFields',           '../js/custom-fields/index.js'],
   ['Roles',                  '../js/roles/index.js'],

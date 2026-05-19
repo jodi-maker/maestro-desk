@@ -84,11 +84,7 @@ import { renderTicketTemplates } from './ticket-templates/index.js';
 import {
   refreshNotifBadge, renderNotificationsPage, toggleNotifications,
 } from './notifications/index.js';
-import {
-  renderKB, voteKB, toggleKBFeatured,
-  kbSetQuery, kbSetCat, openKBArticle, closeKBArticle,
-  kbNewArticle, kbEditArticle, kbDeleteArticle,
-} from './kb/index.js';
+import { renderKB } from './kb/index.js';
 import { renderHelp } from './help/index.js';
 import {
   renderSettings, setSettingsTab,
@@ -205,7 +201,6 @@ import * as Modal from './core/modal.js';
 import * as Collapsible from './core/collapsible.js';
 import * as Keybindings from './core/keybindings.js';
 import * as GlobalSearch from './global-search/index.js';
-import * as KB from './kb/index.js';
 import * as Settings from './settings/index.js';
 import * as CustomFields from './custom-fields/index.js';
 import * as Roles from './roles/index.js';
@@ -407,7 +402,6 @@ Object.assign(
   KBIntegration,
   Modal, Collapsible, Keybindings,
   GlobalSearch,
-  KB,
   Settings, CustomFields, Roles, Workflows,
   Tags, Customers, CustomerModals, Dashboard,
   TicketsList, TicketDetail, WidgetShell,

@@ -5,6 +5,10 @@
 // KB_VIEWS) and renders the body through a tiny markdown subset shared
 // with the AI assistant.
 //
+// Click/input handlers route through core/event-delegation.js. No
+// external module reaches into kb's exports — `renderKB` is the only
+// export consumed (app.js's router).
+//
 // External reaches (interim, via window): isAdmin, escAttr, escHtml,
 // showModal, closeModal, renderPage — all still in app.js.
 //
@@ -12,6 +16,7 @@
 // and SESSION come from core/state.js the same way.
 
 import { renderMarkdown } from '../ai/page.js';
+import { registerActions, registerInputActions } from '../core/event-delegation.js';
 
 let KB_QUERY = '';
 let KB_FILTER_CAT = 'all';
@@ -47,7 +52,7 @@ function readingTime(body) {
   return Math.max(1, Math.round(words / 200));
 }
 
-export function voteKB(id, dir) {
+function voteKB(id, dir) {
   const prev = KB_USER_VOTES[id];
   let v = KB_VOTES[id] || 0;
   if (prev === dir) {
@@ -65,7 +70,7 @@ export function voteKB(id, dir) {
   window.renderPage('kb');
 }
 
-export function toggleKBFeatured(id) {
+function toggleKBFeatured(id) {
   if (!window.isAdmin()) return;
   const a = KB_ARTICLES.find(x => x.id === id);
   if (!a) return;
@@ -116,7 +121,7 @@ export function renderKB() {
     const titleHtml   = ql ? highlightSearch(window.escHtml(a.title),         KB_QUERY) : window.escHtml(a.title);
     const snippetHtml = ql ? highlightSearch(window.escHtml(articleSnippet(a)), KB_QUERY) : window.escHtml(articleSnippet(a));
     return `
-      <div class="kb-card" onclick="openKBArticle('${a.id}')">
+      <div class="kb-card" data-action="kb.open" data-id="${window.escAttr(a.id)}">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
           <div class="kb-card-cat" style="margin:0">${a.category}</div>
           ${a.featured ? '<span style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:.06em;font-weight:600">★ Featured</span>' : ''}
@@ -141,7 +146,7 @@ export function renderKB() {
     <div class="page">
       <div class="topbar">
         <div class="tb-title">Knowledge Base</div>
-        ${admin ? `<button class="btn btn-solid btn-sm" onclick="kbNewArticle()">+ New Article</button>` : ''}
+        ${admin ? `<button class="btn btn-solid btn-sm" data-action="kb.new">+ New Article</button>` : ''}
       </div>
       <div class="kb-layout">
         <aside class="kb-sidebar">
@@ -149,12 +154,12 @@ export function renderKB() {
             <div class="ts-heading" style="margin:0">Categories</div>
           </div>
           <div class="kb-cat-list">
-            <div class="kb-cat-item ${KB_FILTER_CAT==='all'?'active':''}" onclick="kbSetCat('all')">
+            <div class="kb-cat-item ${KB_FILTER_CAT==='all'?'active':''}" data-action="kb.setCat" data-cat="all">
               <span class="kb-cat-name">All articles</span>
               <span class="kb-cat-count">${KB_ARTICLES.length}</span>
             </div>
             ${sortedCats.map(([cat, count]) => `
-              <div class="kb-cat-item ${KB_FILTER_CAT===cat?'active':''}" onclick="kbSetCat('${window.escAttr(cat)}')">
+              <div class="kb-cat-item ${KB_FILTER_CAT===cat?'active':''}" data-action="kb.setCat" data-cat="${window.escAttr(cat)}">
                 <span class="kb-cat-name">${cat}</span>
                 <span class="kb-cat-count">${count}</span>
               </div>`).join('')}
@@ -163,7 +168,7 @@ export function renderKB() {
         <div class="kb-main">
           <div class="filter-bar">
             <span class="filter-label">Search</span>
-            <input class="filter-select" placeholder="Search articles…" style="width:280px" value="${KB_QUERY}" oninput="kbSetQuery(this.value)"/>
+            <input class="filter-select" placeholder="Search articles…" style="width:280px" value="${KB_QUERY}" data-input-action="kb.setQuery"/>
             <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:auto">${list.length} of ${KB_ARTICLES.length} articles${KB_FILTER_CAT!=='all'?` · ${KB_FILTER_CAT}`:''}</span>
           </div>
           <div class="page-scroll">
@@ -188,13 +193,13 @@ function renderKBArticle(id) {
     <div class="page">
       <div class="topbar">
         <div class="tb-breadcrumb">
-          <span onclick="closeKBArticle()">Knowledge Base</span>
+          <span data-action="kb.close">Knowledge Base</span>
           <span class="tb-sep">/</span>
           <span style="color:var(--ink);font-weight:500">${a.id}</span>
           ${admin ? `<span style="margin-left:auto;display:flex;gap:6px">
-            <button class="btn btn-sm" onclick="toggleKBFeatured('${a.id}')">${a.featured?'★ Unfeature':'☆ Feature'}</button>
-            <button class="btn btn-sm" onclick="kbEditArticle('${a.id}')">Edit</button>
-            <button class="btn btn-sm btn-danger" onclick="kbDeleteArticle('${a.id}')">Delete</button>
+            <button class="btn btn-sm" data-action="kb.toggleFeatured" data-id="${window.escAttr(a.id)}">${a.featured?'★ Unfeature':'☆ Feature'}</button>
+            <button class="btn btn-sm" data-action="kb.edit" data-id="${window.escAttr(a.id)}">Edit</button>
+            <button class="btn btn-sm btn-danger" data-action="kb.delete" data-id="${window.escAttr(a.id)}">Delete</button>
           </span>` : ''}
         </div>
       </div>
@@ -218,8 +223,8 @@ function renderKBArticle(id) {
           <div class="kb-helpful-card">
             <div style="font-size:13px;font-weight:500;color:var(--ink);margin-bottom:12px">Was this article helpful?</div>
             <div style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap">
-              <button class="btn btn-sm" onclick="voteKB('${a.id}','up')" style="${userVote==='up'?'border-color:var(--green);color:var(--green);background:var(--green-lt)':''}">👍 Yes</button>
-              <button class="btn btn-sm" onclick="voteKB('${a.id}','down')" style="${userVote==='down'?'border-color:var(--red);color:var(--red);background:var(--red-lt)':''}">👎 No</button>
+              <button class="btn btn-sm" data-action="kb.vote" data-id="${window.escAttr(a.id)}" data-vote="up" style="${userVote==='up'?'border-color:var(--green);color:var(--green);background:var(--green-lt)':''}">👍 Yes</button>
+              <button class="btn btn-sm" data-action="kb.vote" data-id="${window.escAttr(a.id)}" data-vote="down" style="${userVote==='down'?'border-color:var(--red);color:var(--red);background:var(--red-lt)':''}">👎 No</button>
               ${votes !== 0 ? `<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:8px">Net score: ${votes>0?'+':''}${votes}</span>` : ''}
             </div>
           </div>
@@ -229,7 +234,7 @@ function renderKBArticle(id) {
             <div class="ts-heading" style="margin-bottom:10px">Related articles</div>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
               ${related.map(r => `
-                <div class="kb-card" onclick="openKBArticle('${r.id}')" style="padding:12px">
+                <div class="kb-card" data-action="kb.open" data-id="${window.escAttr(r.id)}" style="padding:12px">
                   <div class="kb-card-cat" style="margin-bottom:6px">${r.category}</div>
                   <div class="kb-card-t" style="font-size:13px">${r.title}</div>
                 </div>`).join('')}
@@ -240,7 +245,7 @@ function renderKBArticle(id) {
     </div>`;
 }
 
-export function kbSetQuery(q) {
+function kbSetQuery(q) {
   const wasFocused = document.activeElement;
   KB_QUERY = q;
   window.renderPage('kb');
@@ -251,9 +256,9 @@ export function kbSetQuery(q) {
     input.setSelectionRange(input.value.length, input.value.length);
   }
 }
-export function kbSetCat(c) { KB_FILTER_CAT = c; window.renderPage('kb'); }
-export function openKBArticle(id) { incrementKBView(id); KB_SELECTED = id; window.renderPage('kb'); }
-export function closeKBArticle()  { KB_SELECTED = null; window.renderPage('kb'); }
+function kbSetCat(c) { KB_FILTER_CAT = c; window.renderPage('kb'); }
+function openKBArticle(id) { incrementKBView(id); KB_SELECTED = id; window.renderPage('kb'); }
+function closeKBArticle()  { KB_SELECTED = null; window.renderPage('kb'); }
 
 function kbArticleForm(initial) {
   const cats = [...new Set(KB_ARTICLES.map(a => a.category))];
@@ -267,7 +272,7 @@ function kbArticleForm(initial) {
     <div class="form-row"><label class="form-label">Body</label><textarea class="form-input" id="kb-body" style="min-height:240px;font-family:'Inter',sans-serif">${a.body}</textarea></div>`;
 }
 
-export function kbNewArticle() {
+function kbNewArticle() {
   if (!window.isAdmin()) return;
   window.showModal('New article', kbArticleForm(null), () => {
     const title = document.getElementById('kb-title').value.trim();
@@ -280,7 +285,7 @@ export function kbNewArticle() {
   }, 'Publish', true);
 }
 
-export function kbEditArticle(id) {
+function kbEditArticle(id) {
   if (!window.isAdmin()) return;
   const a = KB_ARTICLES.find(x => x.id === id); if (!a) return;
   window.showModal('Edit article', kbArticleForm(a), () => {
@@ -294,7 +299,7 @@ export function kbEditArticle(id) {
   }, 'Save changes', true);
 }
 
-export function kbDeleteArticle(id) {
+function kbDeleteArticle(id) {
   if (!window.isAdmin()) return;
   const a = KB_ARTICLES.find(x => x.id === id); if (!a) return;
   window.showModal('Delete article', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${a.title}</strong>? This cannot be undone.</div>`, () => {
@@ -304,3 +309,18 @@ export function kbDeleteArticle(id) {
     window.closeModal(); window.renderPage('kb');
   }, 'Delete');
 }
+
+registerActions({
+  'kb.open':           (ds) => openKBArticle(ds.id),
+  'kb.close':          () => closeKBArticle(),
+  'kb.new':            () => kbNewArticle(),
+  'kb.edit':           (ds) => kbEditArticle(ds.id),
+  'kb.delete':         (ds) => kbDeleteArticle(ds.id),
+  'kb.toggleFeatured': (ds) => toggleKBFeatured(ds.id),
+  'kb.setCat':         (ds) => kbSetCat(ds.cat),
+  'kb.vote':           (ds) => voteKB(ds.id, ds.vote),
+});
+
+registerInputActions({
+  'kb.setQuery': (ds, el) => kbSetQuery(el.value),
+});

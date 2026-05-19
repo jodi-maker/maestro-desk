@@ -10,7 +10,6 @@ const modules = [
   ['TimeTracking',           '../js/tickets/time-tracking.js'],
   ['Snooze',                 '../js/tickets/snooze.js'],
   ['SLA',                    '../js/tickets/sla.js'],
-  ['SLAPolicies',            '../js/tickets/sla-policies.js'],
   ['Linked',                 '../js/tickets/linked.js'],
   ['Mentions',               '../js/tickets/mentions.js'],
   ['Drafts',                 '../js/tickets/drafts.js'],

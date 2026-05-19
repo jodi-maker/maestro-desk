@@ -4,6 +4,11 @@
 // owns only the Config → SLA Policies page: the CRUD UI that creates,
 // edits, toggles, and deletes entries in the SLA_POLICIES array.
 //
+// Click/change handlers route through core/event-delegation.js. No
+// inline `on*=` references remain. No external module reaches into
+// this module's exports — `renderSLA` is the only export consumed
+// elsewhere (app.js's router calls it directly).
+//
 // External reaches (interim, via window): isAdmin, escAttr,
 // showModal, closeModal, renderPage — all still in app.js.
 //
@@ -11,6 +16,7 @@
 // SLA_FILTER comes from core/state.js the same way.
 
 import { findMatchingSLAPolicy, fmtSLAMinutes } from './sla.js';
+import { registerActions, registerChangeActions } from '../core/event-delegation.js';
 
 export function renderSLA() {
   const admin = window.isAdmin();
@@ -43,13 +49,13 @@ export function renderSLA() {
       <td style="font-family:'DM Mono',monospace;font-size:12px;color:${matched ? 'var(--ink2)' : 'var(--ink4)'}">${matched}</td>
       <td style="text-align:center">
         <label class="toggle">
-          <input type="checkbox" ${p.status==='active'?'checked':''} ${admin?'':'disabled'} onchange="slaToggle('${window.escAttr(p.id)}',this.checked)">
+          <input type="checkbox" ${p.status==='active'?'checked':''} ${admin?'':'disabled'} data-change-action="sla.toggle" data-policy-id="${window.escAttr(p.id)}">
           <span class="toggle-slider"></span>
         </label>
       </td>
       ${admin ? `<td style="text-align:right;white-space:nowrap">
-        <button class="btn btn-sm" onclick="slaEdit('${window.escAttr(p.id)}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="slaDelete('${window.escAttr(p.id)}')">Delete</button>
+        <button class="btn btn-sm" data-action="sla.edit" data-policy-id="${window.escAttr(p.id)}">Edit</button>
+        <button class="btn btn-sm btn-danger" data-action="sla.delete" data-policy-id="${window.escAttr(p.id)}">Delete</button>
       </td>` : ''}
     </tr>`;
   }).join('');
@@ -59,7 +65,7 @@ export function renderSLA() {
       <div class="topbar">
         <div class="tb-title">SLA Policies</div>
         ${admin
-          ? `<button class="btn btn-solid btn-sm" onclick="slaNew()">+ New Policy</button>`
+          ? `<button class="btn btn-solid btn-sm" data-action="sla.new">+ New Policy</button>`
           : `<span style="font-size:11px;color:var(--ink3);font-style:italic">Read-only — admin access required to edit</span>`}
       </div>
       <div class="kpi-bar">
@@ -70,7 +76,7 @@ export function renderSLA() {
       </div>
       <div class="filter-bar">
         <span class="filter-label">Filter</span>
-        <select class="filter-select" onchange="SLA_FILTER=this.value;renderPage('sla')">
+        <select class="filter-select" data-change-action="sla.setFilter">
           <option value="all"      ${SLA_FILTER==='all'?'selected':''}>All policies</option>
           <option value="active"   ${SLA_FILTER==='active'?'selected':''}>Active</option>
           <option value="inactive" ${SLA_FILTER==='inactive'?'selected':''}>Inactive</option>
@@ -92,7 +98,7 @@ export function renderSLA() {
     </div>`;
 }
 
-export function slaToggle(id, active) {
+function slaToggle(id, active) {
   if (!window.isAdmin()) return;
   const p = SLA_POLICIES.find(x => x.id === id);
   if (p) p.status = active ? 'active' : 'inactive';
@@ -154,7 +160,7 @@ function slaReadAndValidate() {
   };
 }
 
-export function slaNew() {
+function slaNew() {
   if (!window.isAdmin()) return;
   window.showModal('New SLA policy', slaFormBody(null), () => {
     const data = slaReadAndValidate(); if (!data) return;
@@ -163,7 +169,7 @@ export function slaNew() {
   }, 'Create');
 }
 
-export function slaEdit(id) {
+function slaEdit(id) {
   if (!window.isAdmin()) return;
   const p = SLA_POLICIES.find(x => x.id === id); if (!p) return;
   window.showModal(`Edit ${p.id}`, slaFormBody(p), () => {
@@ -173,7 +179,7 @@ export function slaEdit(id) {
   }, 'Save');
 }
 
-export function slaDelete(id) {
+function slaDelete(id) {
   if (!window.isAdmin()) return;
   const p = SLA_POLICIES.find(x => x.id === id); if (!p) return;
   window.showModal('Delete policy', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${p.name}</strong>?</div>`, () => {
@@ -182,3 +188,14 @@ export function slaDelete(id) {
     window.closeModal(); window.renderPage('sla');
   }, 'Delete');
 }
+
+registerActions({
+  'sla.new':    () => slaNew(),
+  'sla.edit':   (ds) => slaEdit(ds.policyId),
+  'sla.delete': (ds) => slaDelete(ds.policyId),
+});
+
+registerChangeActions({
+  'sla.toggle':    (ds, el) => slaToggle(ds.policyId, el.checked),
+  'sla.setFilter': (ds, el) => { SLA_FILTER = el.value; window.renderPage('sla'); },
+});

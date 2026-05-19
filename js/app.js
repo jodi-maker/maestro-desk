@@ -50,10 +50,7 @@ import {
 } from './tickets/macros.js';
 import { addMockAttachment, removeAttachment, showAttachPanel } from './tickets/attachments.js';
 import { renderAI, initAI } from './ai/page.js';
-import {
-  portalSetCustomer, portalExit, portalNav, portalOpenTicket,
-  portalSendReply, portalCreateTicket, renderPortal,
-} from './portal/preview.js';
+import { renderPortal } from './portal/preview.js';
 import { renderInbox } from './inbox/index.js';
 import { renderChannels } from './channels/index.js';
 import { fireWebhook, ticketPayload, renderWebhooks } from './webhooks/index.js';
@@ -190,7 +187,6 @@ import * as Linked from './tickets/linked.js';
 import * as Mentions from './tickets/mentions.js';
 import * as Macros from './tickets/macros.js';
 import * as Attachments from './tickets/attachments.js';
-import * as Portal from './portal/preview.js';
 import * as KBIntegration from './kb-integration/index.js';
 import * as Modal from './core/modal.js';
 import * as Collapsible from './core/collapsible.js';
@@ -392,7 +388,7 @@ Object.assign(
     submitLogin, submitForgot, submitCreate, updatePwStrength },
   Theme, AIClient, Summarize, Translate, AIReply,
   TimeTracking, Snooze, Linked, Mentions,
-  Macros, Attachments, Portal,
+  Macros, Attachments,
   KBIntegration,
   Modal, Collapsible, Keybindings,
   GlobalSearch,

@@ -205,7 +205,6 @@ import * as Snooze from './tickets/snooze.js';
 import * as SLA from './tickets/sla.js';
 import * as Linked from './tickets/linked.js';
 import * as Mentions from './tickets/mentions.js';
-import * as Drafts from './tickets/drafts.js';
 import * as Macros from './tickets/macros.js';
 import * as Attachments from './tickets/attachments.js';
 import * as AIPage from './ai/page.js';
@@ -214,9 +213,7 @@ import * as KBIntegration from './kb-integration/index.js';
 import * as Modal from './core/modal.js';
 import * as Collapsible from './core/collapsible.js';
 import * as Keybindings from './core/keybindings.js';
-import * as ProfileMenu from './profile-menu/index.js';
 import * as GlobalSearch from './global-search/index.js';
-import * as Auth from './auth/index.js';
 import * as KB from './kb/index.js';
 import * as Settings from './settings/index.js';
 import * as CustomFields from './custom-fields/index.js';
@@ -400,18 +397,27 @@ function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
 // To kill a bridge entry: stop calling it from inline on*= handlers. To
 // retire a whole module from the bridge: confirm no on*= handlers reference
 // any of its exports, then drop the namespace spread.
+//
+// Some functions are kept as explicit single-fn entries (alongside the
+// app-local fns above) because their only inline-handler callers are
+// static markup in index.html — the namespace spread retires, but the
+// specific functions stay window-reachable until index.html migrates.
 Object.assign(
   window,
   { login, logout, nav, renderPage, updateNavBadges,
     fmtMinutes, escHtml, escAttr, isAdmin,
-    toggleNotifications },
+    // Single-fn entries: callers in static index.html (sidebar/auth/top-bar)
+    toggleNotifications,
+    toggleProfileMenu, profileMenuGo,
+    showAuthPanel, togglePassword, ssoLogin,
+    submitLogin, submitForgot, submitCreate, updatePwStrength },
   Theme, AIClient, Summarize, Translate, AIReply,
-  TimeTracking, Snooze, SLA, Linked, Mentions, Drafts,
+  TimeTracking, Snooze, SLA, Linked, Mentions,
   Macros, Attachments, AIPage, Portal,
   KBIntegration,
   Modal, Collapsible, Keybindings,
-  ProfileMenu, GlobalSearch,
-  Auth, KB,
+  GlobalSearch,
+  KB,
   Settings, CustomFields, Roles, Workflows,
   Tags, Customers, CustomerModals, Dashboard,
   TicketsList, TicketDetail, WidgetShell,

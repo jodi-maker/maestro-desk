@@ -27,9 +27,7 @@ import {
   computeTicketSLA, refreshTicketSLA, refreshAllSLA,
   fmtSLAMinutes,
 } from './tickets/sla.js';
-import {
-  renderSLA, slaToggle, slaNew, slaEdit, slaDelete,
-} from './tickets/sla-policies.js';
+import { renderSLA } from './tickets/sla-policies.js';
 import {
   linkTickets, unlinkTicket,
   mergeTickets, unmergeTicket,
@@ -219,7 +217,6 @@ import * as AIReply from './ai/reply.js';
 import * as TimeTracking from './tickets/time-tracking.js';
 import * as Snooze from './tickets/snooze.js';
 import * as SLA from './tickets/sla.js';
-import * as SLAPolicies from './tickets/sla-policies.js';
 import * as Linked from './tickets/linked.js';
 import * as Mentions from './tickets/mentions.js';
 import * as Drafts from './tickets/drafts.js';
@@ -428,7 +425,7 @@ Object.assign(
     fmtMinutes, escHtml, escAttr, isAdmin,
     toggleNotifications },
   Theme, AIClient, Summarize, Translate, AIReply,
-  TimeTracking, Snooze, SLA, SLAPolicies, Linked, Mentions, Drafts,
+  TimeTracking, Snooze, SLA, Linked, Mentions, Drafts,
   ActivityLog, Macros, Attachments, AIPage, Portal,
   Webhooks, KBIntegration,
   Modal, Collapsible, Keybindings,

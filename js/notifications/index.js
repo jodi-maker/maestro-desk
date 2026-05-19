@@ -31,7 +31,9 @@
 import { registerActions, registerChangeActions, registerMousedownActions } from '../core/event-delegation.js';
 import { navTo } from '../core/keybindings.js';
 import { openTicket } from '../tickets/detail.js';
-import { setSettingsTab } from '../settings/index.js';
+// setSettingsTab is reached via window to avoid a notifications↔settings
+// import cycle (settings imports refreshNotifBadge from here). Settings is
+// still bridged; this can become a direct import once Settings migrates.
 
 const NOTIFICATIONS_READ = new Set();
 const NOTIFICATIONS_DISMISSED = new Set();
@@ -251,7 +253,7 @@ registerActions({
   'notif.dismiss':         (ds) => dismissNotif(ds.notifId),
   'notif.markAllReadPage': () => markAllNotifReadAndRender(),
   'notif.clearAll':        () => clearAllNotifications(),
-  'notif.gotoSettingsNotif': () => { navTo('settings'); setSettingsTab('notifications'); },
+  'notif.gotoSettingsNotif': () => { navTo('settings'); window.setSettingsTab('notifications'); },
 });
 
 registerChangeActions({

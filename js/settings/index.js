@@ -6,10 +6,11 @@
 // in app.js because the composer and ticket sidebar also depend on it.
 //
 // External reaches (interim, via window): isAdmin, escAttr, escHtml,
-// showModal, closeModal, renderPage, navTo, logout, refreshNotifBadge,
+// showModal, closeModal, renderPage, navTo, logout,
 // resetAllCollapsedSections — all still in app.js. KB_INTEGRATION,
 // KB_TICKET_CACHE, saveKbIntegration, fetchKbArticles, COLLAPSED_SECTIONS
 // are bridged onto window by app.js so this module can read/mutate them.
+// refreshNotifBadge is a direct ES import from notifications/index.js.
 //
 // SESSION, SETTINGS_TAB, NOTIF_PREFS come from core/state.js via the global
 // lexical env.
@@ -19,6 +20,7 @@ import { AI_API_KEY, AI_MODEL, setAIKey, setAIModel } from '../ai/client.js';
 import {
   AGENT_PREFERRED_LANG, TRANSLATOR_LANGS, setAgentPreferredLang,
 } from '../ai/translate.js';
+import { refreshNotifBadge } from '../notifications/index.js';
 
 // Module-scoped state for the Settings → Knowledge Base test panel. Kept off
 // `window` so it doesn't pollute the global namespace.
@@ -176,7 +178,7 @@ function settingsNotifications() {
 export function toggleNotifPref(k, v) {
   NOTIF_PREFS[k] = v;
   localStorage.setItem('notif_prefs', JSON.stringify(NOTIF_PREFS));
-  window.refreshNotifBadge();
+  refreshNotifBadge();
 }
 
 function settingsAI() {

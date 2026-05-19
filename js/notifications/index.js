@@ -12,11 +12,26 @@
 // NOTIFICATIONS_DISMISSED track per-id flags inside the module (not
 // persisted; resets on reload, same as ticket state).
 //
+// Click/change/mousedown handlers route through core/event-delegation.js.
+// Bell-dropdown actions use mousedown rather than click so they fire before
+// core/dismiss.js (which also listens on mousedown) sees outside-clicks.
+//
 // External reaches (interim, via window): escAttr, showModal, closeModal,
-// navTo, openTicket, renderPage — all still in app.js.
+// renderPage — all still in app.js. navTo, openTicket, setSettingsTab are
+// direct ES imports.
+//
+// toggleNotifications stays exported because index.html's bell button still
+// has an inline `onclick="toggleNotifications()"` and resolves through
+// window; app.js puts it on the bridge as an explicit entry. The rest of
+// this module's API is module-internal now.
 //
 // TICKETS comes from data.js via the global lexical env; SESSION and
 // NOTIF_PREFS come from core/state.js the same way.
+
+import { registerActions, registerChangeActions, registerMousedownActions } from '../core/event-delegation.js';
+import { navTo } from '../core/keybindings.js';
+import { openTicket } from '../tickets/detail.js';
+import { setSettingsTab } from '../settings/index.js';
 
 const NOTIFICATIONS_READ = new Set();
 const NOTIFICATIONS_DISMISSED = new Set();
@@ -74,28 +89,28 @@ function renderNotifications() {
   let html = `
     <div class="notif-head">
       <div class="notif-title">Notifications ${items.length ? `<span class="notif-count">${unread.length} unread · ${items.length} total</span>` : ''}</div>
-      ${unread.length ? `<div class="notif-mark" onmousedown="markAllNotifRead()">Mark all read</div>` : ''}
+      ${unread.length ? `<div class="notif-mark" data-mousedown-action="notif.markAllRead">Mark all read</div>` : ''}
     </div>`;
   if (!items.length) {
     html += `<div class="notif-empty">All caught up — no notifications.</div>`;
   } else {
     html += items.map(n => `
-      <div class="notif-item ${NOTIFICATIONS_READ.has(n.id)?'read':''}" onmousedown="openNotification('${n.id}','${n.ticketId}')">
+      <div class="notif-item ${NOTIFICATIONS_READ.has(n.id)?'read':''}" data-mousedown-action="notif.openFromDropdown" data-notif-id="${window.escAttr(n.id)}" data-ticket-id="${window.escAttr(n.ticketId)}">
         <div class="notif-dot" style="background:${n.color}"></div>
         <div class="notif-body">
           <div class="notif-row"><div class="notif-name">${n.title}</div><div class="notif-time">${n.ts}</div></div>
           <div class="notif-text">${n.body}</div>
         </div>
       </div>`).join('');
-    html += `<div style="padding:10px 14px;border-top:1px solid var(--rule);text-align:center;background:var(--off2);position:sticky;bottom:0"><span class="link" onmousedown="closeNotifAndGo()" style="font-size:11px;font-weight:500">View all notifications →</span></div>`;
+    html += `<div style="padding:10px 14px;border-top:1px solid var(--rule);text-align:center;background:var(--off2);position:sticky;bottom:0"><span class="link" data-mousedown-action="notif.closeAndGo" style="font-size:11px;font-weight:500">View all notifications →</span></div>`;
   }
   dd.innerHTML = html;
 }
 
-export function closeNotifAndGo() {
+function closeNotifAndGo() {
   document.getElementById('notif-dropdown')?.classList.remove('show');
   document.getElementById('notif-btn')?.classList.remove('active');
-  window.navTo('notifications');
+  navTo('notifications');
 }
 
 export function toggleNotifications() {
@@ -112,37 +127,34 @@ export function toggleNotifications() {
   btn?.classList.add('active');
 }
 
-export function openNotification(notifId, ticketId) {
+function openNotification(notifId, ticketId) {
   NOTIFICATIONS_READ.add(notifId);
   const dd = document.getElementById('notif-dropdown');
   dd?.classList.remove('show');
   document.getElementById('notif-btn')?.classList.remove('active');
   refreshNotifBadge();
-  if (ticketId) window.openTicket(ticketId);
+  if (ticketId) openTicket(ticketId);
 }
 
-export function markAllNotifRead() {
+function markAllNotifRead() {
   getNotifications().forEach(n => NOTIFICATIONS_READ.add(n.id));
   refreshNotifBadge();
   renderNotifications();
 }
 
-export function notifPageSetType(v) { NOTIF_PAGE_FILTER_TYPE = v; window.renderPage('notifications'); }
-export function notifPageSetRead(v) { NOTIF_PAGE_FILTER_READ = v; window.renderPage('notifications'); }
-
-export function markNotifRead(id) {
+function markNotifRead(id) {
   NOTIFICATIONS_READ.add(id);
   refreshNotifBadge();
   window.renderPage('notifications');
 }
 
-export function dismissNotif(id) {
+function dismissNotif(id) {
   NOTIFICATIONS_DISMISSED.add(id);
   refreshNotifBadge();
   window.renderPage('notifications');
 }
 
-export function clearAllNotifications() {
+function clearAllNotifications() {
   window.showModal('Clear notifications', '<div style="font-size:13px;color:var(--ink2);line-height:1.6">Dismiss all current notifications? They will be removed from the bell and the notifications page.</div>', () => {
     getNotifications().forEach(n => NOTIFICATIONS_DISMISSED.add(n.id));
     refreshNotifBadge();
@@ -150,13 +162,13 @@ export function clearAllNotifications() {
   }, 'Clear all');
 }
 
-export function openNotificationFromPage(id, ticketId) {
+function openNotificationFromPage(id, ticketId) {
   NOTIFICATIONS_READ.add(id);
   refreshNotifBadge();
-  if (ticketId) window.openTicket(ticketId);
+  if (ticketId) openTicket(ticketId);
 }
 
-export function markAllNotifReadAndRender() {
+function markAllNotifReadAndRender() {
   markAllNotifRead();
   window.renderPage('notifications');
 }
@@ -180,7 +192,7 @@ export function renderNotificationsPage() {
     return `
       <div style="display:flex;gap:12px;padding:14px;border:1px solid var(--rule);border-radius:var(--r);background:${isRead?'var(--off2)':'var(--off)'};transition:all .15s;align-items:stretch">
         <div style="width:4px;border-radius:2px;background:${n.color};flex-shrink:0;align-self:stretch"></div>
-        <div style="flex:1;min-width:0;cursor:pointer" onclick="openNotificationFromPage('${window.escAttr(n.id)}','${window.escAttr(n.ticketId)}')">
+        <div style="flex:1;min-width:0;cursor:pointer" data-action="notif.openFromPage" data-notif-id="${window.escAttr(n.id)}" data-ticket-id="${window.escAttr(n.ticketId)}">
           <div style="display:flex;gap:10px;align-items:center;margin-bottom:4px">
             <span style="font-size:13px;font-weight:600;color:var(--ink)">${n.title}</span>
             ${!isRead ? '<span style="width:6px;height:6px;border-radius:50%;background:var(--purple);box-shadow:0 0 6px var(--purple);flex-shrink:0"></span>' : ''}
@@ -188,9 +200,9 @@ export function renderNotificationsPage() {
           </div>
           <div style="font-size:12.5px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.body}</div>
         </div>
-        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0" onclick="event.stopPropagation()">
-          ${!isRead ? `<button class="btn btn-sm" onclick="markNotifRead('${window.escAttr(n.id)}')" title="Mark read">Mark read</button>` : ''}
-          <button class="btn btn-sm btn-danger" onclick="dismissNotif('${window.escAttr(n.id)}')" title="Dismiss">Dismiss</button>
+        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0" data-action="">
+          ${!isRead ? `<button class="btn btn-sm" data-action="notif.markRead" data-notif-id="${window.escAttr(n.id)}" title="Mark read">Mark read</button>` : ''}
+          <button class="btn btn-sm btn-danger" data-action="notif.dismiss" data-notif-id="${window.escAttr(n.id)}" title="Dismiss">Dismiss</button>
         </div>
       </div>`;
   }).join('');
@@ -199,8 +211,8 @@ export function renderNotificationsPage() {
     <div class="page">
       <div class="topbar">
         <div class="tb-title">Notifications</div>
-        ${unread ? `<button class="btn btn-sm" onclick="markAllNotifReadAndRender()">Mark all read</button>` : ''}
-        ${total ? `<button class="btn btn-sm btn-danger" onclick="clearAllNotifications()">Clear all</button>` : ''}
+        ${unread ? `<button class="btn btn-sm" data-action="notif.markAllReadPage">Mark all read</button>` : ''}
+        ${total ? `<button class="btn btn-sm btn-danger" data-action="notif.clearAll">Clear all</button>` : ''}
       </div>
       <div class="kpi-bar">
         <div class="kpi"><div class="kpi-n">${total}</div><div class="kpi-l">Total</div></div>
@@ -210,14 +222,14 @@ export function renderNotificationsPage() {
       </div>
       <div class="filter-bar">
         <span class="filter-label">Filter</span>
-        <select class="filter-select" onchange="notifPageSetType(this.value)">
+        <select class="filter-select" data-change-action="notif.setFilterType">
           <option value="all"       ${NOTIF_PAGE_FILTER_TYPE==='all'?'selected':''}>All types</option>
           <option value="breach"    ${NOTIF_PAGE_FILTER_TYPE==='breach'?'selected':''}>SLA breach (${types.breach})</option>
           <option value="escalated" ${NOTIF_PAGE_FILTER_TYPE==='escalated'?'selected':''}>Escalated (${types.escalated})</option>
           <option value="gdpr"      ${NOTIF_PAGE_FILTER_TYPE==='gdpr'?'selected':''}>GDPR (${types.gdpr})</option>
           <option value="warn"      ${NOTIF_PAGE_FILTER_TYPE==='warn'?'selected':''}>SLA warning (${types.warn})</option>
         </select>
-        <select class="filter-select" onchange="notifPageSetRead(this.value)">
+        <select class="filter-select" data-change-action="notif.setFilterRead">
           <option value="all"    ${NOTIF_PAGE_FILTER_READ==='all'?'selected':''}>All statuses</option>
           <option value="unread" ${NOTIF_PAGE_FILTER_READ==='unread'?'selected':''}>Unread only</option>
           <option value="read"   ${NOTIF_PAGE_FILTER_READ==='read'?'selected':''}>Read only</option>
@@ -228,7 +240,27 @@ export function renderNotificationsPage() {
         ${list.length === 0
           ? `<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">${total === 0 ? 'All caught up — no notifications' : 'No notifications match the filters'}</div><div class="empty-line"></div></div>`
           : `<div style="display:flex;flex-direction:column;gap:8px">${items}</div>
-             <div style="font-size:11px;color:var(--ink3);text-align:center;margin-top:18px;line-height:1.6">Notifications are computed live from ticket state. Configure which types appear in <span class="link" onclick="navTo('settings');setSettingsTab('notifications')">Settings → Notifications</span>.</div>`}
+             <div style="font-size:11px;color:var(--ink3);text-align:center;margin-top:18px;line-height:1.6">Notifications are computed live from ticket state. Configure which types appear in <span class="link" data-action="notif.gotoSettingsNotif">Settings → Notifications</span>.</div>`}
       </div>
     </div>`;
 }
+
+registerActions({
+  'notif.openFromPage':    (ds) => openNotificationFromPage(ds.notifId, ds.ticketId),
+  'notif.markRead':        (ds) => markNotifRead(ds.notifId),
+  'notif.dismiss':         (ds) => dismissNotif(ds.notifId),
+  'notif.markAllReadPage': () => markAllNotifReadAndRender(),
+  'notif.clearAll':        () => clearAllNotifications(),
+  'notif.gotoSettingsNotif': () => { navTo('settings'); setSettingsTab('notifications'); },
+});
+
+registerChangeActions({
+  'notif.setFilterType': (ds, el) => { NOTIF_PAGE_FILTER_TYPE = el.value; window.renderPage('notifications'); },
+  'notif.setFilterRead': (ds, el) => { NOTIF_PAGE_FILTER_READ = el.value; window.renderPage('notifications'); },
+});
+
+registerMousedownActions({
+  'notif.markAllRead':      () => markAllNotifRead(),
+  'notif.openFromDropdown': (ds) => openNotification(ds.notifId, ds.ticketId),
+  'notif.closeAndGo':       () => closeNotifAndGo(),
+});

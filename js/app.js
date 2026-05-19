@@ -245,44 +245,44 @@ import * as Linked from './tickets/linked.js';
 import * as Mentions from './tickets/mentions.js';
 import * as Drafts from './tickets/drafts.js';
 import * as ActivityLog from './core/activity-log.js';
-import * as MacrosMod from './tickets/macros.js';
-import * as AttachmentsMod from './tickets/attachments.js';
+import * as Macros from './tickets/macros.js';
+import * as Attachments from './tickets/attachments.js';
 import * as AIPage from './ai/page.js';
 import * as Portal from './portal/preview.js';
-import * as InboxMod from './inbox/index.js';
-import * as ChannelsMod from './channels/index.js';
-import * as WebhooksMod from './webhooks/index.js';
+import * as Inbox from './inbox/index.js';
+import * as Channels from './channels/index.js';
+import * as Webhooks from './webhooks/index.js';
 import * as KBIntegration from './kb-integration/index.js';
-import * as ModalMod from './core/modal.js';
-import * as CollapsibleMod from './core/collapsible.js';
-import * as KeybindingsMod from './core/keybindings.js';
-import * as ProfileMod from './profile/index.js';
-import * as AgentsMod from './agents/index.js';
-import * as ProfileMenuMod from './profile-menu/index.js';
-import * as GlobalSearchMod from './global-search/index.js';
-import * as QuickSwitcherMod from './quick-switcher/index.js';
-import * as AuthMod from './auth/index.js';
-import * as TicketTemplatesMod from './ticket-templates/index.js';
-import * as NotificationsMod from './notifications/index.js';
-import * as KBMod from './kb/index.js';
-import * as HelpMod from './help/index.js';
-import * as SettingsMod from './settings/index.js';
-import * as LayoutsMod from './layouts/index.js';
-import * as CustomFieldsMod from './custom-fields/index.js';
-import * as RolesMod from './roles/index.js';
-import * as WorkflowsMod from './workflows/index.js';
-import * as TagsMod from './tags/index.js';
-import * as CustomersMod from './customers/index.js';
+import * as Modal from './core/modal.js';
+import * as Collapsible from './core/collapsible.js';
+import * as Keybindings from './core/keybindings.js';
+import * as Profile from './profile/index.js';
+import * as Agents from './agents/index.js';
+import * as ProfileMenu from './profile-menu/index.js';
+import * as GlobalSearch from './global-search/index.js';
+import * as QuickSwitcher from './quick-switcher/index.js';
+import * as Auth from './auth/index.js';
+import * as TicketTemplates from './ticket-templates/index.js';
+import * as Notifications from './notifications/index.js';
+import * as KB from './kb/index.js';
+import * as Help from './help/index.js';
+import * as Settings from './settings/index.js';
+import * as Layouts from './layouts/index.js';
+import * as CustomFields from './custom-fields/index.js';
+import * as Roles from './roles/index.js';
+import * as Workflows from './workflows/index.js';
+import * as Tags from './tags/index.js';
+import * as Customers from './customers/index.js';
 import * as CustomerModals from './customers/modals.js';
-import * as DashboardMod from './dashboard/index.js';
+import * as Dashboard from './dashboard/index.js';
 import * as TicketsList from './tickets/list.js';
 import * as TicketDetail from './tickets/detail.js';
 import * as WidgetShell from './core/widget-shell.js';
-import * as ReportsMod from './reports/index.js';
-import * as BusinessHoursMod from './core/business-hours.js';
-import * as AssignmentRulesMod from './tickets/assignment-rules.js';
-import * as TemplatesMod from './tickets/templates.js';
-import * as CSATMod from './tickets/csat.js';
+import * as Reports from './reports/index.js';
+import * as BusinessHours from './core/business-hours.js';
+import * as AssignmentRules from './tickets/assignment-rules.js';
+import * as Templates from './tickets/templates.js';
+import * as CSAT from './tickets/csat.js';
 
 function login(role, name, initials) {
   SESSION = {role, name, initials};
@@ -458,14 +458,14 @@ Object.assign(
     fmtMinutes, escHtml, escAttr, isAdmin },
   Theme, AIClient, Summarize, Translate, AIReply,
   TimeTracking, Snooze, SLA, SLAPolicies, Linked, Mentions, Drafts,
-  ActivityLog, MacrosMod, AttachmentsMod, AIPage, Portal,
-  InboxMod, ChannelsMod, WebhooksMod, KBIntegration,
-  ModalMod, CollapsibleMod, KeybindingsMod,
-  ProfileMod, AgentsMod, ProfileMenuMod, GlobalSearchMod, QuickSwitcherMod,
-  AuthMod, TicketTemplatesMod, NotificationsMod, KBMod, HelpMod,
-  SettingsMod, LayoutsMod, CustomFieldsMod, RolesMod, WorkflowsMod,
-  TagsMod, CustomersMod, CustomerModals, DashboardMod,
-  TicketsList, TicketDetail, WidgetShell, ReportsMod,
-  BusinessHoursMod, AssignmentRulesMod, TemplatesMod, CSATMod,
+  ActivityLog, Macros, Attachments, AIPage, Portal,
+  Inbox, Channels, Webhooks, KBIntegration,
+  Modal, Collapsible, Keybindings,
+  Profile, Agents, ProfileMenu, GlobalSearch, QuickSwitcher,
+  Auth, TicketTemplates, Notifications, KB, Help,
+  Settings, Layouts, CustomFields, Roles, Workflows,
+  Tags, Customers, CustomerModals, Dashboard,
+  TicketsList, TicketDetail, WidgetShell, Reports,
+  BusinessHours, AssignmentRules, Templates, CSAT,
 );
 

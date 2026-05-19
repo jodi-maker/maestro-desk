@@ -10,6 +10,9 @@
 // portalSetCustomer(null) → renderPortalCustomerPicker rather than
 // touching CUSTOMER_SELECTED in state.js.
 //
+// Click handlers route through core/event-delegation.js. `renderPortal` is
+// the only export consumed (app.js's router).
+//
 // External reaches (interim, via window): logTicketEvent (TODO: switch
 // to import from core/activity-log.js as a follow-on cleanup),
 // updateNavBadges, fireWebhook, ticketPayload,
@@ -18,37 +21,38 @@
 // TICKETS, CUSTOMERS, KB_ARTICLES from data.js via global lexical env.
 
 import { refreshTicketSLA } from '../tickets/sla.js';
+import { registerActions } from '../core/event-delegation.js';
 
 let PORTAL_CUSTOMER_ID = null;
 let PORTAL_VIEW = 'tickets';
 let PORTAL_TICKET_ID = null;
 
-export function portalSetCustomer(id) {
+function portalSetCustomer(id) {
   PORTAL_CUSTOMER_ID = id || null;
   PORTAL_VIEW = 'tickets';
   PORTAL_TICKET_ID = null;
   window.renderPage('portal');
 }
 
-export function portalExit() {
+function portalExit() {
   PORTAL_CUSTOMER_ID = null;
   PORTAL_TICKET_ID = null;
   window.navTo('dashboard');
 }
 
-export function portalNav(view) {
+function portalNav(view) {
   PORTAL_VIEW = view;
   if (view !== 'ticket') PORTAL_TICKET_ID = null;
   window.renderPage('portal');
 }
 
-export function portalOpenTicket(id) {
+function portalOpenTicket(id) {
   PORTAL_TICKET_ID = id;
   PORTAL_VIEW = 'ticket';
   window.renderPage('portal');
 }
 
-export function portalSendReply(ticketId) {
+function portalSendReply(ticketId) {
   const el = document.getElementById('portal-reply');
   if (!el) return;
   const txt = el.value.trim();
@@ -74,7 +78,7 @@ export function portalSendReply(ticketId) {
   window.renderPage('portal');
 }
 
-export function portalCreateTicket() {
+function portalCreateTicket() {
   const cust = CUSTOMERS.find(c => c.id === PORTAL_CUSTOMER_ID);
   if (!cust) return;
   const subj = document.getElementById('portal-subj').value.trim();
@@ -114,16 +118,16 @@ export function renderPortal() {
       <span style="font-size:14px">🔍</span>
       <span>Portal preview · viewing as ${window.escHtml(cust.first + ' ' + cust.last)}</span>
       <span style="margin-left:auto;display:flex;gap:6px">
-        <button class="btn btn-sm" onclick="portalSetCustomer(null)">Switch customer</button>
-        <button class="btn btn-sm" onclick="portalExit()">Exit preview</button>
+        <button class="btn btn-sm" data-action="portal.setCustomer">Switch customer</button>
+        <button class="btn btn-sm" data-action="portal.exit">Exit preview</button>
       </span>
     </div>`;
   const tabs = `
     <div class="portal-tabs">
-      <div class="portal-tab ${PORTAL_VIEW==='tickets' || PORTAL_VIEW==='ticket' ? 'active' : ''}" onclick="portalNav('tickets')">My tickets</div>
-      <div class="portal-tab ${PORTAL_VIEW==='new' ? 'active' : ''}" onclick="portalNav('new')">New ticket</div>
-      <div class="portal-tab ${PORTAL_VIEW==='kb' ? 'active' : ''}" onclick="portalNav('kb')">Knowledge base</div>
-      <div class="portal-tab ${PORTAL_VIEW==='profile' ? 'active' : ''}" onclick="portalNav('profile')">My profile</div>
+      <div class="portal-tab ${PORTAL_VIEW==='tickets' || PORTAL_VIEW==='ticket' ? 'active' : ''}" data-action="portal.nav" data-view="tickets">My tickets</div>
+      <div class="portal-tab ${PORTAL_VIEW==='new' ? 'active' : ''}" data-action="portal.nav" data-view="new">New ticket</div>
+      <div class="portal-tab ${PORTAL_VIEW==='kb' ? 'active' : ''}" data-action="portal.nav" data-view="kb">Knowledge base</div>
+      <div class="portal-tab ${PORTAL_VIEW==='profile' ? 'active' : ''}" data-action="portal.nav" data-view="profile">My profile</div>
     </div>`;
   let body = '';
   if (PORTAL_VIEW === 'ticket' && PORTAL_TICKET_ID) body = renderPortalTicket(cust, PORTAL_TICKET_ID);
@@ -138,7 +142,7 @@ function renderPortalCustomerPicker() {
   const cards = CUSTOMERS.map(c => {
     const ticketN = TICKETS.filter(t => t.customerId === c.id).length;
     return `
-      <div class="portal-card" onclick="portalSetCustomer('${window.escAttr(c.id)}')" style="display:flex;align-items:center;gap:14px">
+      <div class="portal-card" data-action="portal.setCustomer" data-cust-id="${window.escAttr(c.id)}" style="display:flex;align-items:center;gap:14px">
         <div style="width:42px;height:42px;border-radius:50%;background:var(--ink);color:var(--w);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex-shrink:0">${window.escHtml((c.first[0] + c.last[0]).toUpperCase())}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:600;color:var(--ink)">${window.escHtml(c.first + ' ' + c.last)}</div>
@@ -163,12 +167,12 @@ function renderPortalTicketList(cust) {
   const tickets = TICKETS.filter(t => t.customerId === cust.id && !t.mergedInto)
     .sort((a, b) => (b.created || '').localeCompare(a.created || ''));
   if (!tickets.length) {
-    return `<div style="text-align:center;padding:40px 0;color:var(--ink3);font-size:13px">No tickets yet. <span class="link" onclick="portalNav('new')">Open a new ticket</span> to get help.</div>`;
+    return `<div style="text-align:center;padding:40px 0;color:var(--ink3);font-size:13px">No tickets yet. <span class="link" data-action="portal.nav" data-view="new">Open a new ticket</span> to get help.</div>`;
   }
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:600;color:var(--ink)">My tickets</div>
-      <button class="btn btn-solid btn-sm" onclick="portalNav('new')">+ New ticket</button>
+      <button class="btn btn-solid btn-sm" data-action="portal.nav" data-view="new">+ New ticket</button>
     </div>
     ${tickets.map(t => {
       const lastMsg = (t.msgs || []).filter(m => m.r !== 'note').slice(-1)[0];
@@ -178,7 +182,7 @@ function renderPortalTicketList(cust) {
         : t.status === 'escalated' ? 'Escalated · being handled'
         : 'In progress';
       return `
-        <div class="portal-card" onclick="portalOpenTicket('${window.escAttr(t.id)}')">
+        <div class="portal-card" data-action="portal.openTicket" data-ticket-id="${window.escAttr(t.id)}">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
             <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3)">${window.escHtml(t.id)}</span>
             <span style="font-size:11px;color:${t.status==='resolved'?'var(--green)':t.status==='pending'?'var(--amber)':'var(--blue)'};font-weight:600;text-transform:uppercase;letter-spacing:.06em">${window.escHtml(statusLabel)}</span>
@@ -193,7 +197,7 @@ function renderPortalTicketList(cust) {
 function renderPortalTicket(cust, ticketId) {
   const t = TICKETS.find(x => x.id === ticketId);
   if (!t || t.customerId !== cust.id) {
-    return `<div style="color:var(--ink3);font-size:12px;text-align:center;padding:30px">Ticket not found. <span class="link" onclick="portalNav('tickets')">Back to my tickets</span></div>`;
+    return `<div style="color:var(--ink3);font-size:12px;text-align:center;padding:30px">Ticket not found. <span class="link" data-action="portal.nav" data-view="tickets">Back to my tickets</span></div>`;
   }
   // Public messages only — internal notes never reach the customer.
   const publicMsgs = (t.msgs || []).filter(m => m.r !== 'note');
@@ -206,14 +210,14 @@ function renderPortalTicket(cust, ticketId) {
     </div>`).join('');
   const closed = t.status === 'resolved';
   return `
-    <div style="margin-bottom:10px"><span class="link" onclick="portalNav('tickets')" style="font-size:12px">← My tickets</span></div>
+    <div style="margin-bottom:10px"><span class="link" data-action="portal.nav" data-view="tickets" style="font-size:12px">← My tickets</span></div>
     <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:600;color:var(--ink);margin-bottom:6px">${window.escHtml(t.subject)}</div>
     <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-bottom:18px">${window.escHtml(t.id)} · ${closed ? 'Resolved' : 'In progress'}${t.agent ? ' · Helping you: ' + window.escHtml(t.agent) : ''}</div>
     <div style="display:flex;flex-direction:column;margin-bottom:18px">${msgsHtml || '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px">No messages yet</div>'}</div>
     <div style="border-top:1px solid var(--rule);padding-top:14px">
       <label class="form-label">${closed ? 'Reopen with a reply' : 'Reply'}</label>
       <textarea class="form-input" id="portal-reply" rows="4" placeholder="${closed ? 'Type your reply — sending will reopen the ticket.' : 'Type your reply…'}"></textarea>
-      <div style="margin-top:10px;text-align:right"><button class="btn btn-solid btn-sm" onclick="portalSendReply('${window.escAttr(t.id)}')">Send</button></div>
+      <div style="margin-top:10px;text-align:right"><button class="btn btn-solid btn-sm" data-action="portal.sendReply" data-ticket-id="${window.escAttr(t.id)}">Send</button></div>
     </div>`;
 }
 
@@ -231,8 +235,8 @@ function renderPortalNewTicket(cust) {
         <textarea class="form-input" id="portal-body" rows="6" placeholder="Steps to reproduce, what you expected, what happened…"></textarea>
       </div>
       <div style="margin-top:14px;text-align:right">
-        <button class="btn" onclick="portalNav('tickets')">Cancel</button>
-        <button class="btn btn-solid btn-sm" onclick="portalCreateTicket()">Submit ticket</button>
+        <button class="btn" data-action="portal.nav" data-view="tickets">Cancel</button>
+        <button class="btn btn-solid btn-sm" data-action="portal.createTicket">Submit ticket</button>
       </div>
     </div>`;
 }
@@ -273,3 +277,15 @@ function renderPortalProfile(cust) {
       </div>
     </div>`;
 }
+
+registerActions({
+  // `ds.custId` is undefined for the "Switch customer" button (no
+  // data-cust-id attr) — that resolves to null, matching the original
+  // `portalSetCustomer(null)` semantics.
+  'portal.setCustomer':  (ds) => portalSetCustomer(ds.custId || null),
+  'portal.exit':         () => portalExit(),
+  'portal.nav':          (ds) => portalNav(ds.view),
+  'portal.openTicket':   (ds) => portalOpenTicket(ds.ticketId),
+  'portal.sendReply':    (ds) => portalSendReply(ds.ticketId),
+  'portal.createTicket': () => portalCreateTicket(),
+});

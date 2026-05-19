@@ -311,7 +311,7 @@ export function renderCustomers() {
         </select>
         <select class="filter-select" data-change-action="cust.setBrand">
           <option value="all" ${CUST_BRAND_FILTER==='all'?'selected':''}>All brands</option>
-          ${brands.map(b => `<option value="${b}" ${CUST_BRAND_FILTER===b?'selected':''}>${b}</option>`).join('')}
+          ${brands.map(b => `<option value="${window.escAttr(b)}" ${CUST_BRAND_FILTER===b?'selected':''}>${window.escHtml(b)}</option>`).join('')}
         </select>
         <select class="filter-select" data-change-action="cust.setGroupBy" title="Group rows">
           <option value="none"         ${CUST_GROUP_BY==='none'?'selected':''}>No grouping</option>

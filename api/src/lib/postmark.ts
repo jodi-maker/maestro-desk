@@ -37,24 +37,20 @@ export type PostmarkInbound = z.infer<typeof PostmarkInbound>;
 
 // ─── Authentication ──────────────────────────────────────────────────────
 //
-// Postmark supports HTTP Basic Auth on inbound webhooks — you embed the
-// credentials in the URL: https://user:pass@host/path. Postmark sends the
-// matching Authorization header. We require it because the cloudflared URL
-// is otherwise publicly reachable; without auth anyone who guessed it could
-// inject tickets.
+// Webhook URL pattern: https://<host>/api/v1/webhooks/postmark/inbound?secret=<value>
+//
+// Postmark's URL validator rejects the older `user:pass@host` Basic Auth
+// pattern, and base64 secrets in the password slot often contain `/`, `+`,
+// `=` which break URL parsing anyway. A query-string secret is cleaner and
+// works through proxies that strip embedded credentials for security.
 //
 // Production should add HMAC signature verification on top — see Postmark's
 // "Webhook Signature" feature. Deferred.
 
 export function assertPostmarkAuth(c: Context): void {
-  const header = c.req.header('Authorization');
-  if (!header?.startsWith('Basic ')) {
-    throw new HTTPException(401, { message: 'Missing Basic auth' });
-  }
-  const decoded = atob(header.slice('Basic '.length));
-  const [user, pass] = decoded.split(':', 2);
-  if (user !== env.POSTMARK_INBOUND_USER || pass !== env.POSTMARK_INBOUND_PASS) {
-    throw new HTTPException(401, { message: 'Bad Basic auth' });
+  const secret = c.req.query('secret');
+  if (!secret || secret !== env.POSTMARK_INBOUND_SECRET) {
+    throw new HTTPException(401, { message: 'Bad or missing webhook secret' });
   }
 }
 

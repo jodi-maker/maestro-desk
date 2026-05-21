@@ -5,10 +5,10 @@ const Env = z.object({
   SUPABASE_ANON_KEY: z.string().min(20),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20),
   ANTHROPIC_API_KEY: z.string().min(20),
-  // Basic-Auth credentials Postmark uses on the inbound webhook. Embed in the
-  // webhook URL: https://<user>:<pass>@<tunnel-host>/api/v1/webhooks/postmark/inbound
-  POSTMARK_INBOUND_USER: z.string().min(1),
-  POSTMARK_INBOUND_PASS: z.string().min(8),
+  // Secret Postmark passes as a query string on the inbound webhook URL:
+  // https://<tunnel-host>/api/v1/webhooks/postmark/inbound?secret=<value>
+  // (URL-embedded Basic Auth is rejected by Postmark's URL validator.)
+  POSTMARK_INBOUND_SECRET: z.string().min(16),
   PORT: z.coerce.number().int().positive().default(3001),
 });
 

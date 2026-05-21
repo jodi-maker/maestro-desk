@@ -3,6 +3,12 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { anthropic, computeCostMicro } from './anthropic.ts';
 import { assertHasBudget, BudgetExceededError, deductBudget } from './budget.ts';
+import {
+  evaluateAutoReply,
+  postAutoReply,
+  type AutoReplyDecision,
+  type WorkspaceAutoReplyConfig,
+} from './auto-reply.ts';
 
 const MODEL = 'claude-sonnet-4-6';
 
@@ -114,6 +120,8 @@ interface WorkspaceLookups {
   categories: { key: string; label: string }[];
   priorities: { key: string; label: string }[];
   statuses: { key: string; label: string }[];
+  workspaceName: string;
+  autoReply: WorkspaceAutoReplyConfig;
 }
 
 function buildWorkspaceContext(lookups: WorkspaceLookups): string {
@@ -185,6 +193,11 @@ export interface TriageResult {
   };
   budget: {
     balance_after_micro: number | null;  // null if deduct failed (logged server-side)
+  };
+  auto_reply: {
+    decision: AutoReplyDecision;
+    posted: boolean;
+    message_id?: string;
   };
 }
 
@@ -331,6 +344,37 @@ export async function triageTicket(input: TriageInput): Promise<TriageResult> {
     deductBudget(sb, workspaceId, costMicro),
   ]);
 
+  // 7. Confidence-gated auto-reply. If the workspace has it enabled AND the
+  //    category is whitelisted AND triage confidence cleared the threshold,
+  //    post the AI draft as an actual ai-role ticket_message. No new Claude
+  //    call — we just reuse the draft from above. Idempotent (skips if a
+  //    prior auto-reply event exists for this ticket).
+  //
+  //    Failures don't propagate to the caller — the triage itself was
+  //    successful; auto-reply is a downstream side-effect. We log and
+  //    return decision: { eligible: true, ... } so callers can see what
+  //    happened.
+  const decision = evaluateAutoReply(triage, lookups.autoReply);
+  let autoReply: TriageResult['auto_reply'] = { decision, posted: false };
+  if (decision.eligible) {
+    try {
+      const post = await postAutoReply({
+        sb,
+        workspaceId,
+        ticketId,
+        draftReply: triage.draft_reply,
+        confidence: triage.confidence,
+        model: MODEL,
+        workspaceName: lookups.workspaceName,
+      });
+      autoReply = { decision, posted: post.posted, message_id: post.message_id };
+    } catch (err) {
+      console.error('[triage] auto-reply post failed:', err);
+      // Decision was eligible but posting failed; surface so callers know.
+      autoReply = { decision, posted: false };
+    }
+  }
+
   return {
     triage,
     usage: {
@@ -345,6 +389,7 @@ export async function triageTicket(input: TriageInput): Promise<TriageResult> {
     budget: {
       balance_after_micro: balanceAfterMicro,
     },
+    auto_reply: autoReply,
   };
 }
 
@@ -398,14 +443,18 @@ async function loadWorkspaceLookups(
   sb: SupabaseClient,
   workspaceId: string,
 ): Promise<WorkspaceLookups> {
-  const [cats, prios, stats] = await Promise.all([
+  const [cats, prios, stats, ws] = await Promise.all([
     sb.from('ticket_categories').select('key, label').eq('workspace_id', workspaceId).order('label'),
     sb.from('ticket_priorities').select('key, label').eq('workspace_id', workspaceId).order('sort_order'),
     sb.from('ticket_statuses').select('key, label').eq('workspace_id', workspaceId).order('sort_order'),
+    sb.from('workspaces')
+      .select('name, auto_reply_min_confidence, auto_reply_categories')
+      .eq('id', workspaceId)
+      .single(),
   ]);
-  if (cats.error || prios.error || stats.error) {
+  if (cats.error || prios.error || stats.error || ws.error) {
     throw new TriageError(
-      `Failed to load lookups: ${cats.error?.message ?? prios.error?.message ?? stats.error?.message}`,
+      `Failed to load lookups: ${cats.error?.message ?? prios.error?.message ?? stats.error?.message ?? ws.error?.message}`,
       500,
     );
   }
@@ -413,6 +462,12 @@ async function loadWorkspaceLookups(
     categories: cats.data ?? [],
     priorities: prios.data ?? [],
     statuses: stats.data ?? [],
+    workspaceName: ws.data?.name ?? 'Support',
+    autoReply: {
+      min_confidence: ws.data?.auto_reply_min_confidence ?? null,
+      categories: ws.data?.auto_reply_categories ?? [],
+      name: ws.data?.name ?? 'Support',
+    },
   };
 }
 

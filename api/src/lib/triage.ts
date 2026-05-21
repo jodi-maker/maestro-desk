@@ -211,13 +211,18 @@ export async function triageTicket(input: TriageInput): Promise<TriageResult> {
 
   const userMessage = buildUserMessage(ticketRes);
 
-  // 3. Call Claude with tool_choice forcing the tool. Adaptive thinking is on
-  //    because triage is multi-step (classify + summarise + draft).
+  // 3. Call Claude with tool_choice forcing the tool. We deliberately do NOT
+  //    enable adaptive thinking here — the Anthropic API rejects the
+  //    combination ("Thinking may not be enabled when tool_choice forces tool
+  //    use."). Sonnet 4.6 produces strong triage output without thinking,
+  //    and the structured-output guarantee from forced tool_choice is more
+  //    valuable than the marginal quality bump from adaptive thinking.
+  //    If we want thinking back, switch to tool_choice {type: "auto"} and
+  //    handle the (rare) case where the model returns text instead.
   const startedAt = Date.now();
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 4096,
-    thinking: { type: 'adaptive' },
     tools: [RECORD_TRIAGE_TOOL],
     tool_choice: { type: 'tool', name: 'record_triage' },
     system,

@@ -39,10 +39,20 @@ webhooks.post('/postmark/inbound', async (c) => {
       payload: parsed.data,
     });
     // Log so the dev sees what happened in the bun dev window.
-    console.log(
-      `[postmark] inbound from ${parsed.data.From} → ticket ${result.ticket_display_id} ` +
-        `(new_customer=${result.is_new_customer}, auto_triage=${result.auto_triage_queued})`,
-    );
+    if (result.deduped) {
+      console.log(
+        `[postmark] inbound from ${parsed.data.From} → DEDUPED to existing ticket ${result.ticket_display_id}`,
+      );
+    } else if (result.threaded) {
+      console.log(
+        `[postmark] inbound from ${parsed.data.From} → THREADED reply on ticket ${result.ticket_display_id}`,
+      );
+    } else {
+      console.log(
+        `[postmark] inbound from ${parsed.data.From} → ticket ${result.ticket_display_id} ` +
+          `(new_customer=${result.is_new_customer}, auto_triage=${result.auto_triage_queued})`,
+      );
+    }
     return c.json(result, 200);
   } catch (err) {
     console.error('[postmark] processInboundEmail failed:', err);

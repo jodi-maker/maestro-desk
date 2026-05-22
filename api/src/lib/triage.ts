@@ -197,7 +197,15 @@ export interface TriageResult {
   auto_reply: {
     decision: AutoReplyDecision;
     posted: boolean;
-    message_id?: string;
+    message_id?: string;             // ticket_messages.id of the posted reply
+    postmark_message_id?: string;    // Postmark's MessageID for the sent email
+    not_posted_reason?:              // populated when decision.eligible but posted=false
+      | 'already_auto_replied'
+      | 'postmark_not_configured'
+      | 'customer_email_missing'
+      | 'send_failed'
+      | 'unknown_error';
+    not_posted_detail?: string;      // free-form context (e.g. Postmark error body)
   };
 }
 
@@ -367,11 +375,30 @@ export async function triageTicket(input: TriageInput): Promise<TriageResult> {
         model: MODEL,
         workspaceName: lookups.workspaceName,
       });
-      autoReply = { decision, posted: post.posted, message_id: post.message_id };
+      if (post.posted) {
+        autoReply = {
+          decision,
+          posted: true,
+          message_id: post.message_id,
+          postmark_message_id: post.postmark_message_id ?? undefined,
+        };
+      } else {
+        autoReply = {
+          decision,
+          posted: false,
+          not_posted_reason: post.reason,
+          not_posted_detail: post.detail,
+        };
+      }
     } catch (err) {
       console.error('[triage] auto-reply post failed:', err);
-      // Decision was eligible but posting failed; surface so callers know.
-      autoReply = { decision, posted: false };
+      // Unexpected throw (idempotency-check DB error etc). Surface so callers know.
+      autoReply = {
+        decision,
+        posted: false,
+        not_posted_reason: 'unknown_error',
+        not_posted_detail: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 

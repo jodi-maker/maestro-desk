@@ -9,6 +9,17 @@ const Env = z.object({
   // https://<tunnel-host>/api/v1/webhooks/postmark/inbound?secret=<value>
   // (URL-embedded Basic Auth is rejected by Postmark's URL validator.)
   POSTMARK_INBOUND_SECRET: z.string().min(16),
+  // Outbound — Server API Token from Postmark (Settings → API Tokens).
+  // Verified sender address (Sender Signatures or domain-verified).
+  // Auto-reply is skipped at runtime if either is empty.
+  POSTMARK_SERVER_TOKEN: z.string().default(''),
+  POSTMARK_OUTBOUND_FROM: z.string().default(''),
+  // Postmark inbound stream address — set as Reply-To on outbound so
+  // customer replies route back through the webhook (closing the loop).
+  // Find under Postmark → Servers → <server> → Default Inbound Stream →
+  // Settings — the "@inbound.postmarkapp.com" address at the top.
+  // Empty means replies fall back to the From address.
+  POSTMARK_INBOUND_REPLY_ADDRESS: z.string().default(''),
   PORT: z.coerce.number().int().positive().default(3001),
 });
 

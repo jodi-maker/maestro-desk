@@ -1,6 +1,17 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { requirePlatformAdmin, writeAudit } from '../middleware/platform-admin.ts';
+import {
+  createDomain as pmCreateDomain,
+  deleteDomain as pmDeleteDomain,
+  getDomain as pmGetDomain,
+  verifyDomain as pmVerifyDomain,
+  isFullyVerified,
+  isPostmarkAccountConfigured,
+  PostmarkAccountError,
+  PostmarkAccountNotConfiguredError,
+  type PostmarkDomain,
+} from '../lib/postmark-domains.ts';
 
 export const god = new Hono();
 
@@ -243,4 +254,234 @@ god.patch('/brands/:id', async (c) => {
   });
 
   return c.json({ brand });
+});
+
+// ─── Domain provisioning ───────────────────────────────────────────────────
+//
+// Adding a domain to a brand is a two-system operation: we write a local
+// workspace_email_domains row AND register the domain with Postmark to get
+// DKIM + Return-Path DNS records back. The brand owner then pastes those
+// records into their DNS, and the verify endpoint re-checks with Postmark.
+//
+// If POSTMARK_ACCOUNT_TOKEN is unset, the local row is still created (so
+// inbound routing in PR D works as soon as the brand's MX is set), but
+// postmark_domain_id stays null and outbound mail won't have proper DKIM.
+// Hitting the verify endpoint later will trigger creation if missing.
+
+const DnsSetup = (d: PostmarkDomain) => ({
+  dkim: { type: 'TXT', host: d.DKIMHost, value: d.DKIMTextValue },
+  return_path: {
+    type: 'CNAME',
+    host: d.ReturnPathDomain,
+    value: d.ReturnPathDomainCNAMEValue,
+  },
+});
+
+const AddDomain = z.object({ domain: Domain });
+
+// POST /api/v1/god/brands/:id/domains — add + provision a sender domain.
+god.post('/brands/:id/domains', async (c) => {
+  const sb = c.get('sb');
+  const actorUserId = c.get('userId');
+  const brandId = c.req.param('id');
+
+  const body = await c.req.json().catch(() => null);
+  const parsed = AddDomain.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
+  }
+  const { domain } = parsed.data;
+
+  // Reject the unrouted bucket — domains belong on real brands only.
+  const { data: ws, error: wErr } = await sb
+    .from('workspaces')
+    .select('is_unrouted_bucket')
+    .eq('id', brandId)
+    .maybeSingle();
+  if (wErr) return c.json({ error: wErr.message }, 500);
+  if (!ws) return c.json({ error: 'Brand not found' }, 404);
+  if (ws.is_unrouted_bucket) return c.json({ error: 'Cannot add domain to system workspace' }, 403);
+
+  // Insert local row first. Unique violation (23505) on domain → 409.
+  const { data: row, error: iErr } = await sb
+    .from('workspace_email_domains')
+    .insert({ workspace_id: brandId, domain })
+    .select('id, domain, verified_at, postmark_domain_id, created_at')
+    .single();
+  if (iErr) {
+    if (iErr.code === '23505') return c.json({ error: 'Domain already in use', code: iErr.code }, 409);
+    return c.json({ error: iErr.message }, 500);
+  }
+
+  // Provision at Postmark if the account token is configured. Best-effort:
+  // if Postmark refuses, we keep the local row + report the failure so the
+  // operator can retry via the verify endpoint after fixing config.
+  let postmarkDomain: PostmarkDomain | null = null;
+  let postmarkError: string | null = null;
+  if (isPostmarkAccountConfigured()) {
+    try {
+      postmarkDomain = await pmCreateDomain(domain);
+      const { error: uErr } = await sb
+        .from('workspace_email_domains')
+        .update({ postmark_domain_id: String(postmarkDomain.ID) })
+        .eq('id', row.id);
+      if (uErr) console.error('[god/domains] postmark_domain_id update failed:', uErr.message);
+    } catch (err) {
+      postmarkError = err instanceof Error ? err.message : String(err);
+      console.error(`[god/domains] Postmark createDomain failed for ${domain}: ${postmarkError}`);
+    }
+  }
+
+  await writeAudit(sb, {
+    workspaceId: brandId,
+    actorUserId,
+    action: 'brand.domain_added',
+    targetType: 'workspace',
+    targetId: brandId,
+    metadata: {
+      domain,
+      domain_id: row.id,
+      postmark_domain_id: postmarkDomain?.ID ?? null,
+      postmark_error: postmarkError,
+    },
+  });
+
+  return c.json({
+    domain: { ...row, postmark_domain_id: postmarkDomain?.ID ? String(postmarkDomain.ID) : null },
+    dns_setup: postmarkDomain ? DnsSetup(postmarkDomain) : null,
+    postmark_configured: isPostmarkAccountConfigured(),
+    postmark_error: postmarkError,
+  }, 201);
+});
+
+// POST /api/v1/god/brands/:id/domains/:domainId/verify — re-check verification.
+//
+// Idempotent. If postmark_domain_id is missing (e.g. PM was down at create
+// time), this also acts as a recovery hook — we create the Postmark domain
+// now, then immediately verify.
+god.post('/brands/:id/domains/:domainId/verify', async (c) => {
+  const sb = c.get('sb');
+  const actorUserId = c.get('userId');
+  const brandId = c.req.param('id');
+  const domainId = c.req.param('domainId');
+
+  const { data: row, error: rErr } = await sb
+    .from('workspace_email_domains')
+    .select('id, workspace_id, domain, postmark_domain_id, verified_at')
+    .eq('id', domainId)
+    .eq('workspace_id', brandId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (rErr) return c.json({ error: rErr.message }, 500);
+  if (!row) return c.json({ error: 'Domain not found' }, 404);
+
+  if (!isPostmarkAccountConfigured()) {
+    return c.json({ error: 'Postmark Domains API is not configured (POSTMARK_ACCOUNT_TOKEN unset)' }, 503);
+  }
+
+  let pmDomain: PostmarkDomain;
+  try {
+    if (!row.postmark_domain_id) {
+      pmDomain = await pmCreateDomain(row.domain);
+      const { error: uErr } = await sb
+        .from('workspace_email_domains')
+        .update({ postmark_domain_id: String(pmDomain.ID) })
+        .eq('id', row.id);
+      if (uErr) console.error('[god/domains] postmark_domain_id update failed:', uErr.message);
+    } else {
+      pmDomain = await pmVerifyDomain(Number(row.postmark_domain_id));
+    }
+  } catch (err) {
+    if (err instanceof PostmarkAccountError) {
+      return c.json({ error: err.message, postmark_status: err.httpStatus }, 502);
+    }
+    if (err instanceof PostmarkAccountNotConfiguredError) {
+      return c.json({ error: err.message }, 503);
+    }
+    throw err;
+  }
+
+  // Stamp verified_at when both DKIM and Return-Path resolve. Once stamped,
+  // leave it alone — re-verification doesn't reset the timestamp.
+  const fullyVerified = isFullyVerified(pmDomain);
+  if (fullyVerified && !row.verified_at) {
+    const { error: vErr } = await sb
+      .from('workspace_email_domains')
+      .update({ verified_at: new Date().toISOString() })
+      .eq('id', row.id);
+    if (vErr) console.error('[god/domains] verified_at stamp failed:', vErr.message);
+
+    await writeAudit(sb, {
+      workspaceId: brandId,
+      actorUserId,
+      action: 'brand.domain_verified',
+      targetType: 'workspace',
+      targetId: brandId,
+      metadata: { domain: row.domain, domain_id: row.id },
+    });
+  }
+
+  return c.json({
+    domain_id: row.id,
+    domain: row.domain,
+    fully_verified: fullyVerified,
+    dkim_verified: pmDomain.DKIMVerified,
+    return_path_verified: pmDomain.ReturnPathDomainVerified,
+    dns_setup: DnsSetup(pmDomain),
+  });
+});
+
+// DELETE /api/v1/god/brands/:id/domains/:domainId — offboard a sender domain.
+//
+// Soft-deletes locally so the (partial unique on (domain) where deleted_at
+// is null) frees the domain string for re-use. Best-effort delete at
+// Postmark — if they return 404 (already gone), we proceed; other failures
+// are logged but don't block the local soft-delete (an orphaned Postmark
+// row is recoverable manually).
+god.delete('/brands/:id/domains/:domainId', async (c) => {
+  const sb = c.get('sb');
+  const actorUserId = c.get('userId');
+  const brandId = c.req.param('id');
+  const domainId = c.req.param('domainId');
+
+  const { data: row, error: rErr } = await sb
+    .from('workspace_email_domains')
+    .select('id, workspace_id, domain, postmark_domain_id')
+    .eq('id', domainId)
+    .eq('workspace_id', brandId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (rErr) return c.json({ error: rErr.message }, 500);
+  if (!row) return c.json({ error: 'Domain not found' }, 404);
+
+  let pmDeleteError: string | null = null;
+  if (row.postmark_domain_id && isPostmarkAccountConfigured()) {
+    try {
+      await pmDeleteDomain(Number(row.postmark_domain_id));
+    } catch (err) {
+      if (err instanceof PostmarkAccountError && err.httpStatus === 404) {
+        // Already gone at Postmark — treat as success.
+      } else {
+        pmDeleteError = err instanceof Error ? err.message : String(err);
+        console.error(`[god/domains] Postmark delete failed for ${row.domain}: ${pmDeleteError}`);
+      }
+    }
+  }
+
+  const { error: dErr } = await sb
+    .from('workspace_email_domains')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', row.id);
+  if (dErr) return c.json({ error: dErr.message }, 500);
+
+  await writeAudit(sb, {
+    workspaceId: brandId,
+    actorUserId,
+    action: 'brand.domain_removed',
+    targetType: 'workspace',
+    targetId: brandId,
+    metadata: { domain: row.domain, domain_id: row.id, postmark_delete_error: pmDeleteError },
+  });
+
+  return c.json({ ok: true, postmark_delete_error: pmDeleteError });
 });

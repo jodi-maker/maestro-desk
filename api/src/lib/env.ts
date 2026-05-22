@@ -14,6 +14,14 @@ const Env = z.object({
   // Auto-reply is skipped at runtime if either is empty.
   POSTMARK_SERVER_TOKEN: z.string().default(''),
   POSTMARK_OUTBOUND_FROM: z.string().default(''),
+  // Account-level token (Postmark UI → Account → API Tokens). REQUIRED for
+  // the Postmark Domains API (provisioning per-brand sender domains).
+  // Distinct from POSTMARK_SERVER_TOKEN above — that one's per-server (for
+  // sending mail), this one's per-account (for managing senders + domains).
+  // When empty, the domain-add API still creates the local workspace_email_
+  // domains row but skips Postmark provisioning; the brand can re-trigger
+  // via POST /api/v1/god/brands/:id/domains/:domainId/verify once configured.
+  POSTMARK_ACCOUNT_TOKEN: z.string().default(''),
   // Postmark inbound stream address — set as Reply-To on outbound so
   // customer replies route back through the webhook (closing the loop).
   // Find under Postmark → Servers → <server> → Default Inbound Stream →

@@ -7,6 +7,7 @@ import {
   replySubject,
   sendEmail,
 } from './postmark-outbound.ts';
+import { getOutboundFrom } from './outbound-from.ts';
 
 // ─── Config ──────────────────────────────────────────────────────────────
 
@@ -113,8 +114,19 @@ export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoRe
     return { posted: false, reason: 'customer_email_missing' };
   }
 
-  // 4. Send via Postmark. On failure, leave the draft and return — don't
-  //    create the event row, so a manual re-triage from the UI can retry.
+  // 4a. Resolve per-workspace From identity. Brand-owned verified domain
+  //     wins; fall back to the platform-default env-var sender for
+  //     workspaces without a verified domain (e.g. the demo workspace).
+  //     If neither resolves, we have nothing to send from — skip.
+  const workspaceFrom = await getOutboundFrom(sb, workspaceId);
+  const fromEmail = workspaceFrom?.fromEmail || env.POSTMARK_OUTBOUND_FROM;
+  const fromName = workspaceFrom?.fromName || workspaceName;
+  if (!fromEmail) {
+    return { posted: false, reason: 'postmark_not_configured' };
+  }
+
+  // 4b. Send via Postmark. On failure, leave the draft and return — don't
+  //     create the event row, so a manual re-triage from the UI can retry.
   let postmarkMessageId: string;
   let rfcMessageId: string;
   try {
@@ -122,8 +134,8 @@ export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoRe
       to: sendContext.customerEmail,
       subject: replySubject(sendContext.subject),
       textBody: draftReply,
-      fromEmail: env.POSTMARK_OUTBOUND_FROM,
-      fromName: workspaceName,
+      fromEmail,
+      fromName,
       inReplyTo: sendContext.lastCustomerMessageId,
       // Route customer replies back through the inbound webhook so they
       // attach to this ticket rather than landing in the From mailbox.

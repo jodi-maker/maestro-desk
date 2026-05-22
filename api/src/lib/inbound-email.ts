@@ -25,10 +25,15 @@ export interface InboundResult {
   customer_id: string;
   is_new_customer: boolean;
   auto_triage_queued: boolean;
+  // true when this payload's RFC Message-ID matched an existing
+  // customer message — Postmark retry, no new ticket created.
+  deduped: boolean;
 }
 
 /**
  * Convert an inbound email into a ticket. Steps:
+ *   0. Dedup check: if a customer message with this RFC Message-ID already
+ *      exists for the workspace, return its ticket without creating anything.
  *   1. Match the sender against customers by email; create a stub if missing.
  *   2. Create a ticket with status=open, priority=normal (triage may change these).
  *   3. Create the first ticket_messages row from the email body.
@@ -48,6 +53,41 @@ export async function processInboundEmail(args: {
   const { email, name } = parseFrom(payload);
   const body = pickBody(payload);
   const subject = payload.Subject?.trim() || '(no subject)';
+  const externalMessageId = extractMessageId(payload);
+
+  // 0. Dedup check — Postmark retries deliver the same payload multiple
+  //    times. Match by RFC Message-ID; if we already wrote a customer message
+  //    with this ID, return the existing ticket instead of creating a
+  //    duplicate. Skipped when Message-ID is missing (some senders omit it)
+  //    — those payloads can't be deduped and will produce a duplicate ticket
+  //    on retry. The partial unique index in 20260522130000 is defense-in-
+  //    depth against the concurrent-retry race; the application check below
+  //    avoids creating orphan tickets on the way to a 23505.
+  if (externalMessageId) {
+    const { data: dup, error: dErr } = await sb
+      .from('ticket_messages')
+      .select('ticket_id, tickets!inner(display_id, customer_id)')
+      .eq('workspace_id', workspaceId)
+      .eq('role', 'customer')
+      .eq('external_message_id', externalMessageId)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle();
+    if (dErr) throw new Error(`Inbound dedup lookup failed: ${dErr.message}`);
+    if (dup) {
+      const t = (Array.isArray(dup.tickets) ? dup.tickets[0] : dup.tickets) as
+        | { display_id: string; customer_id: string }
+        | null;
+      return {
+        ticket_id: dup.ticket_id,
+        ticket_display_id: t?.display_id ?? '',
+        customer_id: t?.customer_id ?? '',
+        is_new_customer: false,
+        auto_triage_queued: false,
+        deduped: true,
+      };
+    }
+  }
 
   // 1. Match-or-create the customer.
   let customerId: string;
@@ -128,10 +168,10 @@ export async function processInboundEmail(args: {
     .single();
   if (tErr) throw new Error(`Ticket create failed: ${tErr.message}`);
 
-  // 3. First message from the email body. Capture the RFC Message-ID so we
-  //    can thread our reply via In-Reply-To when auto-reply fires.
+  // 3. First message from the email body. The RFC Message-ID extracted at
+  //    the top is stored so we can thread our reply via In-Reply-To when
+  //    auto-reply fires.
   const authorLabel = name?.trim() || email;
-  const externalMessageId = extractMessageId(payload);
   const { error: mErr } = await sb.from('ticket_messages').insert({
     workspace_id: workspaceId,
     ticket_id: newTicket.id,
@@ -174,5 +214,6 @@ export async function processInboundEmail(args: {
     customer_id: customerId,
     is_new_customer: isNewCustomer,
     auto_triage_queued: autoTriageQueued,
+    deduped: false,
   };
 }

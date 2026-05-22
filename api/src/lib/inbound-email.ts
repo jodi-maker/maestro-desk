@@ -23,6 +23,51 @@ function nextCustomerDisplayId(): string {
   return `M${String(Math.floor(Math.random() * 9000 + 1000))}`;
 }
 
+// ─── Workspace resolution ────────────────────────────────────────────────
+//
+// Maps an inbound email's To: domain to the destination workspace.
+//
+// Lookup is against workspace_email_domains (citext column — case folding
+// is handled by the database). On no-match, mail falls through to the
+// system "unrouted" workspace (is_unrouted_bucket = true, seeded by
+// 20260522150000_workspace_branding.sql) so a customer email never
+// silently drops. The platform admin reviews unrouted mail in the god UI
+// and either creates the missing brand or replies via the bucket directly.
+
+export interface WorkspaceResolution {
+  workspaceId: string;
+  routed: boolean;             // false → fell back to the unrouted bucket
+  matchedDomain: string | null;
+}
+
+export async function resolveInboundWorkspace(args: {
+  sb: SupabaseClient;
+  toDomain: string | null;
+}): Promise<WorkspaceResolution> {
+  const { sb, toDomain } = args;
+
+  if (toDomain) {
+    const { data: match, error } = await sb
+      .from('workspace_email_domains')
+      .select('workspace_id, domain')
+      .eq('domain', toDomain)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (error) throw new Error(`Domain lookup failed: ${error.message}`);
+    if (match) {
+      return { workspaceId: match.workspace_id, routed: true, matchedDomain: match.domain };
+    }
+  }
+
+  const { data: bucket, error: bErr } = await sb
+    .from('workspaces')
+    .select('id')
+    .eq('is_unrouted_bucket', true)
+    .single();
+  if (bErr) throw new Error(`Unrouted bucket lookup failed: ${bErr.message}`);
+  return { workspaceId: bucket.id, routed: false, matchedDomain: null };
+}
+
 // ─── Entry point ─────────────────────────────────────────────────────────
 
 export interface InboundResult {

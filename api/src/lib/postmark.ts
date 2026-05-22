@@ -77,6 +77,28 @@ export function parseFrom(payload: PostmarkInbound): { email: string; name: stri
 }
 
 /**
+ * Pull the recipient email + domain out of Postmark's ToFull array. Used
+ * by inbound webhook routing to map mail to the right workspace.
+ *
+ * Postmark's ToFull is always present and ordered; for multi-recipient mail
+ * we route by the first entry only. A real customer mailing two of our
+ * brands' support addresses at once is rare enough that "first wins" is
+ * acceptable for v1; the second brand can manually re-create the ticket if
+ * needed. Returns null if ToFull is missing/empty (defensive — shouldn't
+ * happen with a real Postmark payload).
+ */
+export function parseTo(payload: PostmarkInbound): { email: string; domain: string } | null {
+  const to = payload.ToFull?.[0]?.Email;
+  if (!to) return null;
+  const email = to.toLowerCase();
+  const at = email.lastIndexOf('@');
+  if (at === -1) return null;
+  const domain = email.slice(at + 1);
+  if (!domain) return null;
+  return { email, domain };
+}
+
+/**
  * Best body for the ticket message: stripped reply if present (Postmark
  * removes quoted history), else TextBody, else HTML body. HTML is left
  * as-is for v1 — proper sanitisation/conversion is a v2 concern.

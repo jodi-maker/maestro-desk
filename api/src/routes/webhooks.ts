@@ -43,6 +43,10 @@ webhooks.post('/postmark/inbound', async (c) => {
       console.log(
         `[postmark] inbound from ${parsed.data.From} → DEDUPED to existing ticket ${result.ticket_display_id}`,
       );
+    } else if (result.threaded) {
+      console.log(
+        `[postmark] inbound from ${parsed.data.From} → THREADED reply on ticket ${result.ticket_display_id}`,
+      );
     } else {
       console.log(
         `[postmark] inbound from ${parsed.data.From} → ticket ${result.ticket_display_id} ` +

@@ -58,7 +58,7 @@ export interface PostAutoReplyArgs {
 }
 
 export type PostAutoReplyResult =
-  | { posted: true; message_id: string; postmark_message_id: string | null }
+  | { posted: true; message_id: string; postmark_message_id: string; rfc_message_id: string }
   | { posted: false; reason:
       | 'already_auto_replied'
       | 'postmark_not_configured'
@@ -115,7 +115,8 @@ export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoRe
 
   // 4. Send via Postmark. On failure, leave the draft and return — don't
   //    create the event row, so a manual re-triage from the UI can retry.
-  let postmarkMessageId: string | null = null;
+  let postmarkMessageId: string;
+  let rfcMessageId: string;
   try {
     const result = await sendEmail({
       to: sendContext.customerEmail,
@@ -124,8 +125,13 @@ export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoRe
       fromEmail: env.POSTMARK_OUTBOUND_FROM,
       fromName: workspaceName,
       inReplyTo: sendContext.lastCustomerMessageId,
+      // Route customer replies back through the inbound webhook so they
+      // attach to this ticket rather than landing in the From mailbox.
+      // Empty string means use From as Reply-To (Postmark default).
+      replyTo: env.POSTMARK_INBOUND_REPLY_ADDRESS || null,
     });
     postmarkMessageId = result.messageId;
+    rfcMessageId = result.rfcMessageId;
   } catch (err) {
     const detail = err instanceof PostmarkSendError
       ? `code=${err.code} status=${err.httpStatus}: ${err.message}`
@@ -136,8 +142,9 @@ export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoRe
 
   // 5. Post the AI message. author_label is the workspace name so the customer
   //    sees a brand-consistent sender (matches the prompt's sign-off rule).
-  //    Store Postmark's returned MessageID so a future inbound reply can be
-  //    linked via In-Reply-To matching (deferred — captured for free now).
+  //    Store the FULL RFC Message-Id (with brackets + domain) — same format
+  //    as customer inbound messages — so In-Reply-To matching on a reply
+  //    finds this row exactly.
   const { data: msg, error: mErr } = await sb
     .from('ticket_messages')
     .insert({
@@ -147,7 +154,7 @@ export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoRe
       author_user_id: null,
       author_label: workspaceName,
       body: draftReply,
-      external_message_id: postmarkMessageId,
+      external_message_id: rfcMessageId,
     })
     .select('id')
     .single();
@@ -161,14 +168,19 @@ export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoRe
     entity_id: ticketId,
     kind: 'auto_reply',
     author_label: workspaceName,
-    details: `Auto-reply sent (confidence ${confidence}, model ${model}, postmark_id ${postmarkMessageId ?? 'unknown'})`,
+    details: `Auto-reply sent (confidence ${confidence}, model ${model}, postmark_id ${postmarkMessageId})`,
   });
   if (evErr) {
     console.error('[auto-reply] event log failed:', evErr.message);
     // Don't fail the whole post — the email already went out + message row exists.
   }
 
-  return { posted: true, message_id: msg.id, postmark_message_id: postmarkMessageId };
+  return {
+    posted: true,
+    message_id: msg.id,
+    postmark_message_id: postmarkMessageId,
+    rfc_message_id: rfcMessageId,
+  };
 }
 
 // ─── Send context loader ─────────────────────────────────────────────────

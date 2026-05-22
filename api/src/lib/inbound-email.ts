@@ -1,5 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { extractMessageId, parseFrom, pickBody, type PostmarkInbound } from './postmark.ts';
+import {
+  extractInReplyTo,
+  extractMessageId,
+  parseFrom,
+  pickBody,
+  type PostmarkInbound,
+} from './postmark.ts';
 import { triageTicket } from './triage.ts';
 import { BudgetExceededError } from './budget.ts';
 
@@ -28,6 +34,9 @@ export interface InboundResult {
   // true when this payload's RFC Message-ID matched an existing
   // customer message — Postmark retry, no new ticket created.
   deduped: boolean;
+  // true when In-Reply-To matched a prior message and this email was
+  // attached to that existing ticket instead of creating a new one.
+  threaded: boolean;
 }
 
 /**
@@ -54,8 +63,40 @@ export async function processInboundEmail(args: {
   const body = pickBody(payload);
   const subject = payload.Subject?.trim() || '(no subject)';
   const externalMessageId = extractMessageId(payload);
+  const inReplyTo = extractInReplyTo(payload);
 
-  // 0. Dedup check — Postmark retries deliver the same payload multiple
+  // 0a. Thread-attach — if In-Reply-To references a Message-Id we've seen
+  //     before (our own outbound or a prior customer message), attach this
+  //     email as a new customer message on the existing ticket instead of
+  //     creating a new one. Match against any role (customer + ai), since
+  //     replies to our auto-replies target our ai ticket_messages.
+  if (inReplyTo) {
+    const { data: parent, error: pErr } = await sb
+      .from('ticket_messages')
+      .select('ticket_id, tickets!inner(id, display_id, customer_id, deleted_at)')
+      .eq('workspace_id', workspaceId)
+      .eq('external_message_id', inReplyTo)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle();
+    if (pErr) throw new Error(`In-Reply-To lookup failed: ${pErr.message}`);
+    if (parent) {
+      const t = (Array.isArray(parent.tickets) ? parent.tickets[0] : parent.tickets) as
+        | { id: string; display_id: string; customer_id: string; deleted_at: string | null }
+        | null;
+      // Skip thread-attach if the parent ticket has been soft-deleted —
+      // fall through to normal create flow so the reply still surfaces.
+      if (t && !t.deleted_at) {
+        return await attachReplyToTicket({
+          sb, workspaceId, ticketId: t.id, ticketDisplayId: t.display_id,
+          customerId: t.customer_id, body, name, email,
+          externalMessageId,
+        });
+      }
+    }
+  }
+
+  // 0b. Dedup check — Postmark retries deliver the same payload multiple
   //    times. Match by RFC Message-ID; if we already wrote a customer message
   //    with this ID, return the existing ticket instead of creating a
   //    duplicate. Skipped when Message-ID is missing (some senders omit it)
@@ -85,6 +126,7 @@ export async function processInboundEmail(args: {
         is_new_customer: false,
         auto_triage_queued: false,
         deduped: true,
+        threaded: false,
       };
     }
   }
@@ -215,5 +257,66 @@ export async function processInboundEmail(args: {
     is_new_customer: isNewCustomer,
     auto_triage_queued: autoTriageQueued,
     deduped: false,
+    threaded: false,
+  };
+}
+
+// ─── Thread-attach helper ────────────────────────────────────────────────
+
+/**
+ * Append a new customer message to an existing ticket (matched by
+ * In-Reply-To). Doesn't touch the ticket's customer_id — even if the reply
+ * comes from a different address (e.g. a Cc'd colleague), the ticket
+ * keeps its original customer for continuity. Fires triage again so the
+ * AI draft refreshes with the new context.
+ */
+async function attachReplyToTicket(args: {
+  sb: SupabaseClient;
+  workspaceId: string;
+  ticketId: string;
+  ticketDisplayId: string;
+  customerId: string;
+  body: string;
+  name: string | null;
+  email: string;
+  externalMessageId: string | null;
+}): Promise<InboundResult> {
+  const { sb, workspaceId, ticketId, ticketDisplayId, customerId, body, name, email, externalMessageId } = args;
+
+  const authorLabel = name?.trim() || email;
+  const { error: mErr } = await sb.from('ticket_messages').insert({
+    workspace_id: workspaceId,
+    ticket_id: ticketId,
+    role: 'customer',
+    author_label: authorLabel,
+    body,
+    external_message_id: externalMessageId,
+  });
+  if (mErr) throw new Error(`Reply attach failed: ${mErr.message}`);
+
+  // Fire-and-forget retriage so the AI draft refreshes with the new turn.
+  // Errors swallowed (same rationale as the create path) so Postmark gets 200.
+  let autoTriageQueued = false;
+  try {
+    void triageTicket({ sb, ticketId, workspaceId, userId: null }).catch((err) => {
+      if (err instanceof BudgetExceededError) {
+        console.log(`[inbound-email] retriage skipped — workspace ${workspaceId} out of budget`);
+      } else {
+        console.error('[inbound-email] retriage failed:', err);
+      }
+    });
+    autoTriageQueued = true;
+  } catch (err) {
+    console.error('[inbound-email] failed to queue retriage:', err);
+  }
+
+  return {
+    ticket_id: ticketId,
+    ticket_display_id: ticketDisplayId,
+    customer_id: customerId,
+    is_new_customer: false,
+    auto_triage_queued: autoTriageQueued,
+    deduped: false,
+    threaded: true,
   };
 }

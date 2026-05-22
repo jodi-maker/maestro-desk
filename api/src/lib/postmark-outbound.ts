@@ -25,10 +25,14 @@ export interface SendEmailArgs {
   // In-Reply-To + References headers so the customer's mail client threads
   // our reply under the original.
   inReplyTo?: string | null;
+  // Address to set as Reply-To. Used to route customer replies back through
+  // the Postmark inbound webhook instead of straight to the From mailbox.
+  replyTo?: string | null;
 }
 
 export interface SendEmailResult {
-  messageId: string;     // Postmark's MessageID for the sent email
+  messageId: string;     // Postmark's MessageID (UUID) for the sent email
+  rfcMessageId: string;  // Full RFC Message-Id header value we set (with brackets)
   submittedAt: string;
 }
 
@@ -61,7 +65,16 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     throw new PostmarkNotConfiguredError();
   }
 
-  const headers: Array<{ Name: string; Value: string }> = [];
+  // We set our OWN RFC Message-Id header so the value matches what we
+  // persist on the ticket_messages row. Without this, Postmark generates
+  // a `<UUID@mtasv.net>` and we'd have to know/match Postmark's suffix
+  // to identify replies. Domain comes from the From address — replies
+  // referencing this ID via In-Reply-To resolve cleanly in our DB.
+  const rfcMessageId = generateRfcMessageId(args.fromEmail);
+
+  const headers: Array<{ Name: string; Value: string }> = [
+    { Name: 'Message-Id', Value: rfcMessageId },
+  ];
   if (args.inReplyTo) {
     // RFC 5322 Message-IDs are angle-bracket-wrapped on the wire. Some
     // inbound providers strip the brackets; re-add them defensively so
@@ -70,6 +83,9 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     headers.push({ Name: 'In-Reply-To', Value: msgId });
     headers.push({ Name: 'References', Value: msgId });
   }
+  if (args.replyTo) {
+    headers.push({ Name: 'Reply-To', Value: args.replyTo });
+  }
 
   const body = {
     From: formatFrom(args.fromName, args.fromEmail),
@@ -77,7 +93,7 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     Subject: args.subject,
     TextBody: args.textBody,
     MessageStream: STREAM,
-    ...(headers.length > 0 ? { Headers: headers } : {}),
+    Headers: headers,
   };
 
   const res = await fetch(ENDPOINT, {
@@ -123,7 +139,21 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     );
   }
 
-  return { messageId: data.MessageID, submittedAt: data.SubmittedAt };
+  return {
+    messageId: data.MessageID,
+    rfcMessageId,
+    submittedAt: data.SubmittedAt,
+  };
+}
+
+/**
+ * Generate an RFC 5322 Message-Id header value: `<{uuid}@{domain}>`. Domain
+ * is extracted from the outbound From address so the Message-Id looks like
+ * it originates from our sending domain (good for SPF/DKIM consistency).
+ */
+function generateRfcMessageId(fromEmail: string): string {
+  const domain = fromEmail.split('@')[1] || 'maestro.local';
+  return `<${crypto.randomUUID()}@${domain}>`;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────

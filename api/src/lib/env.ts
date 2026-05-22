@@ -14,6 +14,12 @@ const Env = z.object({
   // Auto-reply is skipped at runtime if either is empty.
   POSTMARK_SERVER_TOKEN: z.string().default(''),
   POSTMARK_OUTBOUND_FROM: z.string().default(''),
+  // Postmark inbound stream address — set as Reply-To on outbound so
+  // customer replies route back through the webhook (closing the loop).
+  // Find under Postmark → Servers → <server> → Default Inbound Stream →
+  // Settings — the "@inbound.postmarkapp.com" address at the top.
+  // Empty means replies fall back to the From address.
+  POSTMARK_INBOUND_REPLY_ADDRESS: z.string().default(''),
   PORT: z.coerce.number().int().positive().default(3001),
 });
 

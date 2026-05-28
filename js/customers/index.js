@@ -31,6 +31,7 @@ import { isFieldVisible } from '../layouts/index.js';
 import { registerActions, registerChangeActions, registerInputActions, registerMousedownActions } from '../core/event-delegation.js';
 import { openTicket } from '../tickets/detail.js';
 import { showManageFieldsModal } from '../custom-fields/index.js';
+import { apiPut } from '../core/api-client.js';
 
 // ─── Customer table column state ─────────────────────────────────────────────
 
@@ -525,10 +526,15 @@ function unmergeCustomer(srcId) {
   window.renderPage('customers');
 }
 
-function updateCustomField(custId, fieldId, value) {
+async function updateCustomField(custId, fieldId, value) {
   const c = CUSTOMERS.find(x => x.id === custId);
   if (!c) return;
   if (!c.custom) c.custom = {};
+  if (c._uuid) {
+    try {
+      await apiPut(`/api/v1/custom-values/customers/${c._uuid}/${encodeURIComponent(fieldId)}`, { value: value || null });
+    } catch (err) { alert(`Couldn't save: ${err?.message || err}`); return; }
+  }
   c.custom[fieldId] = value;
 }
 

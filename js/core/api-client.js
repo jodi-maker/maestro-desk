@@ -78,5 +78,6 @@ export async function apiCall(path, { method = 'GET', body, auth = true, workspa
 
 export const apiGet    = (path, opts)        => apiCall(path, { ...opts, method: 'GET' });
 export const apiPost   = (path, body, opts)  => apiCall(path, { ...opts, method: 'POST', body });
+export const apiPut    = (path, body, opts)  => apiCall(path, { ...opts, method: 'PUT', body });
 export const apiPatch  = (path, body, opts)  => apiCall(path, { ...opts, method: 'PATCH', body });
 export const apiDelete = (path, opts)        => apiCall(path, { ...opts, method: 'DELETE' });

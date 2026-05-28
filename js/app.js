@@ -88,6 +88,10 @@ import {
   showPlatformAdminLogin, submitPlatformAdminLogin, autoResumePlatformAdmin,
 } from './auth/platform-admin.js';
 import {
+  showAgentLogin, submitAgentLogin, autoResumeAgent,
+} from './auth/agent-login.js';
+import { signOut as authSignOut } from './core/auth-client.js';
+import {
   renderSettings, setSettingsTab,
   updateProfileName, updateProfileInitials,
   toggleNotifPref, setKbCfg, testKbConnection,
@@ -192,6 +196,10 @@ function login(role, name, initials) {
 }
 function logout() {
   SESSION = null;
+  // Clears JWT + workspace_id + cached user from sessionStorage. Safe for
+  // demo personas (which never stored anything) and load-bearing for real-
+  // auth users (so the next page-load doesn't auto-resume).
+  authSignOut();
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
 }
@@ -348,7 +356,9 @@ Object.assign(
     showAuthPanel, togglePassword, ssoLogin,
     submitLogin, submitForgot, submitCreate, updatePwStrength,
     // Platform admin sign-in panel — onclick handlers in static index.html
-    showPlatformAdminLogin, submitPlatformAdminLogin },
+    showPlatformAdminLogin, submitPlatformAdminLogin,
+    // Agent (real-auth) sign-in panel — onclick handlers in static index.html
+    showAgentLogin, submitAgentLogin },
   Theme, AIClient, Summarize, Translate, AIReply,
   TimeTracking, Snooze, Linked, Mentions,
   Macros, Attachments,
@@ -361,11 +371,17 @@ Object.assign(
   AssignmentRules,
 );
 
-// ─── Startup: resume a platform-admin session if one is in sessionStorage ───
-// If a JWT survived from a previous tab session and still identifies a
-// platform admin, jump straight into the god panel — no re-login. Other
-// auth flows (demo personas) stay on the auth screen.
-autoResumePlatformAdmin().catch((err) => {
-  console.warn('[startup] auto-resume failed:', err);
-});
+// ─── Startup: resume a real-auth session if one is in sessionStorage ───
+// Agent resume wins if a workspace_id is stored — that's the user's
+// explicit "I'm here as an agent" signal. Platform-admin resume is the
+// fallback. Demo persona flow stays on the auth screen until the user
+// clicks one.
+(async () => {
+  try {
+    if (await autoResumeAgent()) return;
+    await autoResumePlatformAdmin();
+  } catch (err) {
+    console.warn('[startup] auto-resume failed:', err);
+  }
+})();
 

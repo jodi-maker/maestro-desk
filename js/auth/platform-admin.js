@@ -68,8 +68,9 @@ export function revealGodNav() {
  * shell without forcing a re-login. Called from app.js at startup.
  */
 export async function autoResumePlatformAdmin() {
-  const user = await rehydrateUser();
-  if (!user || !user.is_platform_admin) return false;
+  const me = await rehydrateUser();
+  if (!me || !me.user?.is_platform_admin) return false;
+  const user = me.user;
   revealGodNav();
   const initials = user.initials || (user.email || '').slice(0, 2).toUpperCase();
   window.login('Platform Admin', user.name || user.email, initials);

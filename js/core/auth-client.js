@@ -1,19 +1,23 @@
-// Real Supabase-backed auth for platform admins.
+// Real Supabase-backed auth for the SPA.
 //
-// The existing demo-persona login in js/auth/index.js stays untouched —
-// that's still the entry point for the agent demo. This module is the
-// real-auth path used by the god panel: sign in against Supabase's
-// /auth/v1/token endpoint, store the JWT, load /whoami to identify the
-// user + their is_platform_admin flag.
+// Two callers:
+//   - js/auth/platform-admin.js — platform admins (no workspace context)
+//   - js/auth/agent-login.js    — agents signing into a specific workspace
+//
+// Both end up at /api/v1/whoami, which returns the user record plus the
+// list of workspace memberships. The platform-admin path ignores
+// memberships and shows the god panel; the agent path uses memberships to
+// auto-pick the workspace (1 → auto) or surface a picker (2+).
 //
 // We don't ship the supabase-js SDK — the auth flow is a single REST call,
 // so a direct fetch is enough and avoids a CDN dependency / build step.
 //
 // Storage:
-//   sessionStorage.maestro_jwt   — handled by api-client
-//   sessionStorage.maestro_user  — JSON of the current user
+//   sessionStorage.maestro_jwt          — handled by api-client
+//   sessionStorage.maestro_workspace_id — handled by api-client
+//   sessionStorage.maestro_user         — JSON of the current user (here)
 
-import { apiGet, apiPost, apiCall, setJwt, JWT_KEY } from './api-client.js';
+import { apiGet, setJwt, setWorkspaceId, JWT_KEY } from './api-client.js';
 
 const USER_KEY = 'maestro_user';
 
@@ -21,7 +25,7 @@ let _config = null;          // cached /config response
 
 export async function loadConfig() {
   if (_config) return _config;
-  _config = await apiGet('/api/v1/config', { auth: false });
+  _config = await apiGet('/api/v1/config', { auth: false, workspace: false });
   return _config;
 }
 
@@ -38,14 +42,15 @@ function setCurrentUser(user) {
 }
 
 /**
- * Email/password sign-in via Supabase Auth. Throws on bad credentials or
- * network failure. On success, stashes the JWT + the user (loaded from
- * /whoami) and returns the user.
+ * Generic email/password sign-in via Supabase Auth. Stashes the JWT, then
+ * calls /api/v1/whoami to load the user + memberships. Returns the whoami
+ * payload: { user, memberships }.
  *
- * The caller is responsible for the UI transition (hide auth screen, show
- * app, etc.) — this function is auth-only, no DOM side effects.
+ * Note: this does NOT pick a workspace. Callers decide what to do with the
+ * memberships list (auto-pick if length 1, render a picker if more, treat
+ * as god-only if empty).
  */
-export async function platformAdminSignIn(email, password) {
+export async function signIn(email, password) {
   const cfg = await loadConfig();
   const res = await fetch(`${cfg.supabase_url}/auth/v1/token?grant_type=password`, {
     method: 'POST',
@@ -63,35 +68,40 @@ export async function platformAdminSignIn(email, password) {
     throw new Error('Sign-in succeeded but no token returned');
   }
   setJwt(body.access_token);
-  // Confirm the token works AND fetch the user record. /whoami also reveals
-  // is_platform_admin so the caller can decide whether to surface the god UI.
-  const me = await apiGet('/api/v1/whoami');
+  const me = await apiGet('/api/v1/whoami', { workspace: false });
   setCurrentUser(me.user);
-  return me.user;
+  return me;
+}
+
+/**
+ * Platform-admin sign-in — thin wrapper that returns just the user (matches
+ * the existing call sites in js/auth/platform-admin.js).
+ */
+export async function platformAdminSignIn(email, password) {
+  const { user } = await signIn(email, password);
+  return user;
 }
 
 /**
  * Bootstrap helper for page reload — if a JWT is in sessionStorage, refresh
- * the user record from /whoami. Returns the user on success, null if the
- * stored token is invalid (and clears the stale token).
+ * the user + memberships from /whoami. Returns { user, memberships } on
+ * success, null if the stored token is invalid (and clears the stale state).
  */
 export async function rehydrateUser() {
   if (!sessionStorage.getItem(JWT_KEY)) return null;
   try {
-    const me = await apiGet('/api/v1/whoami');
+    const me = await apiGet('/api/v1/whoami', { workspace: false });
     setCurrentUser(me.user);
-    return me.user;
+    return me;
   } catch (err) {
-    // 401 → token expired/invalid. Clear it so the SPA falls back to auth screen.
-    if (err.status === 401) {
-      signOut();
-    }
+    if (err.status === 401) signOut();
     return null;
   }
 }
 
 export function signOut() {
   setJwt(null);
+  setWorkspaceId(null);
   setCurrentUser(null);
 }
 

@@ -717,15 +717,35 @@ export async function changeTicketAgent(id, val) {
   fireWebhook('ticket.assigned', { ...ticketPayload(t), previousAgent: old });
 }
 
-function acceptAITag(ticketId, tagName) {
+async function acceptAITag(ticketId, tagName) {
   const t = TICKETS.find(x=>x.id===ticketId);
+  if (!t) return;
   const at = t.aiTags.find(x=>x.tag===tagName);
-  if(at) { at.accepted=true; t.tags.push(tagName); }
+  if (!at || at.accepted) { openTicket(ticketId); return; }
+  if (t._uuid) {
+    try { await apiPatch(`/api/v1/tickets/${t._uuid}/ai_tags/${encodeURIComponent(tagName)}`, { accepted: true }); }
+    catch (err) { alert(`Couldn't accept AI tag: ${err?.message || err}`); return; }
+  }
+  at.accepted = true;
+  if (!t.tags.includes(tagName)) t.tags.push(tagName);
   openTicket(ticketId);
 }
-function acceptAllAITags(ticketId) {
+async function acceptAllAITags(ticketId) {
   const t = TICKETS.find(x=>x.id===ticketId);
-  t.aiTags.forEach(at => { if(!at.accepted){ at.accepted=true; t.tags.push(at.tag); } });
+  if (!t) return;
+  const pending = t.aiTags.filter(at => !at.accepted);
+  if (pending.length === 0) { openTicket(ticketId); return; }
+  if (t._uuid) {
+    try {
+      await Promise.all(pending.map((at) =>
+        apiPatch(`/api/v1/tickets/${t._uuid}/ai_tags/${encodeURIComponent(at.tag)}`, { accepted: true })
+      ));
+    } catch (err) { alert(`Couldn't accept AI tags: ${err?.message || err}`); return; }
+  }
+  pending.forEach((at) => {
+    at.accepted = true;
+    if (!t.tags.includes(at.tag)) t.tags.push(at.tag);
+  });
   openTicket(ticketId);
 }
 function prevNextTicket(dir) {

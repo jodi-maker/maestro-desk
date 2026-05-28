@@ -584,7 +584,10 @@ function getTicketTimes(t) {
   let age = '—';
   if (t.created) {
     const created = new Date(t.created);
-    const today = new Date('2025-04-16');
+    // Demo personas load tickets from data.js with `created: '2025-04-16'`
+    // across the board, so a frozen "today" keeps demo ages looking fresh.
+    // Real tickets carry `_uuid` and need the actual current date.
+    const today = t._uuid ? new Date() : new Date('2025-04-16');
     const days = Math.max(0, Math.floor((today - created) / 86400000));
     age = days === 0 ? 'today' : days === 1 ? '1 day' : `${days} days`;
   }

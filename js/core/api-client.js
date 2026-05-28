@@ -12,8 +12,9 @@
 // Token lives in sessionStorage under JWT_KEY — survives a tab refresh,
 // gone when the tab closes. Use signOut() in auth-client to clear it.
 
-export const API_BASE = (typeof window !== 'undefined' && window.MAESTRO_API_BASE) || 'http://localhost:3001';
-export const JWT_KEY  = 'maestro_jwt';
+export const API_BASE          = (typeof window !== 'undefined' && window.MAESTRO_API_BASE) || 'http://localhost:3001';
+export const JWT_KEY           = 'maestro_jwt';
+export const WORKSPACE_ID_KEY  = 'maestro_workspace_id';
 
 export class ApiError extends Error {
   constructor(message, status, body) {
@@ -32,17 +33,32 @@ export function setJwt(jwt) {
   else     sessionStorage.removeItem(JWT_KEY);
 }
 
+export function getWorkspaceId() {
+  return sessionStorage.getItem(WORKSPACE_ID_KEY);
+}
+
+export function setWorkspaceId(id) {
+  if (id) sessionStorage.setItem(WORKSPACE_ID_KEY, id);
+  else    sessionStorage.removeItem(WORKSPACE_ID_KEY);
+}
+
 /**
  * Low-level call. path is "/api/v1/..."; method defaults to GET; body is
  * JSON-encoded automatically. Throws ApiError on non-2xx.
  *
- * { auth: false } skips the Authorization header (for /config + /health).
+ * Options:
+ *   { auth: false }      — skip the Authorization header (for /config + /health)
+ *   { workspace: false } — skip the X-Workspace-Id header (for /whoami + god routes)
  */
-export async function apiCall(path, { method = 'GET', body, auth = true } = {}) {
+export async function apiCall(path, { method = 'GET', body, auth = true, workspace = true } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (auth) {
     const jwt = getJwt();
     if (jwt) headers.Authorization = `Bearer ${jwt}`;
+  }
+  if (workspace) {
+    const wsId = getWorkspaceId();
+    if (wsId) headers['X-Workspace-Id'] = wsId;
   }
   const res = await fetch(`${API_BASE}${path}`, {
     method,

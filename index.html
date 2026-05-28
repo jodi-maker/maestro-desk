@@ -81,7 +81,28 @@
       </div>
 
       <div class="auth-link" onclick="showAuthPanel('create')" style="margin-top:14px">Don't have an account? Create one</div>
+      <div class="auth-link" onclick="showAgentLogin()" style="margin-top:6px;font-size:12px">Sign in to your workspace →</div>
       <div class="auth-link" onclick="showPlatformAdminLogin()" style="margin-top:6px;font-size:12px;color:var(--ink3)">Platform admin sign-in →</div>
+    </div>
+    <!-- Agent (real Supabase auth) sign-in panel -->
+    <div id="auth-agent" style="display:none">
+      <div class="auth-logo"><div class="sb-word">Maestro Desk</div></div>
+      <div class="auth-back" onclick="showAuthPanel('login')">← Back to sign in</div>
+      <div class="auth-title">Sign in</div>
+      <div class="auth-sub" style="margin-bottom:18px">Sign in to your workspace.</div>
+      <div id="ag-form">
+        <div class="form-row">
+          <label class="form-label">Email</label>
+          <input class="form-input" id="ag-email" type="email" placeholder="you@example.com" autocomplete="username"/>
+        </div>
+        <div class="form-row">
+          <label class="form-label">Password</label>
+          <input class="form-input" id="ag-password" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitAgentLogin()"/>
+        </div>
+        <button class="btn btn-solid" style="width:100%;justify-content:center;margin-top:4px" id="ag-submit" onclick="submitAgentLogin()">Sign in</button>
+      </div>
+      <div id="ag-picker" style="display:none"></div>
+      <div id="ag-error" class="auth-error" style="display:none;margin-top:12px"></div>
     </div>
     <!-- Platform admin login panel (real Supabase auth) -->
     <div id="auth-platform-admin" style="display:none">

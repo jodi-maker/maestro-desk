@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.ts';
+import { runWorkflowsForTicket } from '../lib/workflow-engine.ts';
 
 export const tickets = new Hono();
 
@@ -147,11 +148,12 @@ tickets.patch('/:id', async (c) => {
 
   // Workspace-scope check before the update so an attacker with a valid
   // ticket UUID from another workspace can't blind-write through the
-  // service-role client. The update's .eq('workspace_id') below makes the
-  // write a no-op in that case anyway, but the explicit 404 is clearer.
+  // service-role client. Also captures the pre-update column values the
+  // workflow engine compares against for change-detection triggers
+  // (status_change / priority_change / etc.).
   const { data: existing, error: lookupErr } = await sb
     .from('tickets')
-    .select('id')
+    .select('id, status_key, priority_key, category_key, assigned_user_id')
     .eq('id', ticketId)
     .eq('workspace_id', workspaceId)
     .is('deleted_at', null)
@@ -159,14 +161,26 @@ tickets.patch('/:id', async (c) => {
   if (lookupErr) return c.json({ error: lookupErr.message }, 500);
   if (!existing)  return c.json({ error: 'Ticket not found' }, 404);
 
-  const { data: updated, error: updErr } = await sb
+  const { error: updErr } = await sb
     .from('tickets')
     .update(updates)
     .eq('id', ticketId)
-    .eq('workspace_id', workspaceId)
-    .select('id, display_id, status_key, priority_key, category_key, assigned_user_id, sla_state, updated_at, csat_score, csat_stars, csat_comment, csat_requested_at, csat_submitted_at')
-    .single();
+    .eq('workspace_id', workspaceId);
   if (updErr) return c.json({ error: updErr.message }, 500);
+
+  // Fire workflow engine against the post-update row. The engine may
+  // mutate further fields (assign_role / set_status / add_tag), so we
+  // re-fetch below to return the canonical post-engine state.
+  try { await runWorkflowsForTicket({ sb, workspaceId, ticketId, prevRow: existing }); }
+  catch (err) { console.error('[workflow-engine] top-level failure:', err); }
+
+  const { data: updated, error: refetchErr } = await sb
+    .from('tickets')
+    .select('id, display_id, status_key, priority_key, category_key, assigned_user_id, sla_state, updated_at, csat_score, csat_stars, csat_comment, csat_requested_at, csat_submitted_at')
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .single();
+  if (refetchErr) return c.json({ error: refetchErr.message }, 500);
 
   return c.json({ ticket: updated });
 });

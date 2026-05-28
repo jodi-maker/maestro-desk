@@ -298,6 +298,76 @@ tickets.delete('/:id/tags/:tag', async (c) => {
   return new Response(null, { status: 204 });
 });
 
+// ─── PATCH /:id/ai_tags/:tag — accept an AI-suggested tag ────────────────
+//
+// The UI only ever flips accepted=true (there's no "un-accept" button).
+// On accept, also writes a ticket_tags row so the accepted suggestion
+// becomes a real manual tag — single source of truth for "what tags does
+// this ticket have" stays the manual tags array. tag_library upsert is
+// best-effort, same shape as POST /tags.
+const PatchAITag = z.object({
+  accepted: z.literal(true),
+});
+
+tickets.patch('/:id/ai_tags/:tag', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const ticketId = c.req.param('id');
+  const tag = c.req.param('tag');
+
+  const reqBody = await c.req.json().catch(() => null);
+  const parsed = PatchAITag.safeParse(reqBody);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
+  }
+
+  // Workspace-scope check + confirm the AI tag actually exists on this
+  // ticket. Catches stale UI submitting an accept for a tag the server
+  // no longer has.
+  const { data: existing, error: lookupErr } = await sb
+    .from('ticket_ai_tags')
+    .select('tag, accepted, ticket_id, tickets!inner(workspace_id, deleted_at)')
+    .eq('ticket_id', ticketId)
+    .eq('tag', tag)
+    .maybeSingle();
+  if (lookupErr) return c.json({ error: lookupErr.message }, 500);
+  if (!existing) return c.json({ error: 'AI tag not found' }, 404);
+  const parent = (Array.isArray(existing.tickets) ? existing.tickets[0] : existing.tickets) as
+    | { workspace_id: string; deleted_at: string | null }
+    | null;
+  if (!parent || parent.workspace_id !== workspaceId || parent.deleted_at) {
+    return c.json({ error: 'AI tag not found' }, 404);
+  }
+
+  // 1. Flip accepted=true on the ai_tags row (no-op if already accepted).
+  const { error: updErr } = await sb
+    .from('ticket_ai_tags')
+    .update({ accepted: true })
+    .eq('ticket_id', ticketId)
+    .eq('tag', tag);
+  if (updErr) return c.json({ error: updErr.message }, 500);
+
+  // 2. Promote to a manual ticket_tags row. Idempotent via the PK.
+  const { error: insErr } = await sb
+    .from('ticket_tags')
+    .upsert(
+      { workspace_id: workspaceId, ticket_id: ticketId, tag },
+      { onConflict: 'ticket_id,tag', ignoreDuplicates: true },
+    );
+  if (insErr) return c.json({ error: insErr.message }, 500);
+
+  // 3. Keep the workspace tag library populated. Best-effort.
+  const { error: libErr } = await sb
+    .from('tag_library')
+    .upsert(
+      { workspace_id: workspaceId, tag, kind: 'manual' },
+      { onConflict: 'workspace_id,tag', ignoreDuplicates: true },
+    );
+  if (libErr) console.warn('[tickets] tag_library upsert failed:', libErr.message);
+
+  return c.json({ tag, accepted: true });
+});
+
 const CreateTicket = z.object({
   subject: z.string().min(1).max(500),
   customer_id: z.string().uuid(),

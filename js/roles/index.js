@@ -274,24 +274,41 @@ async function togglePermission(role, perm, val) {
   ROLES_MATRIX[role][perm] = val;
 }
 
-export function reassignAgent(name, newRole) {
+export async function reassignAgent(name, newRole) {
   if (!window.isAdmin()) return;
   const a = AGENTS.find(x => x.name === name);
-  if (a && ROLES_MATRIX[newRole]) a.role = newRole;
+  if (!a || !ROLES_MATRIX[newRole]) return;
+  if (a.userId) {
+    const roleUuid = getRoleUuid(newRole);
+    if (!roleUuid) { alert(`Couldn't find role "${newRole}"`); return; }
+    try { await apiPatch(`/api/v1/agents/${a.userId}`, { role_id: roleUuid }); }
+    catch (err) { alert(`Couldn't reassign: ${err?.message || err}`); return; }
+  }
+  a.role = newRole;
   window.renderPage(CURRENT_PAGE);
 }
 
-export function setAgentActive(name, active) {
+export async function setAgentActive(name, active) {
   if (!window.isAdmin()) return;
   const a = AGENTS.find(x => x.name === name);
-  if (a) a.active = active;
+  if (!a) return;
+  if (a.userId) {
+    try { await apiPatch(`/api/v1/agents/${a.userId}`, { active }); }
+    catch (err) { alert(`Couldn't update status: ${err?.message || err}`); return; }
+  }
+  a.active = active;
   window.renderPage(CURRENT_PAGE);
 }
 
 export function deleteAgentPrompt(name) {
   if (!window.isAdmin()) return;
-  window.showModal('Delete agent', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently remove <strong style="color:var(--ink)">${name}</strong>? Tickets currently assigned to them will keep the historical assignment.</div>`, () => {
-    const i = AGENTS.findIndex(a => a.name === name);
+  window.showModal('Delete agent', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently remove <strong style="color:var(--ink)">${name}</strong>? Tickets currently assigned to them will keep the historical assignment.</div>`, async () => {
+    const a = AGENTS.find(x => x.name === name);
+    if (a?.userId) {
+      try { await apiDelete(`/api/v1/agents/${a.userId}`); }
+      catch (err) { alert(`Couldn't delete: ${err?.message || err}`); return; }
+    }
+    const i = AGENTS.findIndex(x => x.name === name);
     if (i >= 0) AGENTS.splice(i, 1);
     if (AGENT_SELECTED === name) AGENT_SELECTED = null;
     window.closeModal(); window.renderPage(CURRENT_PAGE);

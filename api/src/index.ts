@@ -25,6 +25,7 @@ import { customFields } from './routes/custom-fields.ts';
 import { assignRules } from './routes/assign-rules.ts';
 import { roles } from './routes/roles.ts';
 import { permissions } from './routes/permissions.ts';
+import { customValues } from './routes/custom-values.ts';
 
 const app = new Hono();
 
@@ -32,7 +33,7 @@ app.use('*', logger());
 app.use('*', cors({
   origin: '*',  // Tighten before exposing publicly. For local dev, * is fine.
   allowHeaders: ['Authorization', 'Content-Type', 'X-Workspace-Id'],
-  allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
 
 app.route('/api/v1/health', health);
@@ -55,6 +56,7 @@ app.route('/api/v1/custom-fields', customFields);
 app.route('/api/v1/assign-rules', assignRules);
 app.route('/api/v1/roles', roles);
 app.route('/api/v1/permissions', permissions);
+app.route('/api/v1/custom-values', customValues);
 app.route('/api/v1/webhooks', webhooks);
 app.route('/api/v1/god', god);
 

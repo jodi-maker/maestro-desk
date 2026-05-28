@@ -18,7 +18,7 @@
 import { apiGet } from './api-client.js';
 
 export async function loadWorkspaceData() {
-  const [ticketsRes, customersRes, agentsRes, inboxRes, channelsRes, workflowsRes, slaRes, tagsRes, kbRes, cannedRes, ttRes, cfRes, arRes, rolesRes, permsRes] = await Promise.all([
+  const [ticketsRes, customersRes, agentsRes, inboxRes, channelsRes, workflowsRes, slaRes, tagsRes, kbRes, cannedRes, ttRes, cfRes, arRes, rolesRes, permsRes, cvRes] = await Promise.all([
     apiGet('/api/v1/tickets?limit=200'),
     apiGet('/api/v1/customers'),
     apiGet('/api/v1/agents'),
@@ -34,6 +34,7 @@ export async function loadWorkspaceData() {
     apiGet('/api/v1/assign-rules'),
     apiGet('/api/v1/roles'),
     apiGet('/api/v1/permissions'),
+    apiGet('/api/v1/custom-values?entity_type=customer'),
   ]);
 
   const customersRaw = customersRes.customers || [];
@@ -51,6 +52,7 @@ export async function loadWorkspaceData() {
   const arRaw        = arRes.assign_rules     || [];
   const rolesRaw     = rolesRes.roles         || [];
   const permsRaw     = permsRes.permissions   || [];
+  const cvRaw        = cvRes.custom_values    || [];
 
   // Build UUID → display_id and UUID → user-name maps for the ticket join.
   const customerByUuid = Object.fromEntries(customersRaw.map((c) => [c.id, c]));
@@ -58,7 +60,15 @@ export async function loadWorkspaceData() {
   const channelByUuid  = Object.fromEntries(channelsRaw.map((c) => [c.id, c]));
 
   // ─── CUSTOMERS ──────────────────────────────────────────────────────────
+  // Group custom values by entity_id so we can attach each customer's
+  // {field_key: value} map in one pass below.
+  const customByEntity = {};
+  for (const v of cvRaw) {
+    if (!customByEntity[v.entity_id]) customByEntity[v.entity_id] = {};
+    customByEntity[v.entity_id][v.field_key] = v.value;
+  }
   const mappedCustomers = customersRaw.map((c) => ({
+    _uuid:        c.id,           // DB UUID — used by PUT /custom-values/customers/:uuid
     id:           c.display_id,
     first:        c.first_name || '',
     last:         c.last_name || '',
@@ -72,7 +82,7 @@ export async function loadWorkspaceData() {
     kyc:          c.kyc_status || '',
     since:        c.since || '',
     bo:           c.backoffice_url || '',
-    custom:       {},
+    custom:       customByEntity[c.id] || {},
   }));
   replaceInPlace(CUSTOMERS, mappedCustomers);
 

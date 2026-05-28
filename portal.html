@@ -65,6 +65,23 @@
     .ai-actions { margin-top: 8px; font-size: 12px; color: var(--ink2); }
     .ai-actions button { background: transparent; color: var(--accent); padding: 4px 8px; font-size: 12px; }
     .ai-panel.thinking .ai-panel-head::after { content: ' ...'; }
+    nav.tabs { display: flex; gap: 6px; margin-bottom: 20px; border-bottom: 1px solid var(--rule); }
+    nav.tabs button { background: transparent; color: var(--ink2); border-radius: 0; padding: 10px 14px; border-bottom: 2px solid transparent; font-weight: 500; }
+    nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .session-pill { font-size: 12px; color: var(--ink3); display: flex; gap: 10px; align-items: center; }
+    .session-pill button { background: transparent; color: var(--accent); padding: 4px 8px; font-size: 12px; }
+    .ticket-row { display: block; padding: 14px 16px; border: 1px solid var(--rule); border-radius: var(--radius); margin-bottom: 8px; cursor: pointer; text-decoration: none; color: inherit; }
+    .ticket-row:hover { border-color: var(--accent); }
+    .ticket-row-head { display: flex; gap: 10px; align-items: baseline; }
+    .ticket-row-id { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--ink3); }
+    .ticket-row-subj { font-weight: 500; }
+    .ticket-row-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--accent-lt); color: var(--accent); }
+    .thread { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+    .msg { padding: 12px 14px; border-radius: var(--radius); }
+    .msg-customer { background: var(--accent-lt); align-self: flex-end; max-width: 80%; }
+    .msg-agent, .msg-ai { background: #fff; border: 1px solid var(--rule); max-width: 80%; }
+    .msg-head { font-size: 11px; color: var(--ink3); margin-bottom: 4px; font-family: 'DM Mono', monospace; }
+    .msg-body { white-space: pre-wrap; font-size: 13px; line-height: 1.55; }
   </style>
 </head>
 <body>
@@ -74,9 +91,56 @@
         <div id="ws-name">Loading...</div>
         <div class="sub">Help &amp; support</div>
       </div>
+      <div class="session-pill">
+        <span id="who"></span>
+        <button id="sign-in"  type="button" style="display:none">Sign in</button>
+        <button id="sign-out" type="button" style="display:none">Sign out</button>
+      </div>
     </header>
 
     <div id="boot-err" class="err" style="display:none"></div>
+
+    <nav class="tabs" id="tabs" style="display:none">
+      <button data-view="help"    class="active">Help</button>
+      <button data-view="tickets">My tickets</button>
+    </nav>
+
+    <!-- Sign-in / magic-link panel — shown when user clicks "Sign in" -->
+    <section class="card" id="card-signin" style="display:none">
+      <h2>Sign in to see your tickets</h2>
+      <div class="desc">We'll email you a one-time link. No password required.</div>
+      <form id="signin-form" autocomplete="on">
+        <div class="form-row">
+          <label for="si-email">Email</label>
+          <input id="si-email" name="email" type="email" required autocomplete="email" />
+        </div>
+        <button type="submit" id="si-submit">Send link</button>
+        <button type="button" id="si-cancel" style="background:transparent;color:var(--accent)">Cancel</button>
+        <div id="si-msg" class="ok" style="display:none"></div>
+        <div id="si-err" class="err" style="display:none"></div>
+      </form>
+    </section>
+
+    <!-- "My tickets" view — only visible when signed in -->
+    <section class="card" id="card-my-tickets" style="display:none">
+      <h2>My tickets</h2>
+      <div class="desc">Tickets you've submitted, newest first.</div>
+      <div id="my-tickets-list"></div>
+    </section>
+
+    <!-- Single ticket thread view — opened from My tickets -->
+    <section class="card" id="card-ticket-detail" style="display:none">
+      <button type="button" id="td-back" style="background:transparent;color:var(--accent);margin-bottom:10px">← Back to my tickets</button>
+      <h2 id="td-subject"></h2>
+      <div class="desc" id="td-meta"></div>
+      <div class="thread" id="td-thread"></div>
+      <form id="reply-form">
+        <label for="td-reply">Reply</label>
+        <textarea id="td-reply" required></textarea>
+        <button type="submit" id="td-submit" style="margin-top:8px">Send reply</button>
+        <div id="td-err" class="err" style="display:none"></div>
+      </form>
+    </section>
 
     <section class="card" id="card-kb">
       <h2>Knowledge Base</h2>
@@ -138,7 +202,11 @@
     const API_BASE = (window.MAESTRO_API_BASE || 'http://localhost:3001');
     const params = new URLSearchParams(location.search);
     const SLUG = params.get('ws') || 'demo';
+    const SESSION_KEY = `maestro_portal_session_${SLUG}`;
     let ARTICLES = [];
+    let SESSION = null;       // { token, customer: { id, display_id, name, email } }
+    let CURRENT_VIEW = 'help'; // 'help' | 'tickets' | 'ticket-detail'
+    let CURRENT_TICKET = null; // display_id when viewing a single ticket
 
     function escHtml(s) {
       return String(s ?? '').replace(/[&<>"']/g, ch => ({
@@ -147,18 +215,206 @@
     }
 
     async function api(path, opts = {}) {
+      const headers = {};
+      if (opts.body) headers['Content-Type'] = 'application/json';
+      // Attach session bearer for /customer/* — anon endpoints (KB, ticket
+      // submit, kb-suggest, auth/*) ignore the header.
+      if (SESSION?.token) headers['Authorization'] = `Bearer ${SESSION.token}`;
       const res = await fetch(`${API_BASE}/api/v1/public/${SLUG}${path}`, {
         method: opts.method || 'GET',
-        headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+        headers,
         body: opts.body ? JSON.stringify(opts.body) : undefined,
       });
       const text = await res.text();
       let parsed; try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
       if (!res.ok) {
+        // 401 on /customer/* → session expired; clear it + drop back to
+        // help view so the user can re-sign-in.
+        if (res.status === 401 && path.startsWith('/customer/')) {
+          SESSION = null;
+          localStorage.removeItem(SESSION_KEY);
+          renderSessionUi();
+          switchView('help');
+        }
         const msg = (parsed && parsed.error) || res.statusText || `HTTP ${res.status}`;
         throw new Error(msg);
       }
       return parsed;
+    }
+
+    function saveSession(s) {
+      SESSION = s;
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch {}
+      renderSessionUi();
+    }
+    function clearSession() {
+      SESSION = null;
+      try { localStorage.removeItem(SESSION_KEY); } catch {}
+      renderSessionUi();
+    }
+    function loadSession() {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) SESSION = JSON.parse(raw);
+      } catch {}
+    }
+    function renderSessionUi() {
+      const who = document.getElementById('who');
+      const inBtn = document.getElementById('sign-in');
+      const outBtn = document.getElementById('sign-out');
+      const tabs = document.getElementById('tabs');
+      if (SESSION?.customer) {
+        who.textContent = `Hi, ${SESSION.customer.name || SESSION.customer.email}`;
+        inBtn.style.display  = 'none';
+        outBtn.style.display = 'inline-block';
+        tabs.style.display = 'flex';
+      } else {
+        who.textContent = '';
+        inBtn.style.display  = 'inline-block';
+        outBtn.style.display = 'none';
+        tabs.style.display = 'none';
+      }
+    }
+    function switchView(view) {
+      CURRENT_VIEW = view;
+      document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+      document.getElementById('card-kb').style.display              = view === 'help' ? 'block' : 'none';
+      document.getElementById('card-form').style.display            = view === 'help' ? 'block' : 'none';
+      document.getElementById('card-my-tickets').style.display      = view === 'tickets' ? 'block' : 'none';
+      document.getElementById('card-ticket-detail').style.display   = view === 'ticket-detail' ? 'block' : 'none';
+      document.getElementById('card-signin').style.display          = view === 'signin' ? 'block' : 'none';
+      if (view === 'tickets') refreshMyTickets();
+    }
+    document.querySelectorAll('#tabs button').forEach(b => {
+      b.addEventListener('click', () => switchView(b.dataset.view));
+    });
+
+    document.getElementById('sign-in').addEventListener('click', () => switchView('signin'));
+    document.getElementById('sign-out').addEventListener('click', () => {
+      clearSession();
+      switchView('help');
+    });
+    document.getElementById('si-cancel').addEventListener('click', () => {
+      document.getElementById('signin-form').reset();
+      document.getElementById('si-msg').style.display = 'none';
+      document.getElementById('si-err').style.display = 'none';
+      switchView('help');
+    });
+
+    document.getElementById('signin-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('si-email').value.trim();
+      const msgEl = document.getElementById('si-msg');
+      const errEl = document.getElementById('si-err');
+      msgEl.style.display = 'none';
+      errEl.style.display = 'none';
+      try {
+        await api('/auth/request', { method: 'POST', body: { email, return_to: location.href.split('?')[0] + `?ws=${SLUG}` } });
+        msgEl.textContent = `If ${email} is on file, a sign-in link is on the way. Open it on this device to land back here signed in.`;
+        msgEl.style.display = 'block';
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+      }
+    });
+
+    async function refreshMyTickets() {
+      const el = document.getElementById('my-tickets-list');
+      el.innerHTML = '<div class="empty">Loading...</div>';
+      try {
+        const res = await api('/customer/tickets');
+        if (!res.tickets || res.tickets.length === 0) {
+          el.innerHTML = '<div class="empty">You haven\'t submitted any tickets yet.</div>';
+          return;
+        }
+        el.innerHTML = res.tickets.map(t => `
+          <a class="ticket-row" href="#" data-id="${escHtml(t.display_id)}">
+            <div class="ticket-row-head">
+              <span class="ticket-row-id">${escHtml(t.display_id)}</span>
+              <span class="ticket-row-subj">${escHtml(t.subject)}</span>
+              <span class="ticket-row-status" style="margin-left:auto">${escHtml(t.status_key)}</span>
+            </div>
+            <div class="ticket-row-id" style="margin-top:4px">Updated ${(t.updated_at || '').slice(0, 10)}</div>
+          </a>`).join('');
+        el.querySelectorAll('.ticket-row').forEach(row => {
+          row.addEventListener('click', (ev) => { ev.preventDefault(); openCustomerTicket(row.dataset.id); });
+        });
+      } catch (err) {
+        el.innerHTML = `<div class="err">${escHtml(err.message)}</div>`;
+      }
+    }
+
+    async function openCustomerTicket(displayId) {
+      CURRENT_TICKET = displayId;
+      switchView('ticket-detail');
+      const thread = document.getElementById('td-thread');
+      document.getElementById('td-subject').textContent = '';
+      document.getElementById('td-meta').textContent = 'Loading...';
+      thread.innerHTML = '';
+      try {
+        const res = await api(`/customer/tickets/${encodeURIComponent(displayId)}`);
+        const t = res.ticket;
+        document.getElementById('td-subject').textContent = t.subject;
+        document.getElementById('td-meta').textContent = `${t.display_id} · status ${t.status_key} · opened ${(t.created_at || '').slice(0, 10)}`;
+        thread.innerHTML = (t.messages || []).map(m => `
+          <div class="msg msg-${escHtml(m.role)}">
+            <div class="msg-head">${escHtml(m.author_label)} · ${(m.created_at || '').slice(0, 16).replace('T', ' ')}</div>
+            <div class="msg-body">${escHtml(m.body)}</div>
+          </div>`).join('');
+      } catch (err) {
+        document.getElementById('td-meta').textContent = err.message;
+      }
+    }
+
+    document.getElementById('td-back').addEventListener('click', () => {
+      CURRENT_TICKET = null;
+      switchView('tickets');
+    });
+
+    document.getElementById('reply-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submit = document.getElementById('td-submit');
+      const errEl  = document.getElementById('td-err');
+      const ta     = document.getElementById('td-reply');
+      const body   = ta.value.trim();
+      if (!body || !CURRENT_TICKET) return;
+      errEl.style.display = 'none';
+      submit.disabled = true;
+      submit.textContent = 'Sending...';
+      try {
+        await api(`/customer/tickets/${encodeURIComponent(CURRENT_TICKET)}/messages`, { method: 'POST', body: { body } });
+        ta.value = '';
+        await openCustomerTicket(CURRENT_TICKET);
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+      } finally {
+        submit.disabled = false;
+        submit.textContent = 'Send reply';
+      }
+    });
+
+    // If the URL carries ?token=..., that's a magic link the customer
+    // just clicked — verify + drop into the My Tickets view.
+    async function maybeConsumeMagicToken() {
+      const token = params.get('token');
+      if (!token) return;
+      try {
+        const res = await api('/auth/verify', { method: 'POST', body: { token } });
+        saveSession({ token: res.session_token, customer: res.customer });
+        // Drop the token from the URL so a refresh doesn't try to re-use
+        // the (now-consumed) magic link.
+        const clean = new URL(location.href);
+        clean.searchParams.delete('token');
+        history.replaceState({}, '', clean.toString());
+        switchView('tickets');
+      } catch (err) {
+        // Token expired / already used — surface in the sign-in panel.
+        switchView('signin');
+        const errEl = document.getElementById('si-err');
+        errEl.textContent = `Sign-in link is invalid or expired (${err.message}). Request a new one below.`;
+        errEl.style.display = 'block';
+      }
     }
 
     function renderKBList(filter = '') {
@@ -333,7 +589,9 @@
       }
     });
 
-    boot();
+    loadSession();
+    renderSessionUi();
+    boot().then(maybeConsumeMagicToken);
   </script>
 </body>
 </html>

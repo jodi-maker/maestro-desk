@@ -19,8 +19,9 @@
 //
 // All actions wire through core/event-delegation (data-action="god.X").
 
-import { apiGet, apiPatch, apiPost, apiDelete } from '../core/api-client.js';
+import { apiGet, apiPatch, apiPost, apiDelete, setWorkspaceId } from '../core/api-client.js';
 import { registerActions, registerInputActions } from '../core/event-delegation.js';
+import { loadWorkspaceData } from '../core/bootstrap.js';
 import { renderNewBrand, resetForm as resetNewBrandForm, setOnClose as setNewBrandOnClose } from './new-brand.js';
 
 // ─── State ────────────────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ const STATE = {
   detailLoading: false,
   detailError: null,
   actionPending: false,  // true while a suspend/update is in flight
+  enterPending: false,   // true while we're loading workspace data for an "Enter" click
   // Inline add-domain form state on detail view
   addDomainInput: '',
   addDomainPending: false,
@@ -47,6 +49,11 @@ const STATE = {
 // ─── Entry point (called from app.js renderPage) ──────────────────────────
 
 export function renderGod() {
+  // Entering the god panel = leaving any in-progress workspace context.
+  // Clear workspace_id so a refresh-from-god lands back on god (via the
+  // platform-admin auto-resume) rather than slipping into the agent
+  // shell of whichever brand the user last entered.
+  setWorkspaceId(null);
   // First render → kick off the list fetch.
   if (!STATE.brandsLoading && STATE.brands.length === 0 && !STATE.brandsError && STATE.view === 'list') {
     refreshList();
@@ -136,7 +143,8 @@ function brandRow(b) {
       <td>${fmtMicroUsd(b.ai_credits_micro)}</td>
       <td>${status}</td>
       <td>${fmtDate(b.created_at)}</td>
-      <td style="text-align:right">
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-sm" data-action="god.enterBrand" data-id="${b.id}" ${STATE.enterPending ? 'disabled' : ''} title="View this brand's data as an agent">Enter</button>
         ${b.suspended_at
           ? `<button class="btn btn-sm" data-action="god.unsuspend" data-id="${b.id}" ${STATE.actionPending ? 'disabled' : ''}>Unsuspend</button>`
           : `<button class="btn btn-sm btn-danger" data-action="god.suspend" data-id="${b.id}" ${STATE.actionPending ? 'disabled' : ''}>Suspend</button>`}
@@ -346,6 +354,34 @@ async function setSuspended(brandId, suspend) {
   }
 }
 
+// Step into a brand as if signing in as an agent — set the workspace_id
+// header, load that workspace's data from the API, and navigate to the
+// dashboard. The platform admin keeps access to the god nav so they can
+// return; refresh from inside the agent shell will auto-resume via the
+// stored workspace_id (autoResumeAgent wins over autoResumePlatformAdmin
+// when workspace_id is set, per app.js startup).
+async function enterBrand(brandId) {
+  if (STATE.enterPending) return;
+  STATE.enterPending = true;
+  reRender();
+  try {
+    setWorkspaceId(brandId);
+    await loadWorkspaceData();
+    if (typeof window.updateNavBadges === 'function') window.updateNavBadges();
+    window.nav('dashboard', document.getElementById('nav-dashboard'));
+  } catch (err) {
+    // Clear the workspace selection so a refresh doesn't leave the user
+    // stuck trying to resume into a half-loaded workspace.
+    setWorkspaceId(null);
+    alert(`Couldn't enter workspace: ${err?.message || err}`);
+  } finally {
+    STATE.enterPending = false;
+    // Only re-render the god panel if we're still on it — if loadWorkspaceData
+    // succeeded we've already navigated away.
+    if (document.body.dataset.currentPage === 'god') reRender();
+  }
+}
+
 // ─── Action handlers ──────────────────────────────────────────────────────
 
 registerActions({
@@ -364,6 +400,7 @@ registerActions({
   },
   'god.suspend':   (ds) => setSuspended(ds.id, true),
   'god.unsuspend': (ds) => setSuspended(ds.id, false),
+  'god.enterBrand': (ds) => enterBrand(ds.id),
   // New-brand wizard
   'god.newBrand': () => {
     resetNewBrandForm();

@@ -46,15 +46,27 @@ export const requireAuth: MiddlewareHandler = async (c, next) => {
     throw new HTTPException(400, { message: 'X-Workspace-Id header required' });
   }
 
-  const { data: membership, error: mErr } = await supabaseAdmin
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('user_id', userId)
-    .eq('workspace_id', workspaceId)
-    .eq('active', true)
-    .maybeSingle();
-  if (mErr) throw new HTTPException(500, { message: mErr.message });
-  if (!membership) {
+  // Platform admins can access any workspace by design — same shape as the
+  // OR is_platform_admin() clauses in workspace-scoped RLS policies. We
+  // check this in parallel with the membership lookup so the happy path
+  // for normal agents isn't slowed down.
+  const [memRes, userRes] = await Promise.all([
+    supabaseAdmin
+      .from('workspace_members')
+      .select('workspace_id')
+      .eq('user_id', userId)
+      .eq('workspace_id', workspaceId)
+      .eq('active', true)
+      .maybeSingle(),
+    supabaseAdmin
+      .from('users')
+      .select('is_platform_admin')
+      .eq('id', userId)
+      .maybeSingle(),
+  ]);
+  if (memRes.error)  throw new HTTPException(500, { message: memRes.error.message });
+  if (userRes.error) throw new HTTPException(500, { message: userRes.error.message });
+  if (!memRes.data && !userRes.data?.is_platform_admin) {
     throw new HTTPException(403, { message: 'Not a member of that workspace' });
   }
 

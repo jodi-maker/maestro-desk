@@ -14,6 +14,7 @@
 // WF_FILTER, WF_QUERY, SESSION come from core/state.js the same way.
 
 import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
+import { apiPost, apiPatch, apiDelete } from '../core/api-client.js';
 
 const WF_TRIGGER_PRESETS = [
   'Ticket created',
@@ -116,16 +117,26 @@ export function renderWorkflows() {
 
 function wfSetFilter(v) { WF_FILTER = v; window.renderPage('workflows'); }
 
-function wfToggle(id, active) {
-  if (!window.isAdmin()) return;
-  const w = WORKFLOWS.find(x => x.id === id);
-  if (w) w.status = active ? 'active' : 'inactive';
-}
-
-function wfRunNow(id) {
+async function wfToggle(id, active) {
   if (!window.isAdmin()) return;
   const w = WORKFLOWS.find(x => x.id === id);
   if (!w) return;
+  const next = active ? 'active' : 'inactive';
+  if (w._uuid) {
+    try { await apiPatch(`/api/v1/workflows/${w._uuid}`, { status: next }); }
+    catch (err) { alert(`Couldn't toggle: ${err?.message || err}`); return; }
+  }
+  w.status = next;
+}
+
+async function wfRunNow(id) {
+  if (!window.isAdmin()) return;
+  const w = WORKFLOWS.find(x => x.id === id);
+  if (!w) return;
+  if (w._uuid) {
+    try { await apiPost(`/api/v1/workflows/${w._uuid}/run`, {}); }
+    catch (err) { alert(`Couldn't run: ${err?.message || err}`); return; }
+  }
   w.runCount = (w.runCount || 0) + 1;
   w.lastRun = 'just now';
   if (!w.history) w.history = [];
@@ -138,22 +149,56 @@ function wfRunNow(id) {
   window.renderPage('workflows');
 }
 
-function duplicateWf(id) {
+async function duplicateWf(id) {
   if (!window.isAdmin()) return;
   const orig = WORKFLOWS.find(x => x.id === id);
   if (!orig) return;
-  const newId = 'WF-' + String(WORKFLOWS.length + 1).padStart(3, '0');
-  WORKFLOWS.unshift({
-    id: newId,
-    name: orig.name + ' (copy)',
-    trigger: orig.trigger,
-    action: orig.action,
-    status: 'inactive',
-    runCount: 0,
-    lastRun: null,
-    history: [],
-  });
+  if (orig._uuid) {
+    let resp;
+    try {
+      resp = await apiPost('/api/v1/workflows', {
+        name:    orig.name + ' (copy)',
+        trigger: orig.trigger,
+        action:  orig.action,
+        status:  'inactive',
+      });
+    } catch (err) { alert(`Couldn't duplicate: ${err?.message || err}`); return; }
+    const w = resp.workflow;
+    WORKFLOWS.unshift({
+      _uuid:    w.id,
+      id:       w.display_id,
+      name:     w.name,
+      trigger:  unwrap(w.trigger),
+      action:   unwrap(w.action),
+      status:   w.status,
+      runCount: 0,
+      lastRun:  null,
+      history:  [],
+    });
+  } else {
+    // Demo persona — synthesise an id locally.
+    const newId = 'WF-' + String(WORKFLOWS.length + 1).padStart(3, '0');
+    WORKFLOWS.unshift({
+      id: newId,
+      name: orig.name + ' (copy)',
+      trigger: orig.trigger,
+      action: orig.action,
+      status: 'inactive',
+      runCount: 0,
+      lastRun: null,
+      history: [],
+    });
+  }
   window.renderPage('workflows');
+}
+
+// Mirror of bootstrap.js workflowRuleText so the create/duplicate paths
+// here can unwrap a fresh API response without importing bootstrap.
+function unwrap(val) {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && typeof val.text === 'string') return val.text;
+  return JSON.stringify(val);
 }
 
 function openWfDetail(id) { WF_SELECTED = id; window.renderPage('workflows'); }
@@ -255,14 +300,36 @@ function wfFormBody(w) {
 
 function wfNew() {
   if (!window.isAdmin()) return;
-  window.showModal('New workflow', wfFormBody(null), () => {
+  window.showModal('New workflow', wfFormBody(null), async () => {
     const name    = document.getElementById('wf-name').value.trim();
     const trigger = document.getElementById('wf-trigger').value.trim();
     const action  = document.getElementById('wf-action').value.trim();
     const active  = document.getElementById('wf-active').checked;
     if (!name || !trigger || !action) return;
-    const id = 'WF-' + String(WORKFLOWS.length + 1).padStart(3, '0');
-    WORKFLOWS.unshift({ id, name, trigger, action, status: active?'active':'inactive', runCount:0, lastRun:null });
+    const status = active ? 'active' : 'inactive';
+    // If we have ANY API workflow loaded, assume the workspace is API-backed.
+    // Demo persona doesn't load API workflows so its WORKFLOWS array is the
+    // data.js seed (no _uuid on any row).
+    const apiBacked = WORKFLOWS.some((w) => w._uuid);
+    if (apiBacked) {
+      let resp;
+      try { resp = await apiPost('/api/v1/workflows', { name, trigger, action, status }); }
+      catch (err) { alert(`Couldn't create: ${err?.message || err}`); return; }
+      const w = resp.workflow;
+      WORKFLOWS.unshift({
+        _uuid:    w.id,
+        id:       w.display_id,
+        name:     w.name,
+        trigger:  unwrap(w.trigger),
+        action:   unwrap(w.action),
+        status:   w.status,
+        runCount: 0,
+        lastRun:  null,
+      });
+    } else {
+      const id = 'WF-' + String(WORKFLOWS.length + 1).padStart(3, '0');
+      WORKFLOWS.unshift({ id, name, trigger, action, status, runCount:0, lastRun:null });
+    }
     window.closeModal(); window.renderPage('workflows');
   }, 'Create');
 }
@@ -270,14 +337,19 @@ function wfNew() {
 function wfEdit(id) {
   if (!window.isAdmin()) return;
   const w = WORKFLOWS.find(x => x.id === id); if (!w) return;
-  window.showModal(`Edit ${w.id}`, wfFormBody(w), () => {
+  window.showModal(`Edit ${w.id}`, wfFormBody(w), async () => {
     const name    = document.getElementById('wf-name').value.trim();
     const trigger = document.getElementById('wf-trigger').value.trim();
     const action  = document.getElementById('wf-action').value.trim();
     const active  = document.getElementById('wf-active').checked;
     if (!name || !trigger || !action) return;
+    const status = active ? 'active' : 'inactive';
+    if (w._uuid) {
+      try { await apiPatch(`/api/v1/workflows/${w._uuid}`, { name, trigger, action, status }); }
+      catch (err) { alert(`Couldn't save: ${err?.message || err}`); return; }
+    }
     w.name = name; w.trigger = trigger; w.action = action;
-    w.status = active ? 'active' : 'inactive';
+    w.status = status;
     window.closeModal(); window.renderPage('workflows');
   }, 'Save');
 }
@@ -285,7 +357,11 @@ function wfEdit(id) {
 function wfDelete(id) {
   if (!window.isAdmin()) return;
   const w = WORKFLOWS.find(x => x.id === id); if (!w) return;
-  window.showModal('Delete workflow', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${w.name}</strong>? This cannot be undone.</div>`, () => {
+  window.showModal('Delete workflow', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${w.name}</strong>? This cannot be undone.</div>`, async () => {
+    if (w._uuid) {
+      try { await apiDelete(`/api/v1/workflows/${w._uuid}`); }
+      catch (err) { alert(`Couldn't delete: ${err?.message || err}`); return; }
+    }
     const i = WORKFLOWS.findIndex(x => x.id === id);
     if (i >= 0) WORKFLOWS.splice(i, 1);
     window.closeModal(); window.renderPage('workflows');

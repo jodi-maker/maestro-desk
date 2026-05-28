@@ -18,12 +18,13 @@
 import { apiGet } from './api-client.js';
 
 export async function loadWorkspaceData() {
-  const [ticketsRes, customersRes, agentsRes, inboxRes, channelsRes] = await Promise.all([
+  const [ticketsRes, customersRes, agentsRes, inboxRes, channelsRes, workflowsRes] = await Promise.all([
     apiGet('/api/v1/tickets?limit=200'),
     apiGet('/api/v1/customers'),
     apiGet('/api/v1/agents'),
     apiGet('/api/v1/inbox'),
     apiGet('/api/v1/channels'),
+    apiGet('/api/v1/workflows'),
   ]);
 
   const customersRaw = customersRes.customers || [];
@@ -31,6 +32,7 @@ export async function loadWorkspaceData() {
   const ticketsRaw   = ticketsRes.tickets     || [];
   const inboxRaw     = inboxRes.inbox         || [];
   const channelsRaw  = channelsRes.channels   || [];
+  const workflowsRaw = workflowsRes.workflows || [];
 
   // Build UUID → display_id and UUID → user-name maps for the ticket join.
   const customerByUuid = Object.fromEntries(customersRaw.map((c) => [c.id, c]));
@@ -148,6 +150,55 @@ export async function loadWorkspaceData() {
     convertedTicketId:  e.converted_ticket_display_id || null,
   }));
   replaceInPlace(INBOX, mappedInbox);
+
+  // ─── WORKFLOWS ──────────────────────────────────────────────────────────
+  // trigger / action live as JSONB on the server with `{ text: "..." }`
+  // for v1, so unwrap on the way in. Older or hand-edited rows might be
+  // bare strings or richer objects — workflowRuleText handles both.
+  const mappedWorkflows = workflowsRaw.map((w) => ({
+    _uuid:    w.id,
+    id:       w.display_id,
+    name:     w.name,
+    trigger:  workflowRuleText(w.trigger),
+    action:   workflowRuleText(w.action),
+    status:   w.status,
+    runCount: w.run_count || 0,
+    lastRun:  w.last_run_at ? fmtRelative(w.last_run_at) : null,
+  }));
+  replaceInPlace(WORKFLOWS, mappedWorkflows);
+}
+
+// Unwrap the JSONB trigger/action shape into a single display string.
+// Three formats land here:
+//   - bare string                       — old/hand-edited rows
+//   - { text: "..." }                   — v1 SPA-created rows
+//   - structured { all: [predicates] }  — seeded rules (and future engine)
+//   - structured { type, ...params, then? }  — seeded actions
+// Anything we don't recognise falls through to JSON for visibility.
+function workflowRuleText(val) {
+  if (!val) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val !== 'object') return String(val);
+  if (typeof val.text === 'string') return val.text;
+  if (Array.isArray(val.all)) return val.all.map(wfPredicateText).join(' AND ');
+  if (Array.isArray(val.any)) return val.any.map(wfPredicateText).join(' OR ');
+  if (typeof val.type === 'string') return wfActionText(val);
+  return JSON.stringify(val);
+}
+
+function wfPredicateText(p) {
+  const opMap = { eq: '=', neq: '≠', gt: '>', lt: '<', gte: '≥', lte: '≤', in: 'in' };
+  const op = opMap[p?.op] || p?.op || '?';
+  return `${p?.field || '?'} ${op} ${p?.value ?? ''}`;
+}
+
+function wfActionText(a) {
+  const params = Object.entries(a)
+    .filter(([k]) => k !== 'type' && k !== 'then')
+    .map(([k, v]) => `${k}=${v}`)
+    .join(', ');
+  const head = params ? `${a.type}(${params})` : a.type;
+  return a.then ? `${head} → ${wfActionText(a.then)}` : head;
 }
 
 // Fetches the full detail (messages, tags, ai_tags, time_entries) for a

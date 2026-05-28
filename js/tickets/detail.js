@@ -48,6 +48,7 @@ import { showApplyMacroModal } from './macros.js';
 import { showAttachPanel } from './attachments.js';
 import { fireWebhook, ticketPayload } from '../webhooks/index.js';
 import { loadTicketDetail } from '../core/bootstrap.js';
+import { apiPatch, apiPost } from '../core/api-client.js';
 import {
   KB_INTEGRATION, KB_TICKET_CACHE,
   refreshTicketKbSuggestions,
@@ -633,9 +634,13 @@ export function insertMacro(ticketId, idx) {
   closeModal();
 }
 
-export function changeTicketStatus(id, val) {
+export async function changeTicketStatus(id, val) {
   const t = TICKETS.find(x => x.id === id);
   if (!t || t.status === val) return;
+  if (t._uuid) {
+    try { await apiPatch(`/api/v1/tickets/${t._uuid}`, { status_key: val }); }
+    catch (err) { alert(`Couldn't change status: ${err?.message || err}`); return; }
+  }
   const prevSla = t.sla;
   logTicketEvent(id, 'status', `Status: ${t.status} → ${val}`);
   t.status = val;
@@ -675,19 +680,31 @@ function removeTicketTag(id, tag) {
   if (lib && lib.count > 0) lib.count--;
   openTicket(id);
 }
-export function changeTicketPriority(id, val) {
+export async function changeTicketPriority(id, val) {
   const t = TICKETS.find(x => x.id === id);
   if (!t || t.priority === val) return;
+  if (t._uuid) {
+    try { await apiPatch(`/api/v1/tickets/${t._uuid}`, { priority_key: val }); }
+    catch (err) { alert(`Couldn't change priority: ${err?.message || err}`); return; }
+  }
   logTicketEvent(id, 'priority', `Priority: ${t.priority} → ${val}`);
   t.priority = val;
   refreshTicketSLA(t);
   if (CURRENT_TICKET === id) openTicket(id);
 }
-export function changeTicketAgent(id, val) {
+export async function changeTicketAgent(id, val) {
   const t = TICKETS.find(x => x.id === id);
   if (!t) return;
   const old = t.agent || 'Unassigned';
   if (old === val) return;
+  if (t._uuid) {
+    // val is the agent name (matches AGENTS[i].name). Resolve to a user_id
+    // for the API; empty/Unassigned → null to clear assignment.
+    const assignee = val && val !== 'Unassigned' ? AGENTS.find(a => a.name === val) : null;
+    const assignedUserId = assignee?.userId ?? null;
+    try { await apiPatch(`/api/v1/tickets/${t._uuid}`, { assigned_user_id: assignedUserId }); }
+    catch (err) { alert(`Couldn't reassign: ${err?.message || err}`); return; }
+  }
   logTicketEvent(id, 'agent', `Reassigned: ${old} → ${val}`);
   t.agent = val;
   if (CURRENT_TICKET === id) openTicket(id);
@@ -807,15 +824,46 @@ async function sendCompose(id) {
 
   const isNote = COMPOSE_TAB === 'note';
   const mentions = isNote ? parseMentions(outgoing) : null;
-  t.msgs.push({
-    from: SESSION.name,
-    r: isNote ? 'note' : 'agent',
-    t: outgoing,
-    tOriginal: original,
-    translatedTo,
-    mentions,
-    ts: new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),
-  });
+
+  // API-backed path. The server stamps the canonical author_label + ts;
+  // we use its response so the row in t.msgs matches what /tickets/:id
+  // would return on a future refetch. Translation metadata (tOriginal,
+  // translatedTo) is purely client-side display state — not persisted
+  // server-side yet, so it lives only on the local entry.
+  if (t._uuid) {
+    let message;
+    try {
+      const res = await apiPost(`/api/v1/tickets/${t._uuid}/messages`, {
+        role: isNote ? 'note' : 'agent',
+        body: outgoing,
+        mentions: isNote ? (mentions || []).map((m) => m.userId).filter(Boolean) : undefined,
+      });
+      message = res.message;
+    } catch (err) {
+      alert(`Couldn't send: ${err?.message || err}`);
+      return;
+    }
+    t.msgs.push({
+      from: message.author_label,
+      r: message.role,
+      t: message.body,
+      tOriginal: original,
+      translatedTo,
+      mentions,
+      ts: new Date(message.created_at).toTimeString().slice(0, 5),
+    });
+  } else {
+    // Demo persona — no API, synthesise locally as before.
+    t.msgs.push({
+      from: SESSION.name,
+      r: isNote ? 'note' : 'agent',
+      t: outgoing,
+      tOriginal: original,
+      translatedTo,
+      mentions,
+      ts: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+    });
+  }
   el.value = '';
   clearDraft(id);
   onComposeInput(id);

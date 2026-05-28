@@ -58,6 +58,7 @@ export async function loadWorkspaceData() {
 
   // ─── AGENTS ─────────────────────────────────────────────────────────────
   const mappedAgents = agentsRaw.map((a) => ({
+    userId:   a.user_id,    // DB UUID — used by PATCH /tickets when assigning
     name:     a.users?.name || a.users?.email || 'Unknown',
     initials: a.users?.initials || initialsFromName(a.users?.name || a.users?.email || ''),
     role:     a.roles?.name || 'Member',

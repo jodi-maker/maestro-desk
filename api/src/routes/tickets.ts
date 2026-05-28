@@ -18,7 +18,7 @@ tickets.get('/', async (c) => {
   const { data, error, count } = await sb
     .from('tickets')
     .select(
-      'id, display_id, subject, status_key, priority_key, category_key, assigned_user_id, customer_id, sla_state, created_at, updated_at',
+      'id, display_id, subject, status_key, priority_key, category_key, assigned_user_id, customer_id, sla_state, created_at, updated_at, snoozed_until, snoozed_at, snooze_reason, snooze_woken_at',
       { count: 'exact' },
     )
     .eq('workspace_id', workspaceId)
@@ -374,6 +374,99 @@ tickets.patch('/:id/ai_tags/:tag', async (c) => {
   if (libErr) console.warn('[tickets] tag_library upsert failed:', libErr.message);
 
   return c.json({ tag, accepted: true });
+});
+
+// ─── POST /:id/snooze — set snoozed_until + reason ───────────────────────
+//
+// Server stamps snoozed_at, snoozed_by_user_id, and clears any prior
+// snooze_woken_at so re-snoozing a previously-woken ticket reads as fresh.
+// `until` must be a future ISO timestamp.
+const PostSnooze = z.object({
+  until:  z.string().datetime({ offset: true }),
+  reason: z.string().nullable().optional(),
+});
+
+tickets.post('/:id/snooze', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const userId = c.get('userId');
+  const ticketId = c.req.param('id');
+
+  const reqBody = await c.req.json().catch(() => null);
+  const parsed = PostSnooze.safeParse(reqBody);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
+  }
+  const { until, reason } = parsed.data;
+  if (new Date(until).getTime() <= Date.now()) {
+    return c.json({ error: 'Snooze time must be in the future' }, 400);
+  }
+
+  // Workspace-scope check.
+  const { data: existing, error: lookupErr } = await sb
+    .from('tickets')
+    .select('id')
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (lookupErr) return c.json({ error: lookupErr.message }, 500);
+  if (!existing)  return c.json({ error: 'Ticket not found' }, 404);
+
+  const { data: updated, error: updErr } = await sb
+    .from('tickets')
+    .update({
+      snoozed_until:      until,
+      snoozed_at:         new Date().toISOString(),
+      snoozed_by_user_id: userId,
+      snooze_reason:      reason || null,
+      snooze_woken_at:    null,
+    })
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .select('id, snoozed_until, snoozed_at, snoozed_by_user_id, snooze_reason, snooze_woken_at, updated_at')
+    .single();
+  if (updErr) return c.json({ error: updErr.message }, 500);
+
+  return c.json({ ticket: updated });
+});
+
+// ─── DELETE /:id/snooze — clear snooze (manual or auto wakeup) ───────────
+//
+// ?via_wakeup=true → server stamps snooze_woken_at = now() so the activity
+// log can distinguish "snooze elapsed" from "agent un-snoozed manually".
+tickets.delete('/:id/snooze', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const ticketId = c.req.param('id');
+  const viaWakeup = c.req.query('via_wakeup') === 'true';
+
+  const { data: existing, error: lookupErr } = await sb
+    .from('tickets')
+    .select('id')
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (lookupErr) return c.json({ error: lookupErr.message }, 500);
+  if (!existing)  return c.json({ error: 'Ticket not found' }, 404);
+
+  const { data: updated, error: updErr } = await sb
+    .from('tickets')
+    .update({
+      snoozed_until:      null,
+      snoozed_at:         null,
+      snoozed_by_user_id: null,
+      snooze_reason:      null,
+      snooze_woken_at:    viaWakeup ? new Date().toISOString() : null,
+    })
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .select('id, snoozed_until, snoozed_at, snoozed_by_user_id, snooze_reason, snooze_woken_at, updated_at')
+    .single();
+  if (updErr) return c.json({ error: updErr.message }, 500);
+
+  return c.json({ ticket: updated });
 });
 
 const CreateTicket = z.object({

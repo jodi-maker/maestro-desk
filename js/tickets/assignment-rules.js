@@ -146,19 +146,29 @@ function canEditAgentOOO(name) {
   return SESSION && (SESSION.name === name || window.isAdmin());
 }
 
-function setAgentOOO(name, from, to, note) {
+async function setAgentOOO(name, from, to, note) {
   if (!canEditAgentOOO(name)) return;
   const a = AGENTS.find(x => x.name === name);
   if (!a) return;
+  const trimmedNote = (note || '').trim() || null;
+  if (a.userId) {
+    try {
+      await apiPatch(`/api/v1/agents/${a.userId}`, {
+        ooo_from: from || null,
+        ooo_to:   from ? (to || null) : null,
+        ooo_note: from ? trimmedNote : null,
+      });
+    } catch (err) { alert(`Couldn't update OOO: ${err?.message || err}`); return; }
+  }
   if (!from) { delete a.oooFrom; delete a.oooTo; delete a.oooNote; return; }
   a.oooFrom = from;
   a.oooTo = to || null;
-  a.oooNote = (note || '').trim() || null;
+  a.oooNote = trimmedNote;
 }
 
-export function clearAgentOOO(name) {
+export async function clearAgentOOO(name) {
   if (!canEditAgentOOO(name)) return;
-  setAgentOOO(name, null);
+  await setAgentOOO(name, null);
 }
 
 export function showAgentOOOModal(name) {
@@ -179,13 +189,13 @@ export function showAgentOOOModal(name) {
       <input class="form-input" id="ooo-note" value="${window.escAttr(a.oooNote || '')}" placeholder="e.g. Annual leave — back Friday"/>
     </div>
     ${a.oooFrom ? `<div style="margin-top:14px;text-align:right"><button class="btn btn-sm btn-danger" onclick="clearAgentOOO('${window.escAttr(name)}');closeModal();renderPage(CURRENT_PAGE)">Clear OOO</button></div>` : ''}
-  `, () => {
+  `, async () => {
     const from = document.getElementById('ooo-from').value;
     const to   = document.getElementById('ooo-to').value;
     const note = document.getElementById('ooo-note').value;
     if (!from) { alert('Pick a start date.'); return; }
     if (to && to < from) { alert('End date must be on or after the start date.'); return; }
-    setAgentOOO(name, from, to, note);
+    await setAgentOOO(name, from, to, note);
     window.closeModal();
     window.renderPage(CURRENT_PAGE);
   }, 'Save');

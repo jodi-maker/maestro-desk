@@ -83,6 +83,10 @@ export async function loadWorkspaceData() {
     created:         isoDate(t.created_at),
     updated:         fmtRelative(t.updated_at),
     sla:             t.sla_state || 'ok',
+    snoozedUntil:    t.snoozed_until || null,
+    snoozedAt:       t.snoozed_at    || null,
+    snoozeReason:    t.snooze_reason || null,
+    snoozeWokenAt:   t.snooze_woken_at || null,
     tags:            [],   // populated by loadTicketDetail on open
     aiTags:          [],
     csat:            null,

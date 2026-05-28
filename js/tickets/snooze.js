@@ -16,14 +16,19 @@
 
 import { refreshNotifBadge } from '../notifications/index.js';
 import { refreshTicketSLA } from './sla.js';
+import { apiPost, apiDelete } from '../core/api-client.js';
 
-export function snoozeTicket(id, untilIso, reason) {
+export async function snoozeTicket(id, untilIso, reason) {
   const t = TICKETS.find(x => x.id === id);
   if (!t || !untilIso) return;
   const until = new Date(untilIso);
   if (isNaN(until.getTime()) || until.getTime() <= Date.now()) {
     alert('Snooze time must be in the future.');
     return;
+  }
+  if (t._uuid) {
+    try { await apiPost(`/api/v1/tickets/${t._uuid}/snooze`, { until: until.toISOString(), reason: reason || null }); }
+    catch (err) { alert(`Couldn't snooze: ${err?.message || err}`); return; }
   }
   t.snoozedUntil = until.toISOString();
   t.snoozedAt = new Date().toISOString();
@@ -37,9 +42,18 @@ export function snoozeTicket(id, untilIso, reason) {
   refreshNotifBadge();
 }
 
-export function unsnoozeTicket(id, viaWakeup) {
+export async function unsnoozeTicket(id, viaWakeup) {
   const t = TICKETS.find(x => x.id === id);
   if (!t || !t.snoozedUntil) return;
+  if (t._uuid) {
+    try { await apiDelete(`/api/v1/tickets/${t._uuid}/snooze?via_wakeup=${viaWakeup ? 'true' : 'false'}`); }
+    catch (err) {
+      // Auto-wake (viaWakeup=true) shouldn't bother the user with an alert
+      // — the next poll will retry. Manual unsnooze gets the alert.
+      if (!viaWakeup) alert(`Couldn't clear snooze: ${err?.message || err}`);
+      return;
+    }
+  }
   delete t.snoozedUntil;
   delete t.snoozedAt;
   delete t.snoozedBy;

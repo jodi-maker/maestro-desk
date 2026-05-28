@@ -92,6 +92,117 @@ tickets.get('/:id', async (c) => {
   });
 });
 
+// ─── PATCH /:id — update status / priority / assignment / category ───────
+//
+// All fields optional; only provided ones are written. Empty body is a
+// 400 (probably a client bug, fail loudly). assigned_user_id may be null
+// to unassign.
+const PatchTicket = z.object({
+  status_key:       z.string().optional(),
+  priority_key:     z.string().optional(),
+  category_key:     z.string().nullable().optional(),
+  assigned_user_id: z.string().uuid().nullable().optional(),
+}).strict();
+
+tickets.patch('/:id', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const ticketId = c.req.param('id');
+
+  const body = await c.req.json().catch(() => null);
+  const parsed = PatchTicket.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
+  }
+  const updates = parsed.data;
+  if (Object.keys(updates).length === 0) {
+    return c.json({ error: 'No fields to update' }, 400);
+  }
+
+  // Workspace-scope check before the update so an attacker with a valid
+  // ticket UUID from another workspace can't blind-write through the
+  // service-role client. The update's .eq('workspace_id') below makes the
+  // write a no-op in that case anyway, but the explicit 404 is clearer.
+  const { data: existing, error: lookupErr } = await sb
+    .from('tickets')
+    .select('id')
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (lookupErr) return c.json({ error: lookupErr.message }, 500);
+  if (!existing)  return c.json({ error: 'Ticket not found' }, 404);
+
+  const { data: updated, error: updErr } = await sb
+    .from('tickets')
+    .update(updates)
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .select('id, display_id, status_key, priority_key, category_key, assigned_user_id, sla_state, updated_at')
+    .single();
+  if (updErr) return c.json({ error: updErr.message }, 500);
+
+  return c.json({ ticket: updated });
+});
+
+// ─── POST /:id/messages — agent reply or internal note ───────────────────
+const PostMessage = z.object({
+  role:     z.enum(['agent', 'note']),
+  body:     z.string().min(1),
+  mentions: z.array(z.string().uuid()).optional(),
+});
+
+tickets.post('/:id/messages', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const userId = c.get('userId');
+  const ticketId = c.req.param('id');
+
+  const reqBody = await c.req.json().catch(() => null);
+  const parsed = PostMessage.safeParse(reqBody);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
+  }
+  const input = parsed.data;
+
+  const { data: ticket, error: tErr } = await sb
+    .from('tickets')
+    .select('id')
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (tErr) return c.json({ error: tErr.message }, 500);
+  if (!ticket) return c.json({ error: 'Ticket not found' }, 404);
+
+  // Resolve author display name from public.users so the row carries the
+  // canonical name without trusting the client.
+  const { data: user, error: uErr } = await sb
+    .from('users')
+    .select('name, email')
+    .eq('id', userId)
+    .maybeSingle();
+  if (uErr) return c.json({ error: uErr.message }, 500);
+  const authorLabel = user?.name || user?.email || 'Agent';
+
+  const { data: message, error: mErr } = await sb
+    .from('ticket_messages')
+    .insert({
+      workspace_id:   workspaceId,
+      ticket_id:      ticketId,
+      role:           input.role,
+      author_user_id: userId,
+      author_label:   authorLabel,
+      body:           input.body,
+      mentions:       input.mentions || [],
+    })
+    .select('id, role, author_user_id, author_label, body, mentions, created_at')
+    .single();
+  if (mErr) return c.json({ error: mErr.message }, 500);
+
+  return c.json({ message }, 201);
+});
+
 const CreateTicket = z.object({
   subject: z.string().min(1).max(500),
   customer_id: z.string().uuid(),

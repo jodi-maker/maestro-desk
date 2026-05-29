@@ -7,6 +7,7 @@ import { notifySlack } from '../lib/slack-notify.ts';
 import { dispatchTicketEvent } from '../lib/outgoing-webhooks.ts';
 import { scoreMessageSentiment } from '../lib/sentiment.ts';
 import { sendCsatSurvey } from '../lib/csat-survey.ts';
+import { notifyMentionedAgents } from '../lib/mention-notify.ts';
 
 export const tickets = new Hono();
 
@@ -288,6 +289,23 @@ tickets.post('/:id/messages', async (c) => {
     .select('id, role, author_user_id, author_label, body, mentions, created_at')
     .single();
   if (mErr) return c.json({ error: mErr.message }, 500);
+
+  // Fire-and-forget email notifications when a note @mentions other
+  // agents. Service-role for the user lookup (cross-workspace
+  // peer-read works under RLS too, but admin is cleaner for the
+  // background path). Failures stay out of the response.
+  if (input.role === 'note' && input.mentions && input.mentions.length > 0) {
+    const sbAdmin = c.get('sb');
+    notifyMentionedAgents({
+      sb: sbAdmin,
+      workspaceId,
+      ticketId,
+      authorUserId: userId,
+      authorLabel,
+      mentions:     input.mentions,
+      body:         input.body,
+    }).catch((err) => console.warn('[mention-notify] failed:', err instanceof Error ? err.message : err));
+  }
 
   return c.json({ message }, 201);
 });

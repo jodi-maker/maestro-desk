@@ -19,7 +19,7 @@ const TemplateBody = z.object({
 });
 
 ticketTemplates.get('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const { data, error } = await sb
@@ -32,7 +32,7 @@ ticketTemplates.get('/', async (c) => {
 });
 
 ticketTemplates.post('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const reqBody = await c.req.json().catch(() => null);
@@ -68,7 +68,7 @@ const PatchTemplate = z.object({
 }).strict();
 
 ticketTemplates.patch('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 
@@ -94,7 +94,7 @@ ticketTemplates.patch('/:id', async (c) => {
 });
 
 ticketTemplates.delete('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 

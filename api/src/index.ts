@@ -8,6 +8,7 @@ import { startWebhookWorker } from './lib/outgoing-webhooks.ts';
 import { startCsatReminderWorker } from './lib/csat-survey.ts';
 import { health } from './routes/health.ts';
 import { me } from './routes/me.ts';
+import { workspace } from './routes/workspace.ts';
 import { tickets } from './routes/tickets.ts';
 import { triage } from './routes/triage.ts';
 import { webhooks } from './routes/webhooks.ts';
@@ -44,6 +45,7 @@ app.use('*', cors({
 app.route('/api/v1/health', health);
 app.route('/api/v1/config', config);
 app.route('/api/v1/me', me);
+app.route('/api/v1/workspace', workspace);
 app.route('/api/v1/whoami', whoami);
 app.route('/api/v1/tickets', tickets);
 app.route('/api/v1/tickets/:id/triage', triage);

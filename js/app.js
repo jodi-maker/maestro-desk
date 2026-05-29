@@ -101,6 +101,7 @@ import {
   createOutgoingWebhook, deleteOutgoingWebhook, showOutgoingWebhookDeliveries, retryWebhookDelivery,
   editOutgoingWebhook, saveOutgoingWebhookEdit, rotateOutgoingWebhookSecret,
   resetSuppressedCustomer,
+  setAutoPriorityBump,
 } from './settings/index.js';
 import {
   renderLayouts, isFieldVisible, isFieldRequired,

@@ -200,6 +200,16 @@ async function bumpPriorityForAnger(args: {
 }): Promise<void> {
   const { sb, workspaceId, ticketId } = args;
 
+  // Workspace can opt out of the auto-bump while keeping sentiment
+  // scoring on. Defaults to true so behaviour is unchanged from
+  // pre-toggle workspaces (and is the safer default for new ones).
+  const { data: ws } = await sb
+    .from('workspaces')
+    .select('auto_priority_bump_on_angry')
+    .eq('id', workspaceId)
+    .maybeSingle();
+  if (ws && ws.auto_priority_bump_on_angry === false) return;
+
   const { data: ticket, error: tErr } = await sb
     .from('tickets')
     .select('id, priority_key')

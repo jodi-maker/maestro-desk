@@ -37,6 +37,8 @@ let OUTGOING_WEBHOOKS_LOADED = false;
 let LAST_REVEALED_SECRET = null;        // shown once after a POST; cleared on next paint
 let SUPPRESSED_CUSTOMERS = [];
 let SUPPRESSED_LOADED = false;
+let WORKSPACE_SETTINGS = null;
+let WORKSPACE_SETTINGS_LOADED = false;
 const SLACK_EVENTS = [
   { k: 'ticket.created',   l: 'Ticket created' },
   { k: 'ticket.resolved',  l: 'Ticket resolved' },
@@ -211,6 +213,17 @@ function settingsAI() {
     {v:'claude-sonnet-4-6',l:'Claude Sonnet 4.6'},
     {v:'claude-haiku-4-5', l:'Claude Haiku 4.5'},
   ];
+  // Workspace-level settings live server-side, loaded lazily on first
+  // paint of this tab. Re-render once the fetch resolves so the toggle
+  // reflects the current value.
+  if (!WORKSPACE_SETTINGS_LOADED) {
+    WORKSPACE_SETTINGS_LOADED = true;
+    apiGet('/api/v1/workspace/settings')
+      .then((res) => { WORKSPACE_SETTINGS = res.workspace; window.renderPage('settings'); })
+      .catch((err) => { console.warn('[settings] workspace load failed:', err); });
+  }
+  const ws = WORKSPACE_SETTINGS;
+  const autoBumpOn = ws ? ws.auto_priority_bump_on_angry !== false : true;
   return `
     <div class="settings-section">
       <div class="settings-h">Claude API</div>
@@ -228,7 +241,38 @@ function settingsAI() {
       <div style="font-size:11px;color:${AI_API_KEY?'var(--green)':'var(--ink3)'};font-family:'DM Mono',monospace;margin-top:8px">
         ${AI_API_KEY ? '✓ Key saved' : 'No key configured — AI Draft will return a fallback message'}
       </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-h">Sentiment automation</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">
+        When a customer message is classified as angry, automatically bump the ticket's priority to <strong style="color:var(--ink2)">high</strong> (only if it's currently lower). A system message is added to the ticket explaining the change. Turning this off keeps sentiment scoring + badges + filters intact, but priority stays under explicit human control.
+      </div>
+      <div class="settings-row">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--ink)">Auto-bump priority on angry sentiment</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:2px">Workspace-wide. Admins only.</div>
+        </div>
+        <label class="toggle"><input type="checkbox" ${autoBumpOn ? 'checked' : ''} onchange="setAutoPriorityBump(this.checked)" ${window.isAdmin() ? '' : 'disabled'}/><span class="toggle-slider"></span></label>
+      </div>
+      <div id="auto-bump-msg" style="font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;margin-top:8px;min-height:14px"></div>
     </div>`;
+}
+
+export async function setAutoPriorityBump(enabled) {
+  if (!window.isAdmin()) return;
+  const msg = document.getElementById('auto-bump-msg');
+  if (msg) { msg.textContent = 'Saving...'; msg.style.color = 'var(--ink3)'; }
+  try {
+    const res = await apiPatch('/api/v1/workspace/settings', { auto_priority_bump_on_angry: enabled });
+    WORKSPACE_SETTINGS = res.workspace;
+    if (msg) { msg.textContent = enabled ? '✓ Enabled' : '✓ Disabled'; msg.style.color = 'var(--green)'; }
+  } catch (err) {
+    if (msg) { msg.textContent = err?.message || 'Save failed'; msg.style.color = 'var(--red)'; }
+    // Revert the visual state if the patch failed.
+    WORKSPACE_SETTINGS_LOADED = false;
+    window.renderPage('settings');
+  }
 }
 
 function settingsKnowledgeBase() {

@@ -38,6 +38,7 @@ import { apiGet, apiPut } from '../core/api-client.js';
 // store the literal 'loading' so a re-render mid-flight doesn't
 // fire a second request.
 const STRIPE_CONTEXT_CACHE = new Map();
+const SHOPIFY_CONTEXT_CACHE = new Map();
 
 // ─── Customer table column state ─────────────────────────────────────────────
 
@@ -648,6 +649,83 @@ function renderStripeContextBlock(c) {
   `);
 }
 
+async function loadShopifyContext(custId, uuid) {
+  try {
+    const res = await apiGet(`/api/v1/integrations/customers/${uuid}/shopify-context`);
+    SHOPIFY_CONTEXT_CACHE.set(custId, res);
+  } catch (err) {
+    SHOPIFY_CONTEXT_CACHE.set(custId, { error: err?.message || 'Shopify lookup failed' });
+  }
+  if (CUSTOMER_SELECTED === custId) renderCustomers();
+}
+
+function renderShopifyContextBlock(c) {
+  if (!c._uuid) return '';
+  const cached = SHOPIFY_CONTEXT_CACHE.get(c.id);
+  if (cached === undefined) {
+    SHOPIFY_CONTEXT_CACHE.set(c.id, 'loading');
+    loadShopifyContext(c.id, c._uuid);
+  }
+  const state = SHOPIFY_CONTEXT_CACHE.get(c.id);
+
+  const wrap = (body) => `
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="width:14px;height:14px;background:#96bf48;border-radius:3px;display:flex;align-items:center;justify-content:center"><span style="color:#fff;font-size:9px;font-weight:700;font-family:Arial,sans-serif">S</span></div>
+        <div class="card-title" style="margin:0">Shopify</div>
+      </div>
+      ${body}
+    </div>`;
+
+  if (state === 'loading') {
+    return wrap(`<div style="color:var(--ink3);font-size:12px">Loading…</div>`);
+  }
+  if (state?.error) {
+    return wrap(`<div style="color:var(--red);font-size:12px">${window.escHtml(state.error)}</div>`);
+  }
+  if (!state || !state.configured) return '';
+  const ctx = state.context;
+  if (!ctx?.customer) {
+    return wrap(`<div style="color:var(--ink3);font-size:12px">No Shopify customer for ${window.escHtml(c.email)}</div>`);
+  }
+
+  const cust = ctx.customer;
+  const totalSpent = `${parseFloat(cust.total_spent).toFixed(2)} ${cust.currency}`;
+  const addrParts = [cust.default_address?.city, cust.default_address?.province, cust.default_address?.country].filter(Boolean);
+  const addr = addrParts.join(', ');
+
+  const ordersRows = ctx.orders.slice(0, 5).map(o => {
+    const dt = o.created_at.slice(0, 10);
+    const finColor = o.financial_status === 'paid' ? 'var(--green)'
+      : o.financial_status === 'refunded' ? 'var(--ink3)'
+      : o.financial_status === 'pending' ? 'var(--amber)'
+      : 'var(--ink2)';
+    const itemCount = o.line_items.reduce((sum, li) => sum + li.quantity, 0);
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;padding:4px 0">
+        <span style="font-family:'DM Mono',monospace;color:var(--ink)">${window.escHtml(o.name)}</span>
+        <span style="font-family:'DM Mono',monospace;color:var(--ink3);font-size:10px">${dt}</span>
+        <span style="color:var(--ink3);font-size:10px">${itemCount} item${itemCount === 1 ? '' : 's'}</span>
+        <span style="font-weight:500;color:var(--ink)">${parseFloat(o.total_price).toFixed(2)} ${o.currency}</span>
+        <span style="color:${finColor};font-size:10px;text-transform:uppercase">${o.financial_status || '—'}</span>
+      </div>`;
+  }).join('');
+
+  return wrap(`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--rule)">
+      <div>
+        <div style="font-size:12px;font-weight:500;color:var(--ink)">${cust.orders_count} order${cust.orders_count === 1 ? '' : 's'}</div>
+        ${addr ? `<div style="font-size:10px;color:var(--ink3)">${window.escHtml(addr)}</div>` : ''}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;font-weight:500;color:var(--ink)">${totalSpent}</div>
+        <div style="font-size:10px;color:var(--ink3);font-family:'DM Mono',monospace">lifetime</div>
+      </div>
+    </div>
+    ${ordersRows ? `<div style="margin-top:8px"><div style="font-size:10px;text-transform:uppercase;color:var(--ink3);margin-bottom:4px">Recent orders</div>${ordersRows}</div>` : '<div style="color:var(--ink3);font-size:12px;margin-top:8px">No orders yet</div>'}
+  `);
+}
+
 function renderCustomerDetail(custId) {
   const c = CUSTOMERS.find(x => x.id === custId);
   if (!c) { CUSTOMER_SELECTED = null; return renderCustomers(); }
@@ -701,6 +779,7 @@ function renderCustomerDetail(custId) {
     </div>` : '';
 
   const stripeBlock = renderStripeContextBlock(c);
+  const shopifyBlock = renderShopifyContextBlock(c);
 
   const timelineBlock = activity.length ? `
     <div class="card">
@@ -805,6 +884,7 @@ function renderCustomerDetail(custId) {
         </div>
         ${tagsBlock}
         ${stripeBlock}
+        ${shopifyBlock}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
           <div class="card">
             <div class="card-title">Profile</div>

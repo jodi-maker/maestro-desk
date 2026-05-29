@@ -24,7 +24,7 @@ const PolicyBody = z.object({
 });
 
 slaPolicies.get('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const { data, error } = await sb
@@ -37,7 +37,7 @@ slaPolicies.get('/', async (c) => {
 });
 
 slaPolicies.post('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const reqBody = await c.req.json().catch(() => null);
@@ -75,7 +75,7 @@ const PatchPolicy = z.object({
 }).strict();
 
 slaPolicies.patch('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 
@@ -120,7 +120,7 @@ slaPolicies.patch('/:id', async (c) => {
 });
 
 slaPolicies.delete('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 

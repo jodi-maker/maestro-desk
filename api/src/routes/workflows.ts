@@ -25,7 +25,7 @@ const WorkflowBody = z.object({
 
 // ─── GET / — list ─────────────────────────────────────────────────────────
 workflows.get('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const { data, error } = await sb
@@ -39,7 +39,7 @@ workflows.get('/', async (c) => {
 
 // ─── POST / — create ──────────────────────────────────────────────────────
 workflows.post('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const reqBody = await c.req.json().catch(() => null);
@@ -74,7 +74,7 @@ const PatchWorkflow = z.object({
 }).strict();
 
 workflows.patch('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 
@@ -106,7 +106,7 @@ workflows.patch('/:id', async (c) => {
 
 // ─── DELETE /:id — remove ─────────────────────────────────────────────────
 workflows.delete('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 
@@ -127,7 +127,7 @@ workflows.delete('/:id', async (c) => {
 // lands, the actual triggered effects can plug into this same row stream
 // without changing the wire shape.
 workflows.post('/:id/run', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const userId = c.get('userId');
   const id = c.req.param('id');
@@ -173,7 +173,7 @@ workflows.post('/:id/run', async (c) => {
 // runs always are, manual runs aren't). Capped at 200 rows so the UI
 // doesn't render an unbounded list.
 workflows.get('/:id/runs', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 

@@ -73,6 +73,22 @@ function isOwnedByMe(s) {
   return Boolean(SESSION?.userId) && s.user_id === SESSION.userId;
 }
 
+// Render pinned saved searches as additional chips on the view row.
+// Owner sees their own pinned ones (private or shared); workspace
+// members also see anyone's shared+pinned. We deliberately don't
+// compute counts per chip — that'd require running the filter
+// predicate over the full ticket set per chip and slow the render.
+function renderPinnedSavedSearchChips() {
+  const pinned = SAVED_SEARCHES.filter((s) => s.is_pinned && (isOwnedByMe(s) || s.is_shared));
+  if (pinned.length === 0) return '';
+  return pinned.map((s) => {
+    const sharedMark = s.is_shared && !isOwnedByMe(s)
+      ? ` <span style="font-size:9px;color:var(--ink3);font-weight:400" title="Shared by ${window.escAttr(s.owner_name || 'someone')}">★</span>`
+      : '';
+    return `<span class="filter-tag" style="cursor:pointer" onclick="applySavedSearch('${window.escAttr(s.id)}')" title="${window.escAttr(s.is_shared ? `Shared by ${s.owner_name || 'someone'}` : 'Pinned saved search')}">${window.escHtml(s.name)}${sharedMark}</span>`;
+  }).join('');
+}
+
 // "Needs attention" predicate — the union of three urgency signals,
 // excluding tickets that are already resolved/closed or currently
 // snoozed (the agent has deliberately deferred those). Used by both
@@ -237,6 +253,7 @@ export function renderTickets() {
       <div class="filter-bar" style="border-top:none;padding-top:6px;padding-bottom:10px">
         <span class="filter-label">View</span>
         ${views.map(v => `<span class="filter-tag" style="cursor:pointer;${v.active?'border-color:var(--purple);color:var(--purple);background:var(--purple-lt)':''}" onclick="setTicketView('${v.k}')">${v.l}</span>`).join('')}
+        ${renderPinnedSavedSearchChips()}
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
           ${renderSavedSearchesControls()}
         </span>
@@ -331,6 +348,9 @@ export function manageSavedSearches() {
     const attribution = s.is_shared && !owned
       ? `<span style="color:var(--ink3)"> · shared by ${window.escHtml(s.owner_name || 'someone')}</span>`
       : (s.is_shared ? '<span style="color:var(--purple)"> · shared with workspace</span>' : '');
+    const pinBtn = owned ? `
+      <button class="btn btn-sm" onclick="toggleSavedSearchPin('${window.escAttr(s.id)}', ${s.is_pinned ? 'false' : 'true'})" title="${s.is_pinned ? 'Remove from view chips' : 'Pin as a view chip'}">${s.is_pinned ? 'Unpin' : 'Pin'}</button>
+    ` : '';
     const shareBtn = owned ? `
       <button class="btn btn-sm" onclick="toggleSavedSearchShare('${window.escAttr(s.id)}', ${s.is_shared ? 'false' : 'true'})" title="${s.is_shared ? 'Stop sharing with workspace' : 'Share with workspace'}">${s.is_shared ? 'Unshare' : 'Share'}</button>
     ` : '';
@@ -343,6 +363,7 @@ export function manageSavedSearches() {
           <div style="font-weight:500;color:var(--ink);font-size:13px">${window.escHtml(s.name)}${attribution}</div>
           <div style="font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${window.escHtml(JSON.stringify(s.filters))}</div>
         </div>
+        ${pinBtn}
         ${shareBtn}
         ${deleteBtn}
       </div>`;
@@ -358,6 +379,17 @@ export async function toggleSavedSearchShare(id, share) {
     manageSavedSearches();
   } catch (err) {
     alert(`Couldn't update sharing: ${err?.message || err}`);
+  }
+}
+
+export async function toggleSavedSearchPin(id, pin) {
+  try {
+    const res = await apiPatch(`/api/v1/saved-searches/${encodeURIComponent(id)}`, { is_pinned: pin });
+    SAVED_SEARCHES = SAVED_SEARCHES.map((s) => s.id === id ? { ...s, ...res.saved_search } : s);
+    window.renderPage('tickets');
+    manageSavedSearches();
+  } catch (err) {
+    alert(`Couldn't update pin state: ${err?.message || err}`);
   }
 }
 

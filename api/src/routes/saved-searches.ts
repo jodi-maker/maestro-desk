@@ -30,12 +30,14 @@ const CreateBody = z.object({
   name:      z.string().min(1).max(100),
   filters:   Filters,
   is_shared: z.boolean().optional(),
+  is_pinned: z.boolean().optional(),
 });
 
 const PatchBody = z.object({
   name:      z.string().min(1).max(100).optional(),
   filters:   Filters.optional(),
   is_shared: z.boolean().optional(),
+  is_pinned: z.boolean().optional(),
 }).strict();
 
 savedSearches.get('/', async (c) => {
@@ -46,7 +48,7 @@ savedSearches.get('/', async (c) => {
   // we embed users(name) for attribution on shared entries.
   const { data, error } = await sb
     .from('saved_searches')
-    .select('id, user_id, name, filters, is_shared, created_at, updated_at, users(name)')
+    .select('id, user_id, name, filters, is_shared, is_pinned, created_at, updated_at, users(name)')
     .order('is_shared', { ascending: true })  // own first, shared second
     .order('created_at', { ascending: false });
   if (error) return c.json({ error: error.message }, 500);
@@ -58,6 +60,7 @@ savedSearches.get('/', async (c) => {
     name:        row.name,
     filters:     row.filters,
     is_shared:   row.is_shared,
+    is_pinned:   row.is_pinned,
     owner_name:  row.users?.name || null,
     created_at:  row.created_at,
     updated_at:  row.updated_at,
@@ -82,8 +85,9 @@ savedSearches.post('/', async (c) => {
       name:         parsed.data.name,
       filters:      parsed.data.filters,
       is_shared:    parsed.data.is_shared ?? false,
+      is_pinned:    parsed.data.is_pinned ?? false,
     })
-    .select('id, user_id, name, filters, is_shared, created_at, updated_at')
+    .select('id, user_id, name, filters, is_shared, is_pinned, created_at, updated_at')
     .single();
   if (error) {
     // Unique-violation on (workspace_id, user_id, lower(name)) → 409
@@ -107,7 +111,7 @@ savedSearches.patch('/:id', async (c) => {
     .from('saved_searches')
     .update(parsed.data)
     .eq('id', id)
-    .select('id, user_id, name, filters, is_shared, created_at, updated_at')
+    .select('id, user_id, name, filters, is_shared, is_pinned, created_at, updated_at')
     .maybeSingle();
   if (error) {
     if ((error as any).code === '23505') {

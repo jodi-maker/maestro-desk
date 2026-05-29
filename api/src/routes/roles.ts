@@ -14,7 +14,7 @@ const RoleBody = z.object({
 
 // ─── GET / — list workspace roles with their granted permission keys ─────
 roles.get('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const { data, error } = await sb
@@ -38,7 +38,7 @@ roles.get('/', async (c) => {
 
 // ─── POST / — create role with optional permissions[] ────────────────────
 roles.post('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const reqBody = await c.req.json().catch(() => null);
@@ -85,7 +85,7 @@ const PatchRole = z.object({
 }).strict();
 
 roles.patch('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 
@@ -158,7 +158,7 @@ roles.patch('/:id', async (c) => {
 
 // ─── DELETE /:id — refuse if any active workspace_members reference it ──
 roles.delete('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 

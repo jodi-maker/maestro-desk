@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.ts';
 import { fetchStripeContext } from '../lib/stripe-client.ts';
+import { fetchShopifyContext } from '../lib/shopify-client.ts';
 
 export const integrations = new Hono();
 
@@ -181,5 +182,122 @@ integrations.get('/customers/:id/stripe-context', async (c) => {
   } catch (err) {
     console.error('[stripe] fetch failed:', err);
     return c.json({ error: err instanceof Error ? err.message : 'Stripe lookup failed' }, 502);
+  }
+});
+
+// ─── Shopify integration ────────────────────────────────────────────────
+//
+// Workspace provides their myshopify subdomain (e.g. "acme-store" —
+// we tack on `.myshopify.com` server-side) and an Admin API access
+// token. Token format is `shpat_<hex>` for custom apps; legacy
+// private apps use a long hex string. We accept both. Like Stripe,
+// the token never leaves the server — GET only returns a masked
+// summary.
+
+const ShopifyBody = z.object({
+  shop:         z.string().regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, 'Shop must be the myshopify subdomain (e.g. "acme-store")').max(60),
+  access_token: z.string().min(20).max(200),
+  active:       z.boolean().optional(),
+});
+
+integrations.get('/shopify', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const { data, error } = await sb
+    .from('shopify_integrations')
+    .select('shop, access_token, active, created_at, updated_at')
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  if (error) return c.json({ error: error.message }, 500);
+  if (!data) return c.json({ integration: null });
+  return c.json({
+    integration: {
+      shop:         data.shop,
+      active:       data.active,
+      has_token:    Boolean(data.access_token),
+      token_suffix: data.access_token ? data.access_token.slice(-6) : null,
+      created_at:   data.created_at,
+      updated_at:   data.updated_at,
+    },
+  });
+});
+
+integrations.put('/shopify', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const reqBody = await c.req.json().catch(() => null);
+  const parsed = ShopifyBody.safeParse(reqBody);
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
+  }
+  // Strip an accidentally-pasted ".myshopify.com" or full URL so we
+  // only store the subdomain. The strict regex above caught most of
+  // it, but users sometimes paste "acme-store.myshopify.com" hoping
+  // it works — be lenient here.
+  const shop = parsed.data.shop
+    .replace(/^https?:\/\//, '')
+    .replace(/\.myshopify\.com\/?$/, '')
+    .toLowerCase();
+  const { error } = await sb
+    .from('shopify_integrations')
+    .upsert(
+      {
+        workspace_id: workspaceId,
+        shop,
+        access_token: parsed.data.access_token,
+        active:       parsed.data.active ?? true,
+      },
+      { onConflict: 'workspace_id' },
+    );
+  if (error) return c.json({ error: error.message }, 500);
+  return c.json({ ok: true });
+});
+
+integrations.delete('/shopify', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const { error } = await sb
+    .from('shopify_integrations')
+    .delete()
+    .eq('workspace_id', workspaceId);
+  if (error) return c.json({ error: error.message }, 500);
+  return new Response(null, { status: 204 });
+});
+
+integrations.get('/customers/:id/shopify-context', async (c) => {
+  const sb = c.get('sb');
+  const workspaceId = c.get('workspaceId');
+  const customerId = c.req.param('id');
+
+  const { data: integration } = await sb
+    .from('shopify_integrations')
+    .select('shop, access_token, active')
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  if (!integration || !integration.active) {
+    return c.json({ configured: false, context: null });
+  }
+
+  const { data: customer } = await sb
+    .from('customers')
+    .select('email')
+    .eq('id', customerId)
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!customer?.email) {
+    return c.json({ configured: true, context: { customer: null, orders: [] } });
+  }
+
+  try {
+    const context = await fetchShopifyContext({
+      shop:  integration.shop,
+      token: integration.access_token,
+      email: customer.email,
+    });
+    return c.json({ configured: true, context });
+  } catch (err) {
+    console.error('[shopify] fetch failed:', err);
+    return c.json({ error: err instanceof Error ? err.message : 'Shopify lookup failed' }, 502);
   }
 });

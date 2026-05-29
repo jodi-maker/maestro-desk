@@ -97,6 +97,7 @@ import {
   toggleNotifPref, setKbCfg, testKbConnection,
   saveSlackIntegration, deleteSlackIntegration,
   saveStripeIntegration, deleteStripeIntegration,
+  saveShopifyIntegration, deleteShopifyIntegration,
 } from './settings/index.js';
 import {
   renderLayouts, isFieldVisible, isFieldRequired,

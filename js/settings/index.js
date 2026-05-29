@@ -29,6 +29,8 @@ let SLACK_INTEGRATION = null;
 let SLACK_LOADED = false;
 let STRIPE_INTEGRATION = null;
 let STRIPE_LOADED = false;
+let SHOPIFY_INTEGRATION = null;
+let SHOPIFY_LOADED = false;
 const SLACK_EVENTS = [
   { k: 'ticket.created',   l: 'Ticket created' },
   { k: 'ticket.resolved',  l: 'Ticket resolved' },
@@ -374,7 +376,8 @@ function settingsIntegrations() {
         <span id="slack-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace"></span>
       </div>
     </div>
-    ${settingsStripeSection()}`;
+    ${settingsStripeSection()}
+    ${settingsShopifySection()}`;
 }
 
 function settingsStripeSection() {
@@ -455,6 +458,93 @@ export async function deleteStripeIntegration() {
   try {
     await apiDelete('/api/v1/integrations/stripe');
     STRIPE_INTEGRATION = null;
+    window.renderPage('settings');
+  } catch (err) {
+    alert(`Couldn't disconnect: ${err?.message || err}`);
+  }
+}
+
+function settingsShopifySection() {
+  if (!SHOPIFY_LOADED) {
+    SHOPIFY_LOADED = true;
+    apiGet('/api/v1/integrations/shopify')
+      .then((res) => { SHOPIFY_INTEGRATION = res.integration; window.renderPage('settings'); })
+      .catch((err) => { console.warn('[settings] shopify load failed:', err); });
+  }
+  const shopify = SHOPIFY_INTEGRATION;
+  const connected = Boolean(shopify?.has_token);
+  return `
+    <div class="settings-section">
+      <div class="settings-h">Shopify</div>
+      <div class="settings-desc" style="margin-bottom:14px">
+        Surface a customer's Shopify order history on the customer sidebar.
+        Create a <a href="https://help.shopify.com/manual/apps/app-types/custom-apps" target="_blank" style="color:var(--purple)">custom app</a> in your store admin with read access on customers + orders, then paste the Admin API access token below.
+      </div>
+      ${connected ? `
+        <div style="margin-bottom:14px;padding:10px 12px;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);font-size:12px;color:var(--green);display:flex;gap:10px;align-items:center">
+          <span style="font-weight:600">Connected</span>
+          <span style="font-family:'DM Mono',monospace;color:var(--ink2)">${window.escHtml(shopify.shop || '')}.myshopify.com · ...${window.escHtml(shopify.token_suffix || '')}</span>
+        </div>` : ''}
+      <div class="form-row">
+        <label class="form-label">Shop subdomain</label>
+        <div style="display:flex;align-items:center;gap:0">
+          <input class="form-input" id="shopify-shop" type="text" placeholder="acme-store" autocomplete="off" value="${connected ? window.escAttr(shopify.shop || '') : ''}" style="border-top-right-radius:0;border-bottom-right-radius:0"/>
+          <span style="padding:8px 12px;background:var(--off2);border:1px solid var(--rule);border-left:none;border-radius:0 var(--r) var(--r) 0;font-family:'DM Mono',monospace;font-size:12px;color:var(--ink3)">.myshopify.com</span>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">${connected ? 'Replace access token' : 'Admin API access token'}</label>
+        <input class="form-input" id="shopify-token" type="password" placeholder="${connected ? 'Paste a new token to rotate' : 'shpat_...'}" autocomplete="off"/>
+      </div>
+      <div class="form-row" style="display:flex;align-items:center;gap:8px">
+        <label class="toggle"><input type="checkbox" id="shopify-active" ${shopify?.active !== false ? 'checked' : ''}/><span class="toggle-slider"></span></label>
+        <span style="font-size:13px;color:var(--ink2)">Active</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-solid btn-sm" onclick="saveShopifyIntegration()">${connected ? 'Update' : 'Connect'}</button>
+        ${connected ? '<button class="btn btn-sm btn-danger" onclick="deleteShopifyIntegration()">Disconnect</button>' : ''}
+        <span id="shopify-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace"></span>
+      </div>
+    </div>`;
+}
+
+export async function saveShopifyIntegration() {
+  if (!window.isAdmin()) return;
+  const shop   = document.getElementById('shopify-shop').value.trim();
+  const token  = document.getElementById('shopify-token').value.trim();
+  const active = document.getElementById('shopify-active').checked;
+  const msg = document.getElementById('shopify-msg');
+  if (!shop) {
+    msg.textContent = 'Shop subdomain required'; msg.style.color = 'var(--red)'; return;
+  }
+  if (!token && !SHOPIFY_INTEGRATION?.has_token) {
+    msg.textContent = 'Access token required'; msg.style.color = 'var(--red)'; return;
+  }
+  if (!token && SHOPIFY_INTEGRATION?.has_token) {
+    // Toggle-only update path is the same as Stripe: server masks the
+    // token so we can't reconstruct it. Force a re-paste.
+    msg.textContent = 'Re-paste the token to update settings'; msg.style.color = 'var(--red)'; return;
+  }
+  msg.textContent = 'Saving...'; msg.style.color = 'var(--ink3)';
+  try {
+    await apiPut('/api/v1/integrations/shopify', { shop, access_token: token, active });
+    const res = await apiGet('/api/v1/integrations/shopify');
+    SHOPIFY_INTEGRATION = res.integration;
+    document.getElementById('shopify-token').value = '';
+    msg.textContent = 'Saved'; msg.style.color = 'var(--green)';
+    window.renderPage('settings');
+  } catch (err) {
+    msg.textContent = err?.message || 'Save failed';
+    msg.style.color = 'var(--red)';
+  }
+}
+
+export async function deleteShopifyIntegration() {
+  if (!window.isAdmin()) return;
+  if (!confirm('Disconnect Shopify? Customer sidebars will stop showing order history.')) return;
+  try {
+    await apiDelete('/api/v1/integrations/shopify');
+    SHOPIFY_INTEGRATION = null;
     window.renderPage('settings');
   } catch (err) {
     alert(`Couldn't disconnect: ${err?.message || err}`);

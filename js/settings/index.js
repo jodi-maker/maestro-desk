@@ -714,7 +714,7 @@ export async function deleteOutgoingWebhook(id) {
 export function showOutgoingWebhookDeliveries(id, name) {
   showModal(
     `Deliveries · ${window.escHtml(name)}`,
-    `<div id="wh-deliveries-body" style="min-height:120px;color:var(--ink3);font-size:12px">Loading…</div>`,
+    `<div id="wh-deliveries-body" data-webhook-id="${window.escAttr(id)}" style="min-height:120px;color:var(--ink3);font-size:12px">Loading…</div>`,
     null, null, true,
   );
   loadOutgoingWebhookDeliveries(id);
@@ -725,30 +725,34 @@ async function loadOutgoingWebhookDeliveries(id) {
   if (!container) return;
   try {
     const res = await apiGet(`/api/v1/integrations/webhooks/${encodeURIComponent(id)}/deliveries`);
-    container.innerHTML = renderDeliveryRows(res.deliveries || []);
+    container.innerHTML = renderDeliveryRows(id, res.deliveries || []);
   } catch (err) {
     container.innerHTML = `<div style="color:var(--red);font-size:12px">${window.escHtml(err?.message || 'Failed to load')}</div>`;
   }
 }
 
-function renderDeliveryRows(deliveries) {
+function renderDeliveryRows(webhookId, deliveries) {
   if (deliveries.length === 0) {
     return `<div style="color:var(--ink3);font-size:12px;text-align:center;padding:20px 0">No deliveries yet.</div>`;
   }
   const stateColor = (s) => s === 'success' ? 'var(--green)' : s === 'exhausted' ? 'var(--red)' : 'var(--amber)';
   const fmtTs = (ts) => ts ? new Date(ts).toISOString().slice(0, 19).replace('T', ' ') : '—';
   return `
-    <div style="display:grid;grid-template-columns:auto 1fr auto auto auto auto;gap:8px 12px;font-size:11px;align-items:baseline">
+    <div style="display:grid;grid-template-columns:auto 1fr auto auto auto auto auto;gap:8px 12px;font-size:11px;align-items:baseline">
       <div style="color:var(--ink3);font-weight:600;text-transform:uppercase;letter-spacing:.04em">State</div>
       <div style="color:var(--ink3);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Event</div>
       <div style="color:var(--ink3);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Attempts</div>
       <div style="color:var(--ink3);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Last status</div>
       <div style="color:var(--ink3);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Last attempt</div>
       <div style="color:var(--ink3);font-weight:600;text-transform:uppercase;letter-spacing:.04em">Next attempt</div>
+      <div></div>
       ${deliveries.map((d) => {
         const last = d.last_status
           ? `HTTP ${d.last_status}`
           : (d.last_error ? `<span title="${window.escAttr(d.last_error)}">err</span>` : '—');
+        const retryBtn = d.state === 'exhausted'
+          ? `<button class="btn btn-sm" onclick="retryWebhookDelivery('${window.escAttr(webhookId)}','${window.escAttr(d.id)}')">Retry</button>`
+          : '';
         return `
           <div><span style="color:${stateColor(d.state)};font-weight:600;text-transform:uppercase;font-family:'DM Mono',monospace">${d.state}</span></div>
           <div style="font-family:'DM Mono',monospace;color:var(--ink2)">${window.escHtml(d.event)}</div>
@@ -756,9 +760,22 @@ function renderDeliveryRows(deliveries) {
           <div style="font-family:'DM Mono',monospace;color:var(--ink2)">${last}</div>
           <div style="font-family:'DM Mono',monospace;color:var(--ink3)">${fmtTs(d.last_attempt_at)}</div>
           <div style="font-family:'DM Mono',monospace;color:var(--ink3)">${d.state === 'pending' ? fmtTs(d.next_attempt_at) : '—'}</div>
+          <div>${retryBtn}</div>
         `;
       }).join('')}
     </div>`;
+}
+
+export async function retryWebhookDelivery(webhookId, deliveryId) {
+  try {
+    await apiPost(`/api/v1/integrations/webhooks/${encodeURIComponent(webhookId)}/deliveries/${encodeURIComponent(deliveryId)}/retry`);
+    // Refresh the modal in-place so the row flips to pending with
+    // attempts=0 and a fresh next_attempt_at. The worker tick will
+    // fire on the next ~5s cycle.
+    await loadOutgoingWebhookDeliveries(webhookId);
+  } catch (err) {
+    alert(`Couldn't re-queue: ${err?.message || err}`);
+  }
 }
 
 export async function saveSlackIntegration() {

@@ -98,7 +98,7 @@ import {
   saveSlackIntegration, deleteSlackIntegration,
   saveStripeIntegration, deleteStripeIntegration,
   saveShopifyIntegration, deleteShopifyIntegration,
-  createOutgoingWebhook, deleteOutgoingWebhook, showOutgoingWebhookDeliveries,
+  createOutgoingWebhook, deleteOutgoingWebhook, showOutgoingWebhookDeliveries, retryWebhookDelivery,
 } from './settings/index.js';
 import {
   renderLayouts, isFieldVisible, isFieldRequired,

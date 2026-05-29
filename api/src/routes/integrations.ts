@@ -413,6 +413,44 @@ integrations.get('/webhooks/:id/deliveries', async (c) => {
   return c.json({ deliveries: data || [] });
 });
 
+// Re-queue an exhausted delivery. Resets attempts to 0 and bumps
+// next_attempt_at to now, so the worker picks it up on its next tick
+// with the full backoff schedule available again. Refuses to touch
+// non-exhausted rows — success / pending shouldn't be re-queued
+// (success is final; pending will fire on its own).
+integrations.post('/webhooks/:id/deliveries/:deliveryId/retry', async (c) => {
+  const sb = c.get('sbUser');
+  const workspaceId = c.get('workspaceId');
+  const webhookId = c.req.param('id');
+  const deliveryId = c.req.param('deliveryId');
+
+  const { data: existing, error: lookupErr } = await sb
+    .from('webhook_deliveries')
+    .select('id, state')
+    .eq('id', deliveryId)
+    .eq('webhook_id', webhookId)
+    .eq('workspace_id', workspaceId)
+    .maybeSingle();
+  if (lookupErr) return c.json({ error: lookupErr.message }, 500);
+  if (!existing) return c.json({ error: 'Delivery not found' }, 404);
+  if (existing.state !== 'exhausted') {
+    return c.json({ error: `Only exhausted deliveries can be re-queued; this one is ${existing.state}` }, 409);
+  }
+
+  const { error: upErr } = await sb
+    .from('webhook_deliveries')
+    .update({
+      state:           'pending',
+      attempts:        0,
+      next_attempt_at: new Date().toISOString(),
+      last_status:     null,
+      last_error:      null,
+    })
+    .eq('id', deliveryId);
+  if (upErr) return c.json({ error: upErr.message }, 500);
+  return c.json({ ok: true });
+});
+
 function generateWebhookSecret(): string {
   // 32 random bytes → base64url. Bun has crypto.randomBytes via the
   // node compat layer; use it rather than rolling our own RNG.

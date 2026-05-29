@@ -8,7 +8,7 @@ permissions.use('*', requireAuth);
 // Permissions are a global catalogue (no workspace_id) — every workspace
 // sees the same set. Anyone authed in any workspace can read it.
 permissions.get('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const { data, error } = await sb
     .from('permissions')
     .select('key, label')

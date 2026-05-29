@@ -36,7 +36,7 @@ const RuleBody = z.object({
 });
 
 assignRules.get('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const { data, error } = await sb
@@ -49,7 +49,7 @@ assignRules.get('/', async (c) => {
 });
 
 assignRules.post('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const reqBody = await c.req.json().catch(() => null);
@@ -85,7 +85,7 @@ const PatchRule = z.object({
 }).strict();
 
 assignRules.patch('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 
@@ -111,7 +111,7 @@ assignRules.patch('/:id', async (c) => {
 });
 
 assignRules.delete('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 

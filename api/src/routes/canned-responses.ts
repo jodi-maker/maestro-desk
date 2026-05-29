@@ -17,7 +17,7 @@ const TemplateBody = z.object({
 });
 
 cannedResponses.get('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const { data, error } = await sb
@@ -30,7 +30,7 @@ cannedResponses.get('/', async (c) => {
 });
 
 cannedResponses.post('/', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
 
   const reqBody = await c.req.json().catch(() => null);
@@ -62,7 +62,7 @@ const PatchTemplate = z.object({
 }).strict();
 
 cannedResponses.patch('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 
@@ -88,7 +88,7 @@ cannedResponses.patch('/:id', async (c) => {
 });
 
 cannedResponses.delete('/:id', async (c) => {
-  const sb = c.get('sb');
+  const sb = c.get('sbUser');
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
 

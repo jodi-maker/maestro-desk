@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { requireAuth } from '../middleware/auth.ts';
 
 export const presence = new Hono();
@@ -57,7 +58,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // so the SPA can detect cross-agent ticket mutations without a second
 // round-trip. Other entity types skip this lookup; their detail views
 // either don't need live-sync (KB read) or aren't built yet.
-async function loadTicketUpdatedAt(sb: any, workspaceId: string, ticketId: string) {
+async function loadTicketUpdatedAt(sb: SupabaseClient, workspaceId: string, ticketId: string) {
   const { data, error } = await sb
     .from('tickets')
     .select('id, updated_at')
@@ -65,8 +66,10 @@ async function loadTicketUpdatedAt(sb: any, workspaceId: string, ticketId: strin
     .eq('workspace_id', workspaceId)
     .is('deleted_at', null)
     .maybeSingle();
-  if (error) return { error: error.message, ticket: null };
-  return { error: null, ticket: data as { id: string; updated_at: string } | null };
+  return {
+    error:  error ?? null,
+    ticket: (data as { id: string; updated_at: string } | null) ?? null,
+  };
 }
 
 presence.post('/:entityType/:entityId', async (c) => {
@@ -77,7 +80,7 @@ presence.post('/:entityType/:entityId', async (c) => {
   const entityId   = c.req.param('entityId');
 
   if (!KNOWN_ENTITY_TYPES.has(entityType)) {
-    return c.json({ error: `Unknown entity_type: ${entityType}` }, 400);
+    return c.json({ error: 'Unknown entity_type' }, 400);
   }
   if (!UUID_RE.test(entityId)) {
     return c.json({ error: 'entity_id must be a UUID' }, 400);
@@ -97,7 +100,7 @@ presence.post('/:entityType/:entityId', async (c) => {
   let ticketUpdatedAt: string | null = null;
   if (entityType === 'ticket') {
     const { error, ticket } = await loadTicketUpdatedAt(sb, workspaceId, entityId);
-    if (error)   return c.json({ error }, 500);
+    if (error)   return c.json({ error: error.message }, 500);
     if (!ticket) return c.json({ error: 'Ticket not found' }, 404);
     ticketUpdatedAt = ticket.updated_at;
   }
@@ -165,7 +168,7 @@ presence.delete('/:entityType/:entityId', async (c) => {
   const entityId   = c.req.param('entityId');
 
   if (!KNOWN_ENTITY_TYPES.has(entityType)) {
-    return c.json({ error: `Unknown entity_type: ${entityType}` }, 400);
+    return c.json({ error: 'Unknown entity_type' }, 400);
   }
   if (!UUID_RE.test(entityId)) {
     return c.json({ error: 'entity_id must be a UUID' }, 400);

@@ -23,12 +23,23 @@ import { apiPost, apiDelete, API_BASE, getJwt, getWorkspaceId } from '../core/ap
 const HEARTBEAT_MS = 5000;
 
 const state = {
-  ticketUuid:    null,     // current ticket's real UUID, or null
-  intervalId:    null,     // setInterval handle
-  composing:     false,    // local composing flag (driven by oninput)
-  viewers:       [],       // last known other-viewers array
-  inFlight:      false,    // in-flight beat guard so a slow request can't queue
+  ticketUuid:           null,     // current ticket's real UUID, or null
+  intervalId:           null,     // setInterval handle
+  composing:            false,    // local composing flag (driven by oninput)
+  viewers:              [],       // last known other-viewers array
+  inFlight:             false,    // in-flight beat guard so a slow request can't queue
+  lastTicketUpdatedAt:  null,     // last server-stamped tickets.updated_at; drives live-sync diff
 };
+
+// Optional callback invoked when the heartbeat detects another agent
+// has mutated the ticket since the last beat. Detail.js registers this
+// to trigger a force-reload + re-render. Module-scoped so it's not lost
+// across tick() invocations.
+let onTicketChanged = null;
+
+export function setTicketChangedCallback(cb) {
+  onTicketChanged = typeof cb === 'function' ? cb : null;
+}
 
 export function startPresence(ticketUuid) {
   if (!ticketUuid) { stopPresence(); return; }
@@ -43,9 +54,10 @@ export function startPresence(ticketUuid) {
   if (state.ticketUuid) {
     sendLeaveBeacon(state.ticketUuid);
   }
-  state.ticketUuid = ticketUuid;
-  state.composing  = false;
-  state.viewers    = [];
+  state.ticketUuid          = ticketUuid;
+  state.composing           = false;
+  state.viewers             = [];
+  state.lastTicketUpdatedAt = null;
   // First beat is immediate so chips appear in <1s for everyone else.
   tick();
   if (state.intervalId) clearInterval(state.intervalId);
@@ -155,6 +167,19 @@ async function tick() {
     state.viewers = Array.isArray(res?.viewers) ? res.viewers : [];
     renderChips();
     renderBanner();
+    // Live-sync probe: if the ticket's updated_at has moved since our
+    // last beat, fire the change callback so detail.js can refetch and
+    // re-render. First beat just stamps the baseline (lastTicketUpdatedAt
+    // null on entry) so we don't fire spuriously on the initial open.
+    if (res?.ticket_updated_at) {
+      if (state.lastTicketUpdatedAt && res.ticket_updated_at !== state.lastTicketUpdatedAt) {
+        if (onTicketChanged) {
+          try { onTicketChanged({ uuid, updatedAt: res.ticket_updated_at }); }
+          catch (err) { console.warn('[presence] onTicketChanged callback threw:', err); }
+        }
+      }
+      state.lastTicketUpdatedAt = res.ticket_updated_at;
+    }
   } catch (err) {
     // JWT expired or membership revoked — every subsequent beat would
     // also fail. Stop the interval and wipe state so we don't churn the

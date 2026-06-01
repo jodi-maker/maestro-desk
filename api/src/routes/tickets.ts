@@ -1062,9 +1062,12 @@ tickets.post('/:id/presence', async (c) => {
 
   // Workspace-scope check — also covers ticket_viewers FK before we hit
   // the upsert, with a clear 404 instead of a 23503 surfacing.
+  // updated_at piggy-backs on this lookup so the heartbeat can
+  // double as a live-sync probe (the child-table triggers in
+  // 20260601140000 ensure new messages / tag changes / etc. bump it).
   const { data: ticket, error: lookupErr } = await sb
     .from('tickets')
-    .select('id')
+    .select('id, updated_at')
     .eq('id', ticketId)
     .eq('workspace_id', workspaceId)
     .is('deleted_at', null)
@@ -1124,7 +1127,8 @@ tickets.post('/:id/presence', async (c) => {
         last_seen_at: v.last_seen_at,
       };
     }),
-    window_seconds: VIEWER_WINDOW_S,
+    window_seconds:     VIEWER_WINDOW_S,
+    ticket_updated_at:  ticket.updated_at,
   });
 });
 

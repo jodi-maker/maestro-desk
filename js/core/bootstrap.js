@@ -474,16 +474,45 @@ function wfActionText(a) {
 // Fetches the full detail (messages, tags, ai_tags, time_entries) for a
 // single ticket and merges into the existing TICKETS entry in place.
 // Idempotent: second call is a cheap no-op via the _detailLoaded flag.
+//
+// Pass {force:true} to bypass the flag and re-fetch from scratch — used
+// by the presence-driven live-sync path when another agent has just
+// mutated the ticket on the server.
+//
+// When force-refetching, top-level fields (status/priority/category/
+// agent/subject/updated/sla) are also re-applied since they're the
+// most-likely-to-have-changed fields when an agent on another machine
+// touched the ticket. Initial loads skip the top-level reapply because
+// the bootstrap list endpoint already populated them and re-mapping
+// would just churn the same data.
 // Returns the ticket after merge (or null if not found / not loadable).
-export async function loadTicketDetail(displayId) {
+export async function loadTicketDetail(displayId, { force = false } = {}) {
   const t = TICKETS.find((x) => x.id === displayId);
   if (!t) return null;
   if (!t._uuid) return t;          // demo persona ticket — nothing to load
-  if (t._detailLoaded) return t;
+  if (t._detailLoaded && !force) return t;
 
   const res = await apiGet(`/api/v1/tickets/${t._uuid}`);
   const d = res.ticket;
   if (!d) return t;
+
+  // Refresh top-level fields on a force-reload so live-sync reflects
+  // status/assignment/category changes another agent made.
+  if (force) {
+    const customerByUuid = Object.fromEntries(CUSTOMERS.map((c) => [c._uuid || c.id, c]));
+    const userByUuid     = Object.fromEntries(AGENTS.map((a) => [a.userId, a]));
+    t.subject    = d.subject;
+    t.customerId = customerByUuid[d.customer_id]?.id || customerByUuid[d.customer_id]?.display_id || t.customerId;
+    t.status     = d.status_key;
+    t.priority   = d.priority_key;
+    t.category   = labelCase(d.category_key) || 'Other';
+    t.agent      = userByUuid[d.assigned_user_id]?.name || '';
+    t.updated    = fmtRelative(d.updated_at);
+    t.sla        = d.sla_state || 'ok';
+    t._updatedAt = d.updated_at;     // raw ISO for live-sync diffing
+  } else {
+    t._updatedAt = d.updated_at;     // stamp on first load too so sync has a baseline
+  }
 
   // Build a UUID → display_id lookup for messages that came from a
   // merged source ticket, so the per-message mergedFrom tag matches the

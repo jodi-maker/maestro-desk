@@ -49,6 +49,56 @@ tickets.get('/', async (c) => {
   return c.json({ tickets: data, total: count ?? 0, limit, offset });
 });
 
+// ─── GET /sync — incremental list deltas since a client cursor ──────────
+//
+// Drives the always-on list-sync polling. The SPA hits this every ~10s
+// with the last cursor we returned; we return everything whose
+// updated_at moved since (capped by `limit`) plus the new cursor to use
+// next time.
+//
+// `deleted_at` rides on each row so the client can drop merged/deleted
+// tickets from its local TICKETS array via the same delta path — no
+// separate deleted-IDs list. The trigger added in PR #237 means child
+// mutations (new messages, tag changes, AI accepts, time logged) all
+// bubble through here too via the parent's updated_at.
+//
+// First call with no cursor just stamps the current time and returns an
+// empty list — the SPA already has the full set from bootstrap, so we
+// don't want to redundantly dump it. Subsequent calls flow naturally
+// from there.
+//
+// Ascending order + cursor = last-row's updated_at lets the loop
+// self-paginate: if a backlog of >limit rows accumulates (long
+// disconnect, large workspace), each beat eats one chunk and the
+// cursor walks forward until caught up.
+tickets.get('/sync', async (c) => {
+  const sb = c.get('sbUser');
+  const workspaceId = c.get('workspaceId');
+  const cursor = c.req.query('cursor');
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '200', 10), 500);
+
+  if (!cursor) {
+    return c.json({ tickets: [], cursor: new Date().toISOString() });
+  }
+
+  const { data, error } = await sb
+    .from('tickets')
+    .select('id, display_id, subject, status_key, priority_key, category_key, assigned_user_id, customer_id, sla_state, created_at, updated_at, snoozed_until, snoozed_at, snooze_reason, snooze_woken_at, merged_into_id, merged_at, status_before_merge, latest_customer_sentiment, deleted_at')
+    .eq('workspace_id', workspaceId)
+    .gt('updated_at', cursor)
+    .order('updated_at', { ascending: true })
+    .limit(limit);
+
+  if (error) return c.json({ error: error.message }, 500);
+
+  const rows = data || [];
+  const newCursor = rows.length > 0
+    ? rows[rows.length - 1].updated_at
+    : new Date().toISOString();
+
+  return c.json({ tickets: rows, cursor: newCursor });
+});
+
 // Full ticket detail — the row itself plus all of its child collections.
 // Used by the SPA's ticket-detail view to populate the conversation thread,
 // tags, AI tags, and time entries that aren't returned by the list endpoint.

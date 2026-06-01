@@ -59,8 +59,26 @@ import { ticketCSATBlock } from './csat.js';
 import { runAssignmentRulesOnTicket } from './assignment-rules.js';
 import {
   startPresence, setComposing, confirmIfOthersComposing,
+  setTicketChangedCallback,
 } from './presence.js';
 import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
+
+// Live-sync hook: presence reports the server's tickets.updated_at on
+// every heartbeat. When it moves (because another agent replied, tagged,
+// re-assigned, etc.), force-reload the ticket detail and re-render iff
+// the user is still on it. CURRENT_TICKET is the global from state.js;
+// TICKETS lookup translates the heartbeat's uuid to our display_id.
+//
+// Locally-driven mutations also bump the server's updated_at, so the
+// next heartbeat fires this callback too — refetch is redundant but
+// harmless (~50ms) and self-corrects any local/canonical drift.
+setTicketChangedCallback(({ uuid: changedUuid }) => {
+  const t = TICKETS.find((x) => x._uuid === changedUuid);
+  if (!t) return;
+  loadTicketDetail(t.id, { force: true }).then(() => {
+    if (CURRENT_TICKET === t.id) openTicket(t.id);
+  }).catch((err) => console.warn('[ticket-detail] live-sync reload failed:', err));
+});
 
 // Sentiment badge for customer messages — colored dot + label next to
 // the author name. Skipped silently when sentiment is null (not yet

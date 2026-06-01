@@ -177,6 +177,7 @@ import * as CustomerModals from './customers/modals.js';
 import * as Dashboard from './dashboard/index.js';
 import * as TicketsList from './tickets/list.js';
 import * as TicketDetail from './tickets/detail.js';
+import { stopPresence } from './tickets/presence.js';
 import * as AssignmentRules from './tickets/assignment-rules.js';
 
 function login(role, name, initials, userId = null) {
@@ -256,6 +257,9 @@ function resetWorkspaceBrand() {
 }
 
 function logout() {
+  // Release any presence row before we wipe the JWT — sendLeaveBeacon
+  // needs the token to authorise the DELETE.
+  stopPresence();
   SESSION = null;
   resetWorkspaceBrand();
   // Clears JWT + workspace_id + cached user from sessionStorage. Safe for
@@ -283,6 +287,9 @@ function renderPage(page) {
   if (page !== 'tags')      { TAG_SELECTED = null; TAG_SELECTED_NAMES.clear(); }
   CURRENT_PAGE = page;
   CURRENT_TICKET = null;
+  // Release the presence row for any ticket we were viewing — openTicket
+  // re-acquires immediately if the new page lands on a detail view.
+  stopPresence();
   const main = document.getElementById('main-area');
   const pages = {
     dashboard: renderDashboard,

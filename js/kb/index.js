@@ -251,6 +251,8 @@ function renderKBArticle(id) {
   // Real-time presence — no-ops for demo articles (no _uuid). Useful
   // on the edit path when two admins might fight over the same article;
   // also nice on read so authors see when their article is hot.
+  // No #presence-banner slot here — banner is the typing-indicator
+  // strip that pairs with a composer; KB-article view has no composer.
   if (a._uuid && SESSION?.userId) startPresence('kb_article', a._uuid);
   const admin = window.isAdmin();
   const views = getKBViews(id);

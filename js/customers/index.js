@@ -744,6 +744,9 @@ function renderCustomerDetail(custId) {
   // Real-time presence — no-ops for demo personas (no _uuid). Chip
   // slot is in the topbar below; the first heartbeat resolves after
   // main.innerHTML is set, so the slot is in the DOM by then.
+  // No #presence-banner slot here — that's the "Emma is replying"
+  // typing-indicator strip above the compose textarea, which only
+  // makes sense for surfaces that have a composer (ticket detail).
   if (c._uuid && SESSION?.userId) startPresence('customer', c._uuid);
   const s = getCustomerStats(custId);
   const admin = window.isAdmin();

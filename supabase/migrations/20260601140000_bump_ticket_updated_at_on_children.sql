@@ -22,6 +22,13 @@
 -- as the calling role, which for agents is `authenticated`; their RLS
 -- on tickets already allows UPDATEs to rows in their workspace, so the
 -- bump is permitted in the same transaction as the child write.
+--
+-- The `deleted_at is null` predicate on the UPDATE serves two purposes:
+-- (a) soft-deleted parents don't get spurious updated_at bumps from
+-- late child mutations (would re-surface them on activity-sorted lists)
+-- (b) hard-delete cascades from tickets → child tables match 0 rows
+-- here (the parent row is already gone), making the trigger fan-out
+-- during a cascade a cheap no-op instead of a wasted UPDATE attempt.
 
 create or replace function public.bump_ticket_updated_at()
 returns trigger
@@ -30,23 +37,29 @@ as $$
 begin
   update public.tickets
   set updated_at = now()
-  where id = coalesce(new.ticket_id, old.ticket_id);
+  where id = coalesce(new.ticket_id, old.ticket_id)
+    and deleted_at is null;
   return coalesce(new, old);
 end;
 $$;
 
-create trigger bump_ticket_on_message
+-- CREATE OR REPLACE keeps the migration idempotent — re-running it
+-- against a DB where the triggers already exist (e.g. after a partial
+-- failure, or a fresh Docker validation against the merged file)
+-- won't error out. PG 14+ syntax; Supabase is on 15+, vanilla PG 17 OK.
+
+create or replace trigger bump_ticket_on_message
   after insert or update or delete on ticket_messages
   for each row execute function public.bump_ticket_updated_at();
 
-create trigger bump_ticket_on_tag
+create or replace trigger bump_ticket_on_tag
   after insert or delete on ticket_tags
   for each row execute function public.bump_ticket_updated_at();
 
-create trigger bump_ticket_on_ai_tag
+create or replace trigger bump_ticket_on_ai_tag
   after insert or update or delete on ticket_ai_tags
   for each row execute function public.bump_ticket_updated_at();
 
-create trigger bump_ticket_on_time_entry
+create or replace trigger bump_ticket_on_time_entry
   after insert or update or delete on time_entries
   for each row execute function public.bump_ticket_updated_at();

@@ -171,6 +171,12 @@ async function tick() {
     // last beat, fire the change callback so detail.js can refetch and
     // re-render. First beat just stamps the baseline (lastTicketUpdatedAt
     // null on entry) so we don't fire spuriously on the initial open.
+    //
+    // Several mutations within one HEARTBEAT_MS window collapse to a
+    // single reload — we only ever see the latest updated_at, never the
+    // intermediate timestamps. Acceptable for help-desk concurrency
+    // (intermediate states are transient; what the agent needs to see
+    // is the current state).
     if (res?.ticket_updated_at) {
       if (state.lastTicketUpdatedAt && res.ticket_updated_at !== state.lastTicketUpdatedAt) {
         if (onTicketChanged) {

@@ -1004,3 +1004,128 @@ tickets.post('/', async (c) => {
 
   return c.json({ ticket }, 201);
 });
+
+// ─── POST /:id/presence — heartbeat current viewer + read live roster ────
+//
+// The SPA's ticket-detail view calls this every ~5s while the ticket is
+// open. We upsert the caller's ticket_viewers row (stamping last_seen_at
+// and the optional composing flag), then return the OTHER viewers
+// currently active on the same ticket. One round-trip = one heartbeat +
+// one roster read.
+//
+// Activity window: rows whose last_seen_at is within VIEWER_WINDOW_S of
+// now() count as present. The window has to be longer than the client
+// heartbeat (5s) plus tolerance for the request itself + a missed beat
+// — 15s gives one missed heartbeat of slack before a chip disappears.
+const VIEWER_WINDOW_S = 15;
+
+const PostPresence = z.object({
+  composing: z.boolean().optional().default(false),
+}).strict();
+
+tickets.post('/:id/presence', async (c) => {
+  const sb = c.get('sbUser');
+  const workspaceId = c.get('workspaceId');
+  const userId = c.get('userId');
+  const ticketId = c.req.param('id');
+
+  const reqBody = await c.req.json().catch(() => ({}));
+  const parsed = PostPresence.safeParse(reqBody ?? {});
+  if (!parsed.success) {
+    return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
+  }
+  const { composing } = parsed.data;
+
+  // Workspace-scope check — also covers ticket_viewers FK before we hit
+  // the upsert, with a clear 404 instead of a 23503 surfacing.
+  const { data: ticket, error: lookupErr } = await sb
+    .from('tickets')
+    .select('id')
+    .eq('id', ticketId)
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (lookupErr) return c.json({ error: lookupErr.message }, 500);
+  if (!ticket)   return c.json({ error: 'Ticket not found' }, 404);
+
+  const nowIso = new Date().toISOString();
+
+  // Read the prior row so we know whether this is a fresh composing
+  // transition — we want composing_at to track when the agent STARTED
+  // composing (for "Emma has been typing for 30s" UX), not the latest
+  // beat. If already composing, leave composing_at; if turning composing
+  // on now, stamp; if turning off, null it.
+  const { data: prior } = await sb
+    .from('ticket_viewers')
+    .select('composing, composing_at')
+    .eq('ticket_id', ticketId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  let composingAt: string | null;
+  if (composing && prior?.composing) composingAt = prior.composing_at ?? nowIso;
+  else if (composing)                composingAt = nowIso;
+  else                                composingAt = null;
+
+  const { error: upsertErr } = await sb
+    .from('ticket_viewers')
+    .upsert({
+      ticket_id:    ticketId,
+      user_id:      userId,
+      workspace_id: workspaceId,
+      last_seen_at: nowIso,
+      composing,
+      composing_at: composingAt,
+    }, { onConflict: 'ticket_id,user_id' });
+  if (upsertErr) return c.json({ error: upsertErr.message }, 500);
+
+  // Read the live roster — other viewers active within the window. We
+  // exclude self so the SPA doesn't have to filter; embedding users()
+  // gives us name + initials for the chip.
+  const cutoff = new Date(Date.now() - VIEWER_WINDOW_S * 1000).toISOString();
+  const { data: viewers, error: rosterErr } = await sb
+    .from('ticket_viewers')
+    .select('user_id, last_seen_at, composing, composing_at, users(name, initials)')
+    .eq('ticket_id', ticketId)
+    .neq('user_id', userId)
+    .gte('last_seen_at', cutoff)
+    .order('last_seen_at', { ascending: false });
+  if (rosterErr) return c.json({ error: rosterErr.message }, 500);
+
+  return c.json({
+    viewers: (viewers || []).map((v: any) => {
+      const u = Array.isArray(v.users) ? v.users[0] : v.users;
+      return {
+        user_id:      v.user_id,
+        name:         u?.name || 'Someone',
+        initials:     u?.initials || (u?.name ? u.name.split(/\s+/).map((w: string) => w[0]).join('').slice(0,2).toUpperCase() : '?'),
+        composing:    !!v.composing,
+        composing_at: v.composing_at,
+        last_seen_at: v.last_seen_at,
+      };
+    }),
+    window_seconds: VIEWER_WINDOW_S,
+  });
+});
+
+// ─── DELETE /:id/presence — explicit leave (closing the detail view) ─────
+//
+// Called via sendBeacon-style fetch on unload / route change so the
+// caller's chip disappears immediately for everyone else, instead of
+// waiting up to VIEWER_WINDOW_S for the stale row to age out.
+tickets.delete('/:id/presence', async (c) => {
+  const sb = c.get('sbUser');
+  const workspaceId = c.get('workspaceId');
+  const userId = c.get('userId');
+  const ticketId = c.req.param('id');
+
+  const { error } = await sb
+    .from('ticket_viewers')
+    .delete()
+    .eq('ticket_id', ticketId)
+    .eq('user_id', userId)
+    .eq('workspace_id', workspaceId);
+  if (error) return c.json({ error: error.message }, 500);
+
+  return c.body(null, 204);
+});

@@ -57,6 +57,9 @@ import { showModal, closeModal } from '../core/modal.js';
 import { isFieldVisible, isFieldRequired } from '../layouts/index.js';
 import { ticketCSATBlock } from './csat.js';
 import { runAssignmentRulesOnTicket } from './assignment-rules.js';
+import {
+  startPresence, setComposing, confirmIfOthersComposing,
+} from './presence.js';
 import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
 
 // Sentiment badge for customer messages — colored dot + label next to
@@ -92,6 +95,10 @@ export function openTicket(id) {
       if (CURRENT_TICKET === id) openTicket(id);
     }).catch(err => console.warn('[ticket-detail] load failed:', err));
   }
+  // Real-time presence — heartbeat starts on first open and re-paints
+  // chips on every re-render. No-ops for demo personas (no _uuid) so
+  // the localStorage-only flow stays untouched.
+  if (t._uuid && SESSION?.userId) startPresence(t._uuid);
   const cust = CUSTOMERS.find(c => c.id === t.customerId);
   const otherTickets = TICKETS.filter(x => x.customerId === t.customerId && x.id !== id && !x.mergedInto);
   const snoozeBanner = (t.snoozedUntil && new Date(t.snoozedUntil).getTime() > Date.now()) ? `
@@ -425,6 +432,7 @@ export function openTicket(id) {
           <span class="tb-sep">/</span>
           <span style="color:var(--ink);font-weight:500">${t.id}</span>
           <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+            <div id="presence-chips" class="presence-chips" aria-label="Agents viewing this ticket"></div>
             <button class="btn btn-sm" data-action="td.prev">← Prev</button>
             <button class="btn btn-sm" data-action="td.next">Next →</button>
             <span style="width:1px;background:var(--rule);align-self:stretch;margin:0 4px"></span>
@@ -460,6 +468,7 @@ export function openTicket(id) {
           ${sentimentBackfillBar}
           <div class="thread" id="thread-${id}">${msgsHtml}</div>
           <div class="composer">
+            <div id="presence-banner"></div>
             <div class="composer-tabs">
               <div class="ctab ${COMPOSE_TAB==='reply'?'active':''}" data-action="td.setComposeTab" data-ticket-id="${window.escAttr(id)}" data-tab="reply">Reply</div>
               <div class="ctab ${COMPOSE_TAB==='note'?'active':''}" data-action="td.setComposeTab" data-ticket-id="${window.escAttr(id)}" data-tab="note">Internal note</div>
@@ -826,6 +835,11 @@ export function onComposeInput(id) {
   if (ds) ds.textContent = el.value.length ? 'Draft saved' : '';
   if (COMPOSE_TAB === 'note') updateMentionDropdown(id, el);
   else hideMentionDropdown();
+  // Broadcast composing presence: empty box = not composing, anything
+  // else = composing. Only meaningful for the reply tab — internal
+  // notes aren't outbound, so we don't surface "Emma is typing" for
+  // notes (avoids false-alarming the send-confirm flow).
+  setComposing(COMPOSE_TAB === 'reply' && el.value.trim().length > 0);
 }
 
 
@@ -863,9 +877,10 @@ function toggleSendMenu(id) {
 }
 function hideSendMenu(id) { const m = document.getElementById('send-menu-' + id); if (m) m.style.display = 'none'; }
 
-function sendComposeAnd(id, status) {
+async function sendComposeAnd(id, status) {
   hideSendMenu(id);
-  sendCompose(id);
+  const sent = await sendCompose(id);
+  if (sent === false) return;
   changeTicketStatus(id, status);
   if (CURRENT_TICKET === id) openTicket(id);
 }
@@ -881,9 +896,17 @@ function showSentTextModal(ticketId, msgIdx) {
 
 async function sendCompose(id) {
   const el = document.getElementById(`compose-${id}`);
-  const txt = el.value.trim(); if (!txt) return;
+  const txt = el.value.trim(); if (!txt) return false;
   const t = TICKETS.find(x => x.id === id);
-  if (!t) return;
+  if (!t) return false;
+
+  // Soft double-handling guard — only for outbound replies, and only
+  // for API-backed tickets where presence is actually running. Demo
+  // personas never have other viewers, so the prompt is suppressed.
+  if (t._uuid && COMPOSE_TAB === 'reply') {
+    const ok = await confirmIfOthersComposing();
+    if (!ok) return false;
+  }
 
   // Auto-translate outgoing replies (not internal notes) when toggle is on and we know the customer's language
   let outgoing = txt;
@@ -928,7 +951,7 @@ async function sendCompose(id) {
       message = res.message;
     } catch (err) {
       alert(`Couldn't send: ${err?.message || err}`);
-      return;
+      return false;
     }
     t.msgs.push({
       from: message.author_label,
@@ -955,6 +978,7 @@ async function sendCompose(id) {
   clearDraft(id);
   onComposeInput(id);
   if (CURRENT_TICKET === id) openTicket(id);
+  return true;
 }
 
 export function showNewTicketModal(templateId) {

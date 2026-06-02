@@ -72,20 +72,10 @@ import {
 } from './auth/agent-login.js';
 import { signOut as authSignOut } from './core/auth-client.js';
 import {
-  renderSettings, setSettingsTab,
-  updateProfileName, updateProfileInitials,
-  toggleNotifPref, setKbCfg, testKbConnection,
-  saveSlackIntegration, deleteSlackIntegration,
-  saveStripeIntegration, deleteStripeIntegration,
-  saveShopifyIntegration, deleteShopifyIntegration,
-  createOutgoingWebhook, deleteOutgoingWebhook, showOutgoingWebhookDeliveries, retryWebhookDelivery,
-  editOutgoingWebhook, saveOutgoingWebhookEdit, rotateOutgoingWebhookSecret,
-  resetSuppressedCustomer,
-  setAutoPriorityBump,
-  setMentionEmailPref,
-  saveCsatCadence,
-  saveWorkspaceBranding, uploadWorkspaceLogo, savePortalCopy,
-  savePortalDomain, verifyPortalDomain,
+  renderSettings,
+  // setSettingsTab stays window-reachable: notifications reaches it via
+  // window.setSettingsTab to dodge the settings↔notifications import cycle.
+  setSettingsTab,
 } from './settings/index.js';
 import {
   renderLayouts, isFieldVisible, isFieldRequired,
@@ -126,7 +116,6 @@ import * as KBIntegration from './kb-integration/index.js';
 import * as Modal from './core/modal.js';
 import * as Collapsible from './core/collapsible.js';
 import * as Keybindings from './core/keybindings.js';
-import * as Settings from './settings/index.js';
 import * as CustomerModals from './customers/modals.js';
 import * as TicketDetail from './tickets/detail.js';
 import { stopPresence } from './core/presence.js';
@@ -388,11 +377,12 @@ Object.assign(
     // Agent (real-auth) sign-in panel — onclick handlers in static index.html
     showAgentLogin, submitAgentLogin,
     // Top-bar search input in static index.html (oninput/onfocus/onkeydown)
-    globalSearch, gsKey },
+    globalSearch, gsKey,
+    // notifications reaches this via window to avoid a settings↔notifications cycle
+    setSettingsTab },
   Theme, AIClient, Summarize, Translate, AIReply,
   KBIntegration,
   Modal, Collapsible, Keybindings,
-  Settings,
   CustomerModals,
   TicketDetail,
 );

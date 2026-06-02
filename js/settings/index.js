@@ -6,11 +6,18 @@
 // in app.js because the composer and ticket sidebar also depend on it.
 //
 // External reaches (interim, via window): isAdmin, escAttr, escHtml,
-// showModal, closeModal, renderPage, navTo, logout,
-// resetAllCollapsedSections — all still in app.js. KB_INTEGRATION,
+// renderPage, navTo, logout — all still in app.js. KB_INTEGRATION,
 // KB_TICKET_CACHE, saveKbIntegration, fetchKbArticles, COLLAPSED_SECTIONS
 // are bridged onto window by app.js so this module can read/mutate them.
-// refreshNotifBadge is a direct ES import from notifications/index.js.
+// refreshNotifBadge, setTheme, setAIKey/setAIModel, setAgentPreferredLang,
+// showModal/closeModal, resetAllCollapsedSections are direct ES imports.
+//
+// No window-bridge namespace spread: the page's inline on*= handlers are
+// delegated as settings.* actions (bottom of file). renderSettings is the
+// router entry; setSettingsTab stays exported (ai/page + help import it) AND
+// as an explicit app.js bridge entry, because notifications reaches it via
+// window.setSettingsTab to dodge the settings↔notifications import cycle
+// (settings already imports refreshNotifBadge from notifications).
 //
 // SESSION, SETTINGS_TAB, NOTIF_PREFS come from core/state.js via the global
 // lexical env.
@@ -22,7 +29,9 @@ import {
 } from '../ai/translate.js';
 import { refreshNotifBadge } from '../notifications/index.js';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, API_BASE } from '../core/api-client.js';
-import { showModal } from '../core/modal.js';
+import { showModal, closeModal } from '../core/modal.js';
+import { resetAllCollapsedSections } from '../core/collapsible.js';
+import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
 
 // In-memory snapshots of the workspace's integrations, loaded lazily
 // when the Integrations tab is opened.
@@ -62,7 +71,7 @@ export function renderSettings() {
     {k:'language',      l:'Language'},
     {k:'integrations',  l:'Integrations'},
   ];
-  const tabbar = tabs.map(t => `<div class="settings-tab ${SETTINGS_TAB===t.k?'active':''}" onclick="setSettingsTab('${t.k}')">${t.l}</div>`).join('');
+  const tabbar = tabs.map(t => `<div class="settings-tab ${SETTINGS_TAB===t.k?'active':''}" data-action="settings.setTab" data-tab="${window.escAttr(t.k)}">${t.l}</div>`).join('');
   let panel = '';
   if      (SETTINGS_TAB === 'profile')       panel = settingsProfile();
   else if (SETTINGS_TAB === 'appearance')    panel = settingsAppearance();
@@ -98,23 +107,23 @@ function settingsProfile() {
       </div>
       <div class="form-row">
         <label class="form-label">Display name</label>
-        <input class="form-input" id="set-name" value="${SESSION?.name||''}" oninput="updateProfileName(this.value)"/>
+        <input class="form-input" id="set-name" value="${SESSION?.name||''}" data-input-action="settings.updateName"/>
       </div>
       <div class="form-grid">
         <div class="form-row">
           <label class="form-label">Initials</label>
-          <input class="form-input" id="set-initials" value="${SESSION?.initials||''}" maxlength="3" oninput="updateProfileInitials(this.value)"/>
+          <input class="form-input" id="set-initials" value="${SESSION?.initials||''}" maxlength="3" data-input-action="settings.updateInitials"/>
         </div>
         <div class="form-row">
           <label class="form-label">Role</label>
           <input class="form-input" value="${SESSION?.role||''}" disabled style="opacity:.6"/>
         </div>
       </div>
-      <div style="margin-top:16px"><button class="btn btn-danger" onclick="logout()">Sign out</button></div>
+      <div style="margin-top:16px"><button class="btn btn-danger" data-action="settings.logout">Sign out</button></div>
     </div>`;
 }
 
-export function updateProfileName(name) {
+function updateProfileName(name) {
   const trimmed = name.trim();
   if (!SESSION || !trimmed) return;
   SESSION.name = trimmed;
@@ -123,7 +132,7 @@ export function updateProfileName(name) {
   const c = document.getElementById('pf-name-sm'); if (c) c.textContent = trimmed;
   const d = document.getElementById('pf-name-lg'); if (d) d.textContent = trimmed;
 }
-export function updateProfileInitials(v) {
+function updateProfileInitials(v) {
   const trimmed = v.trim().toUpperCase();
   if (!SESSION || !trimmed) return;
   SESSION.initials = trimmed;
@@ -148,7 +157,7 @@ function settingsAppearance() {
           <div style="font-size:11px;color:var(--ink3);margin-top:2px">Use a darker color palette across the app${isSystem?' — currently controlled by system preference':''}</div>
         </div>
         <label class="toggle">
-          <input type="checkbox" ${isDark?'checked':''} ${isSystem?'disabled':''} onchange="setTheme(this.checked?'dark':'light');renderPage('settings')">
+          <input type="checkbox" ${isDark?'checked':''} ${isSystem?'disabled':''} data-change-action="settings.toggleDark">
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -158,7 +167,7 @@ function settingsAppearance() {
           <div style="font-size:11px;color:var(--ink3);margin-top:2px">Automatically switch when your operating system changes themes</div>
         </div>
         <label class="toggle">
-          <input type="checkbox" ${isSystem?'checked':''} onchange="setTheme(this.checked?'system':'${fallback}');renderPage('settings')">
+          <input type="checkbox" ${isSystem?'checked':''} data-change-action="settings.toggleSystem" data-fallback="${fallback}">
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -171,7 +180,7 @@ function settingsAppearance() {
           <div style="font-size:13px;font-weight:500;color:var(--ink)">Hidden sections</div>
           <div style="font-size:11px;color:var(--ink3);margin-top:2px">${collapsedN} section${collapsedN===1?'':'s'} collapsed across pages</div>
         </div>
-        <button class="btn btn-sm" ${collapsedN===0?'disabled':''} onclick="resetAllCollapsedSections()">Show all</button>
+        <button class="btn btn-sm" ${collapsedN===0?'disabled':''} data-action="settings.resetCollapsed">Show all</button>
       </div>
     </div>
 
@@ -212,7 +221,7 @@ function settingsWorkspaceBranding() {
         <label class="form-label">Upload logo</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="file" id="brand-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/webp" ${isAdmin ? '' : 'disabled'} style="flex:1;font-size:12px"/>
-          <button class="btn btn-sm" onclick="uploadWorkspaceLogo()" ${isAdmin ? '' : 'disabled'}>Upload</button>
+          <button class="btn btn-sm" data-action="settings.uploadLogo" ${isAdmin ? '' : 'disabled'}>Upload</button>
         </div>
         <div style="font-size:11px;color:var(--ink3);margin-top:4px">PNG, JPG, SVG, or WEBP up to 2 MB. Uploaded files are hosted on the workspace's own brand-assets bucket.</div>
       </div>
@@ -225,12 +234,12 @@ function settingsWorkspaceBranding() {
         <label class="form-label">Primary color</label>
         <div style="display:flex;align-items:center;gap:10px">
           <input class="form-input" id="brand-primary-color" type="text" value="${window.escAttr(color)}" placeholder="#8b5cf6" style="font-family:'DM Mono',monospace;max-width:140px" ${isAdmin ? '' : 'disabled'}/>
-          <input type="color" id="brand-primary-color-picker" value="${color || '#8b5cf6'}" oninput="document.getElementById('brand-primary-color').value=this.value" ${isAdmin ? '' : 'disabled'} style="width:34px;height:34px;border:1px solid var(--rule);border-radius:4px;padding:0;cursor:pointer;background:none"/>
+          <input type="color" id="brand-primary-color-picker" value="${color || '#8b5cf6'}" data-input-action="settings.syncBrandColor" ${isAdmin ? '' : 'disabled'} style="width:34px;height:34px;border:1px solid var(--rule);border-radius:4px;padding:0;cursor:pointer;background:none"/>
         </div>
         <div style="font-size:11px;color:var(--ink3);margin-top:4px">Hex like <code style="font-family:'DM Mono',monospace">#8b5cf6</code>. Used for chips, focus rings, and the AI-draft button. Empty falls back to the default purple.</div>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px">
-        <button class="btn btn-solid btn-sm" onclick="saveWorkspaceBranding()" ${isAdmin ? '' : 'disabled'}>Save</button>
+        <button class="btn btn-solid btn-sm" data-action="settings.saveBranding" ${isAdmin ? '' : 'disabled'}>Save</button>
         <span id="brand-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;align-self:center"></span>
       </div>
     </div>
@@ -262,7 +271,7 @@ function settingsPortalCopy(ws, isAdmin) {
         <input class="form-input" id="brand-portal-footer" type="text" maxlength="500" value="${window.escAttr(footer)}" placeholder="© Your Company 2026 · Need urgent help? Call +1 555 0100" ${isAdmin ? '' : 'disabled'}/>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px">
-        <button class="btn btn-solid btn-sm" onclick="savePortalCopy()" ${isAdmin ? '' : 'disabled'}>Save portal copy</button>
+        <button class="btn btn-solid btn-sm" data-action="settings.savePortalCopy" ${isAdmin ? '' : 'disabled'}>Save portal copy</button>
         <span id="portal-copy-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;align-self:center"></span>
       </div>
     </div>
@@ -302,14 +311,14 @@ function settingsPortalDomain(ws, isAdmin) {
         </div>
       ` : ''}
       <div style="display:flex;gap:8px;margin-top:6px">
-        <button class="btn btn-solid btn-sm" onclick="savePortalDomain()" ${isAdmin ? '' : 'disabled'}>Save hostname</button>
-        ${domain ? `<button class="btn btn-sm" onclick="verifyPortalDomain()" ${isAdmin ? '' : 'disabled'}>${verified ? 'Re-verify' : 'Verify now'}</button>` : ''}
+        <button class="btn btn-solid btn-sm" data-action="settings.savePortalDomain" ${isAdmin ? '' : 'disabled'}>Save hostname</button>
+        ${domain ? `<button class="btn btn-sm" data-action="settings.verifyPortalDomain" ${isAdmin ? '' : 'disabled'}>${verified ? 'Re-verify' : 'Verify now'}</button>` : ''}
         <span id="portal-domain-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;align-self:center"></span>
       </div>
     </div>`;
 }
 
-export async function savePortalDomain() {
+async function savePortalDomain() {
   if (!window.isAdmin()) return;
   const domain = document.getElementById('brand-portal-domain').value.trim().toLowerCase();
   const msg = document.getElementById('portal-domain-msg');
@@ -328,7 +337,7 @@ export async function savePortalDomain() {
   }
 }
 
-export async function verifyPortalDomain() {
+async function verifyPortalDomain() {
   if (!window.isAdmin()) return;
   const msg = document.getElementById('portal-domain-msg');
   msg.textContent = 'Looking up DNS...'; msg.style.color = 'var(--ink3)';
@@ -355,7 +364,7 @@ export async function verifyPortalDomain() {
   }
 }
 
-export async function savePortalCopy() {
+async function savePortalCopy() {
   if (!window.isAdmin()) return;
   const tagline = document.getElementById('brand-portal-tagline').value.trim();
   const intro   = document.getElementById('brand-portal-intro').value.trim();
@@ -377,7 +386,7 @@ export async function savePortalCopy() {
   }
 }
 
-export async function uploadWorkspaceLogo() {
+async function uploadWorkspaceLogo() {
   if (!window.isAdmin()) return;
   const fileEl = document.getElementById('brand-logo-file');
   const file = fileEl?.files?.[0];
@@ -430,7 +439,7 @@ export async function uploadWorkspaceLogo() {
   }
 }
 
-export async function saveWorkspaceBranding() {
+async function saveWorkspaceBranding() {
   if (!window.isAdmin()) return;
   const logoUrl = document.getElementById('brand-logo-url').value.trim();
   const color   = document.getElementById('brand-primary-color').value.trim();
@@ -501,7 +510,7 @@ function settingsNotifications() {
             <div style="font-size:11px;color:var(--ink3);margin-top:2px">${t.d}</div>
           </div>
           <label class="toggle">
-            <input type="checkbox" ${NOTIF_PREFS[t.k]?'checked':''} onchange="toggleNotifPref('${t.k}',this.checked)">
+            <input type="checkbox" ${NOTIF_PREFS[t.k]?'checked':''} data-change-action="settings.toggleNotif" data-key="${t.k}">
             <span class="toggle-slider"></span>
           </label>
         </div>`).join('')}
@@ -516,7 +525,7 @@ function settingsNotifications() {
           <div style="font-size:11px;color:var(--ink3);margin-top:2px">A teammate @-mentions you in an internal note.</div>
         </div>
         <label class="toggle">
-          <input type="checkbox" ${mentionEmailOn ? 'checked' : ''} onchange="setMentionEmailPref(this.checked)">
+          <input type="checkbox" ${mentionEmailOn ? 'checked' : ''} data-change-action="settings.setMentionEmail">
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -524,7 +533,7 @@ function settingsNotifications() {
     </div>`;
 }
 
-export async function setMentionEmailPref(enabled) {
+async function setMentionEmailPref(enabled) {
   const msg = document.getElementById('mention-email-msg');
   if (msg) { msg.textContent = 'Saving...'; msg.style.color = 'var(--ink3)'; }
   try {
@@ -539,7 +548,7 @@ export async function setMentionEmailPref(enabled) {
   }
 }
 
-export function toggleNotifPref(k, v) {
+function toggleNotifPref(k, v) {
   NOTIF_PREFS[k] = v;
   localStorage.setItem('notif_prefs', JSON.stringify(NOTIF_PREFS));
   refreshNotifBadge();
@@ -568,11 +577,11 @@ function settingsAI() {
       <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">Used by the <strong style="color:var(--ink2)">AI Draft</strong> button in the ticket composer. Stored locally in your browser — never sent to our servers.</div>
       <div class="form-row">
         <label class="form-label">API key</label>
-        <input class="form-input" type="password" id="set-ai-key" value="${AI_API_KEY}" placeholder="sk-ant-…" oninput="setAIKey(this.value)" autocomplete="off"/>
+        <input class="form-input" type="password" id="set-ai-key" value="${AI_API_KEY}" placeholder="sk-ant-…" data-input-action="settings.setAiKey" autocomplete="off"/>
       </div>
       <div class="form-row">
         <label class="form-label">Model</label>
-        <select class="form-input" onchange="setAIModel(this.value)">
+        <select class="form-input" data-change-action="settings.setAiModel">
           ${models.map(m => `<option value="${m.v}" ${AI_MODEL===m.v?'selected':''}>${m.l}</option>`).join('')}
         </select>
       </div>
@@ -591,7 +600,7 @@ function settingsAI() {
           <div style="font-size:13px;font-weight:500;color:var(--ink)">Auto-bump priority on angry sentiment</div>
           <div style="font-size:11px;color:var(--ink3);margin-top:2px">Workspace-wide. Admins only.</div>
         </div>
-        <label class="toggle"><input type="checkbox" ${autoBumpOn ? 'checked' : ''} onchange="setAutoPriorityBump(this.checked)" ${window.isAdmin() ? '' : 'disabled'}/><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" ${autoBumpOn ? 'checked' : ''} data-change-action="settings.setAutoBump" ${window.isAdmin() ? '' : 'disabled'}/><span class="toggle-slider"></span></label>
       </div>
       <div id="auto-bump-msg" style="font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;margin-top:8px;min-height:14px"></div>
     </div>
@@ -615,13 +624,13 @@ function settingsCsatCadence(ws) {
         <div style="font-size:11px;color:var(--ink3);margin-top:4px">Currently: <span style="font-family:'DM Mono',monospace;color:var(--ink2)">${window.escHtml(cadenceStr)}</span></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px">
-        <button class="btn btn-solid btn-sm" onclick="saveCsatCadence()" ${isAdmin ? '' : 'disabled'}>Save cadence</button>
+        <button class="btn btn-solid btn-sm" data-action="settings.saveCsat" ${isAdmin ? '' : 'disabled'}>Save cadence</button>
         <span id="csat-cadence-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;align-self:center"></span>
       </div>
     </div>`;
 }
 
-export async function saveCsatCadence() {
+async function saveCsatCadence() {
   if (!window.isAdmin()) return;
   const raw = (document.getElementById('csat-cadence-input').value || '').trim();
   const msg = document.getElementById('csat-cadence-msg');
@@ -656,7 +665,7 @@ export async function saveCsatCadence() {
   }
 }
 
-export async function setAutoPriorityBump(enabled) {
+async function setAutoPriorityBump(enabled) {
   if (!window.isAdmin()) return;
   const msg = document.getElementById('auto-bump-msg');
   if (msg) { msg.textContent = 'Saving...'; msg.style.color = 'var(--ink3)'; }
@@ -688,24 +697,24 @@ function settingsKnowledgeBase() {
           <div style="font-size:13px;font-weight:500;color:var(--ink)">Integration enabled</div>
           <div style="font-size:11px;color:var(--ink3);margin-top:2px">When on, the composer shows an "AI Reply with KB" action and the ticket sidebar lists matching articles.</div>
         </div>
-        <label class="toggle"><input type="checkbox" ${cfg.enabled?'checked':''} onchange="setKbCfg('enabled',this.checked)"><span class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" ${cfg.enabled?'checked':''} data-change-action="settings.setKbCfg" data-key="enabled"><span class="toggle-slider"></span></label>
       </div>
       <div class="form-row"><label class="form-label">Base URL</label>
-        <input class="form-input" id="kb-base-url" placeholder="https://kb.example.com/api/v1" value="${esc(cfg.baseUrl)}" oninput="setKbCfg('baseUrl',this.value)"/>
+        <input class="form-input" id="kb-base-url" placeholder="https://kb.example.com/api/v1" value="${esc(cfg.baseUrl)}" data-input-action="settings.setKbCfg" data-key="baseUrl"/>
       </div>
       <div class="form-row"><label class="form-label">Search path <span style="color:var(--ink3);font-family:'DM Mono',monospace;font-size:11px;font-weight:400">— use {query} as placeholder</span></label>
-        <input class="form-input" id="kb-search-path" placeholder="/articles?q={query}&amp;limit=5" value="${esc(cfg.searchPath)}" oninput="setKbCfg('searchPath',this.value)"/>
+        <input class="form-input" id="kb-search-path" placeholder="/articles?q={query}&amp;limit=5" value="${esc(cfg.searchPath)}" data-input-action="settings.setKbCfg" data-key="searchPath"/>
       </div>
       <div class="form-grid">
         <div class="form-row"><label class="form-label">Auth header (optional)</label>
-          <input class="form-input" placeholder="Authorization" value="${esc(cfg.authHeader)}" oninput="setKbCfg('authHeader',this.value)"/>
+          <input class="form-input" placeholder="Authorization" value="${esc(cfg.authHeader)}" data-input-action="settings.setKbCfg" data-key="authHeader"/>
         </div>
         <div class="form-row"><label class="form-label">Header prefix</label>
-          <input class="form-input" placeholder="Bearer " value="${esc(cfg.authPrefix)}" oninput="setKbCfg('authPrefix',this.value)"/>
+          <input class="form-input" placeholder="Bearer " value="${esc(cfg.authPrefix)}" data-input-action="settings.setKbCfg" data-key="authPrefix"/>
         </div>
       </div>
       <div class="form-row"><label class="form-label">API key / token (optional)</label>
-        <input class="form-input" type="password" placeholder="—" value="${esc(cfg.apiKey)}" oninput="setKbCfg('apiKey',this.value)" autocomplete="off"/>
+        <input class="form-input" type="password" placeholder="—" value="${esc(cfg.apiKey)}" data-input-action="settings.setKbCfg" data-key="apiKey" autocomplete="off"/>
       </div>
     </div>
     <div class="settings-section">
@@ -713,19 +722,19 @@ function settingsKnowledgeBase() {
       <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">Tell the adapter where to find articles inside the JSON response. Field names support dot notation (e.g. <code style="font-family:'DM Mono',monospace">data.items</code>).</div>
       <div class="form-grid">
         <div class="form-row"><label class="form-label">Results path</label>
-          <input class="form-input" placeholder="(empty = response root)" value="${esc(cfg.resultsField)}" oninput="setKbCfg('resultsField',this.value)"/>
+          <input class="form-input" placeholder="(empty = response root)" value="${esc(cfg.resultsField)}" data-input-action="settings.setKbCfg" data-key="resultsField"/>
         </div>
         <div class="form-row"><label class="form-label">Max results</label>
-          <input class="form-input" type="number" min="1" max="20" value="${cfg.maxResults}" oninput="setKbCfg('maxResults',parseInt(this.value,10)||3)"/>
+          <input class="form-input" type="number" min="1" max="20" value="${cfg.maxResults}" data-input-action="settings.setKbCfg" data-key="maxResults"/>
         </div>
       </div>
       <div class="form-grid">
-        <div class="form-row"><label class="form-label">ID field</label><input class="form-input" value="${esc(cfg.idField)}" oninput="setKbCfg('idField',this.value)"/></div>
-        <div class="form-row"><label class="form-label">Title field</label><input class="form-input" value="${esc(cfg.titleField)}" oninput="setKbCfg('titleField',this.value)"/></div>
+        <div class="form-row"><label class="form-label">ID field</label><input class="form-input" value="${esc(cfg.idField)}" data-input-action="settings.setKbCfg" data-key="idField"/></div>
+        <div class="form-row"><label class="form-label">Title field</label><input class="form-input" value="${esc(cfg.titleField)}" data-input-action="settings.setKbCfg" data-key="titleField"/></div>
       </div>
       <div class="form-grid">
-        <div class="form-row"><label class="form-label">Body field</label><input class="form-input" value="${esc(cfg.bodyField)}" oninput="setKbCfg('bodyField',this.value)"/></div>
-        <div class="form-row"><label class="form-label">URL field</label><input class="form-input" value="${esc(cfg.urlField)}" oninput="setKbCfg('urlField',this.value)"/></div>
+        <div class="form-row"><label class="form-label">Body field</label><input class="form-input" value="${esc(cfg.bodyField)}" data-input-action="settings.setKbCfg" data-key="bodyField"/></div>
+        <div class="form-row"><label class="form-label">URL field</label><input class="form-input" value="${esc(cfg.urlField)}" data-input-action="settings.setKbCfg" data-key="urlField"/></div>
       </div>
     </div>
     <div class="settings-section">
@@ -733,7 +742,7 @@ function settingsKnowledgeBase() {
       <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">Send a sample query against the configured endpoint to verify the path, auth, and field mapping.</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input class="form-input" id="kb-test-q" placeholder="e.g. password reset" style="flex:1;min-width:200px" value="${esc(testState?.query || 'password reset')}"/>
-        <button class="btn btn-sm" onclick="testKbConnection()" ${cfg.enabled?'':'disabled'}>Run test</button>
+        <button class="btn btn-sm" data-action="settings.testKb" ${cfg.enabled?'':'disabled'}>Run test</button>
       </div>
       ${testState ? `
         <div style="margin-top:14px;padding:12px;border:1px solid ${testState.error?'var(--red)':'var(--green)'};border-radius:var(--r);background:${testState.error?'var(--red-lt)':'var(--green-lt)'}">
@@ -745,13 +754,13 @@ function settingsKnowledgeBase() {
     </div>`;
 }
 
-export function setKbCfg(key, value) {
+function setKbCfg(key, value) {
   window.KB_INTEGRATION[key] = value;
   window.saveKbIntegration();
   window.KB_TICKET_CACHE.clear();
 }
 
-export async function testKbConnection() {
+async function testKbConnection() {
   const q = document.getElementById('kb-test-q')?.value?.trim() || 'password reset';
   KB_TEST_STATE = { query: q, loading: true };
   window.renderPage('settings');
@@ -764,10 +773,10 @@ function settingsLanguage() {
   return `
     <div class="settings-section">
       <div class="settings-h">Your reading language</div>
-      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">When ticket-thread translation is enabled (toggle above the conversation), customer messages render in this language. Replies you compose can also be auto-translated to the customer's language before sending. Detection and translation use the Claude API key configured in <span class="link" onclick="setSettingsTab('ai')">AI Assistant</span>.</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">When ticket-thread translation is enabled (toggle above the conversation), customer messages render in this language. Replies you compose can also be auto-translated to the customer's language before sending. Detection and translation use the Claude API key configured in <span class="link" data-action="settings.setTab" data-tab="ai">AI Assistant</span>.</div>
       <div class="form-row">
         <label class="form-label">Preferred language</label>
-        <select class="form-input" id="set-pref-lang" onchange="setAgentPreferredLang(this.value)">
+        <select class="form-input" id="set-pref-lang" data-change-action="settings.setLang">
           ${TRANSLATOR_LANGS.map(l => `<option value="${l}" ${AGENT_PREFERRED_LANG===l?'selected':''}>${l}</option>`).join('')}
         </select>
       </div>
@@ -839,8 +848,8 @@ function settingsIntegrations() {
       </div>
 
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn btn-solid btn-sm" onclick="saveSlackIntegration()">Save</button>
-        ${slack ? '<button class="btn btn-sm btn-danger" onclick="deleteSlackIntegration()">Disconnect</button>' : ''}
+        <button class="btn btn-solid btn-sm" data-action="settings.saveSlack">Save</button>
+        ${slack ? '<button class="btn btn-sm btn-danger" data-action="settings.deleteSlack">Disconnect</button>' : ''}
         <span id="slack-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace"></span>
       </div>
     </div>
@@ -880,14 +889,14 @@ function settingsStripeSection() {
         <span style="font-size:13px;color:var(--ink2)">Active</span>
       </div>
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn btn-solid btn-sm" onclick="saveStripeIntegration()">${connected ? 'Update' : 'Connect'}</button>
-        ${connected ? '<button class="btn btn-sm btn-danger" onclick="deleteStripeIntegration()">Disconnect</button>' : ''}
+        <button class="btn btn-solid btn-sm" data-action="settings.saveStripe">${connected ? 'Update' : 'Connect'}</button>
+        ${connected ? '<button class="btn btn-sm btn-danger" data-action="settings.deleteStripe">Disconnect</button>' : ''}
         <span id="stripe-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace"></span>
       </div>
     </div>`;
 }
 
-export async function saveStripeIntegration() {
+async function saveStripeIntegration() {
   if (!window.isAdmin()) return;
   const key    = document.getElementById('stripe-key').value.trim();
   const active = document.getElementById('stripe-active').checked;
@@ -922,7 +931,7 @@ export async function saveStripeIntegration() {
 // triggers that branch above.
 function rebuildKeyForToggle() { return null; }
 
-export async function deleteStripeIntegration() {
+async function deleteStripeIntegration() {
   if (!window.isAdmin()) return;
   if (!confirm('Disconnect Stripe? Ticket sidebars will stop showing subscription + charge context.')) return;
   try {
@@ -971,14 +980,14 @@ function settingsShopifySection() {
         <span style="font-size:13px;color:var(--ink2)">Active</span>
       </div>
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn btn-solid btn-sm" onclick="saveShopifyIntegration()">${connected ? 'Update' : 'Connect'}</button>
-        ${connected ? '<button class="btn btn-sm btn-danger" onclick="deleteShopifyIntegration()">Disconnect</button>' : ''}
+        <button class="btn btn-solid btn-sm" data-action="settings.saveShopify">${connected ? 'Update' : 'Connect'}</button>
+        ${connected ? '<button class="btn btn-sm btn-danger" data-action="settings.deleteShopify">Disconnect</button>' : ''}
         <span id="shopify-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace"></span>
       </div>
     </div>`;
 }
 
-export async function saveShopifyIntegration() {
+async function saveShopifyIntegration() {
   if (!window.isAdmin()) return;
   const shop   = document.getElementById('shopify-shop').value.trim();
   const token  = document.getElementById('shopify-token').value.trim();
@@ -1009,7 +1018,7 @@ export async function saveShopifyIntegration() {
   }
 }
 
-export async function deleteShopifyIntegration() {
+async function deleteShopifyIntegration() {
   if (!window.isAdmin()) return;
   if (!confirm('Disconnect Shopify? Customer sidebars will stop showing order history.')) return;
   try {
@@ -1071,9 +1080,9 @@ function settingsOutgoingWebhooksSection() {
             <span style="color:var(--ink4);margin-left:8px">${w.events.length} event${w.events.length === 1 ? '' : 's'}</span>
           </div>
         </div>
-        <button class="btn btn-sm" onclick="editOutgoingWebhook('${window.escAttr(w.id)}')">Edit</button>
-        <button class="btn btn-sm" onclick="showOutgoingWebhookDeliveries('${window.escAttr(w.id)}', '${window.escAttr(w.name)}')">Deliveries</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteOutgoingWebhook('${window.escAttr(w.id)}')">Delete</button>
+        <button class="btn btn-sm" data-action="settings.editWebhook" data-id="${window.escAttr(w.id)}">Edit</button>
+        <button class="btn btn-sm" data-action="settings.webhookDeliveries" data-id="${window.escAttr(w.id)}" data-name="${window.escAttr(w.name)}">Deliveries</button>
+        <button class="btn btn-sm btn-danger" data-action="settings.deleteWebhook" data-id="${window.escAttr(w.id)}">Delete</button>
       </div>`;
   }).join('');
 
@@ -1106,14 +1115,14 @@ function settingsOutgoingWebhooksSection() {
           ${eventCheckboxes}
         </div>
         <div style="display:flex;gap:8px;margin-top:10px">
-          <button class="btn btn-solid btn-sm" onclick="createOutgoingWebhook()">Create</button>
+          <button class="btn btn-solid btn-sm" data-action="settings.createWebhook">Create</button>
           <span id="wh-msg" style="margin-left:auto;font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace"></span>
         </div>
       </div>
     </div>`;
 }
 
-export async function createOutgoingWebhook() {
+async function createOutgoingWebhook() {
   if (!window.isAdmin()) return;
   const name   = document.getElementById('wh-name').value.trim();
   const url    = document.getElementById('wh-url').value.trim();
@@ -1136,7 +1145,7 @@ export async function createOutgoingWebhook() {
   }
 }
 
-export async function deleteOutgoingWebhook(id) {
+async function deleteOutgoingWebhook(id) {
   if (!window.isAdmin()) return;
   if (!confirm('Delete this webhook? Events will stop firing immediately.')) return;
   try {
@@ -1183,7 +1192,7 @@ function settingsSuppressionListSection() {
             <span style="color:var(--ink4);margin-left:8px">${c.email_bounce_count} bounce${c.email_bounce_count === 1 ? '' : 's'}</span>
           </div>
         </div>
-        <button class="btn btn-sm" onclick="resetSuppressedCustomer('${window.escAttr(c.id)}')">Reset</button>
+        <button class="btn btn-sm" data-action="settings.resetSuppressed" data-id="${window.escAttr(c.id)}">Reset</button>
       </div>`;
   }).join('');
 
@@ -1197,7 +1206,7 @@ function settingsSuppressionListSection() {
     </div>`;
 }
 
-export async function resetSuppressedCustomer(customerId) {
+async function resetSuppressedCustomer(customerId) {
   if (!window.isAdmin()) return;
   if (!confirm('Reset this customer\'s bounce state? Sends will resume immediately.')) return;
   try {
@@ -1227,7 +1236,7 @@ export async function resetSuppressedCustomer(customerId) {
 // so the user gets immediate feedback. No re-fetch or live update —
 // this is a snapshot view, the user closes + reopens for a refresh.
 
-export function showOutgoingWebhookDeliveries(id, name) {
+function showOutgoingWebhookDeliveries(id, name) {
   showModal(
     `Deliveries · ${window.escHtml(name)}`,
     `<div id="wh-deliveries-body" data-webhook-id="${window.escAttr(id)}" style="min-height:120px;color:var(--ink3);font-size:12px">Loading…</div>`,
@@ -1267,7 +1276,7 @@ function renderDeliveryRows(webhookId, deliveries) {
           ? `HTTP ${d.last_status}`
           : (d.last_error ? `<span title="${window.escAttr(d.last_error)}">err</span>` : '—');
         const retryBtn = d.state === 'exhausted'
-          ? `<button class="btn btn-sm" onclick="retryWebhookDelivery('${window.escAttr(webhookId)}','${window.escAttr(d.id)}')">Retry</button>`
+          ? `<button class="btn btn-sm" data-action="settings.retryDelivery" data-webhook-id="${window.escAttr(webhookId)}" data-delivery-id="${window.escAttr(d.id)}">Retry</button>`
           : '';
         return `
           <div><span style="color:${stateColor(d.state)};font-weight:600;text-transform:uppercase;font-family:'DM Mono',monospace">${d.state}</span></div>
@@ -1282,7 +1291,7 @@ function renderDeliveryRows(webhookId, deliveries) {
     </div>`;
 }
 
-export async function retryWebhookDelivery(webhookId, deliveryId) {
+async function retryWebhookDelivery(webhookId, deliveryId) {
   try {
     await apiPost(`/api/v1/integrations/webhooks/${encodeURIComponent(webhookId)}/deliveries/${encodeURIComponent(deliveryId)}/retry`);
     // Refresh the modal in-place so the row flips to pending with
@@ -1303,7 +1312,7 @@ export async function retryWebhookDelivery(webhookId, deliveryId) {
 // rotate flow surfaces the new secret in the same one-shot banner
 // the create flow uses.
 
-export function editOutgoingWebhook(id) {
+function editOutgoingWebhook(id) {
   if (!window.isAdmin()) return;
   const w = OUTGOING_WEBHOOKS.find((x) => x.id === id);
   if (!w) return;
@@ -1314,8 +1323,9 @@ export function editOutgoingWebhook(id) {
     </label>`).join('');
   // onConfirm-with-callback is avoided here: showModal's .toString()
   // round-trip loses our module-scope imports (apiPatch in particular),
-  // so the buttons are inlined into the body and routed through the
-  // window bridge instead.
+  // so the buttons are inlined into the body and routed through
+  // data-action delegation (settings.saveWebhookEdit / rotateSecret /
+  // closeModal) instead.
   showModal(`Edit webhook · ${window.escHtml(w.name)}`,
     `<input type="hidden" id="we-id" value="${window.escAttr(w.id)}"/>
      <div class="form-row">
@@ -1335,8 +1345,8 @@ export function editOutgoingWebhook(id) {
        <span style="font-size:13px;color:var(--ink2)">Active</span>
      </div>
      <div style="display:flex;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--rule)">
-       <button class="btn" onclick="closeModal()">Cancel</button>
-       <button class="btn btn-solid" onclick="saveOutgoingWebhookEdit()">Save</button>
+       <button class="btn" data-action="settings.closeModal">Cancel</button>
+       <button class="btn btn-solid" data-action="settings.saveWebhookEdit">Save</button>
        <span id="we-msg" style="margin-left:auto;font-size:11px;font-family:'DM Mono',monospace;color:var(--ink3)"></span>
      </div>
      <div style="margin-top:18px;padding:12px;background:var(--off2);border:1px solid var(--rule);border-radius:var(--r)">
@@ -1344,16 +1354,16 @@ export function editOutgoingWebhook(id) {
        <div style="font-size:11px;color:var(--ink3);margin-bottom:10px;line-height:1.5">
          Generates a fresh secret and invalidates the old one immediately. In-flight retries will start failing HMAC verification at the receiver until you update its configuration.
        </div>
-       <button class="btn btn-sm btn-danger" onclick="rotateOutgoingWebhookSecret()">Rotate secret</button>
+       <button class="btn btn-sm btn-danger" data-action="settings.rotateSecret">Rotate secret</button>
      </div>`,
     null, null, true,
   );
 }
 
-// onConfirm callback. Module-scope so showModal's .toString() roundtrip
-// resolves it via the window bridge. Reads the form by id rather than
-// closing over the webhook record (see modal.js comment).
-export async function saveOutgoingWebhookEdit() {
+// Invoked from the edit modal's Save button via the settings.saveWebhookEdit
+// delegated action. Reads the form by id rather than closing over the webhook
+// record (see modal.js comment).
+async function saveOutgoingWebhookEdit() {
   const id     = document.getElementById('we-id').value;
   const name   = document.getElementById('we-name').value.trim();
   const url    = document.getElementById('we-url').value.trim();
@@ -1376,7 +1386,7 @@ export async function saveOutgoingWebhookEdit() {
   }
 }
 
-export async function rotateOutgoingWebhookSecret() {
+async function rotateOutgoingWebhookSecret() {
   const id = document.getElementById('we-id').value;
   if (!confirm('Rotate the signing secret? The current secret will stop working immediately.')) return;
   const msg = document.getElementById('we-msg');
@@ -1395,7 +1405,7 @@ export async function rotateOutgoingWebhookSecret() {
   }
 }
 
-export async function saveSlackIntegration() {
+async function saveSlackIntegration() {
   if (!window.isAdmin()) return;
   const url           = document.getElementById('slack-url').value.trim();
   const channel       = document.getElementById('slack-channel').value.trim();
@@ -1433,7 +1443,7 @@ export async function saveSlackIntegration() {
   }
 }
 
-export async function deleteSlackIntegration() {
+async function deleteSlackIntegration() {
   if (!window.isAdmin()) return;
   if (!confirm('Disconnect Slack? Future ticket events won\'t notify until you reconnect.')) return;
   try {
@@ -1444,3 +1454,69 @@ export async function deleteSlackIntegration() {
     alert(`Couldn't disconnect: ${err?.message || err}`);
   }
 }
+
+// ─── Delegated actions ──────────────────────────────────────────────────────
+// All settings panels are injected via innerHTML, so the document-level
+// dispatcher in core/event-delegation.js catches these. setSettingsTab is the
+// one export that stays window-reachable (explicit app.js bridge entry) for
+// notifications' cross-module reach.
+const setKbCfgHandler = (ds, el) => {
+  let v;
+  if (el.type === 'checkbox')        v = el.checked;
+  else if (ds.key === 'maxResults')  v = parseInt(el.value, 10) || 3;
+  else                               v = el.value;
+  setKbCfg(ds.key, v);
+};
+
+registerActions({
+  'settings.setTab':             (ds) => setSettingsTab(ds.tab),
+  'settings.logout':            () => window.logout(),
+  'settings.resetCollapsed':    () => resetAllCollapsedSections(),
+  // workspace branding / portal
+  'settings.uploadLogo':        () => uploadWorkspaceLogo(),
+  'settings.saveBranding':      () => saveWorkspaceBranding(),
+  'settings.savePortalCopy':    () => savePortalCopy(),
+  'settings.savePortalDomain':  () => savePortalDomain(),
+  'settings.verifyPortalDomain':() => verifyPortalDomain(),
+  // CSAT / KB test
+  'settings.saveCsat':          () => saveCsatCadence(),
+  'settings.testKb':            () => testKbConnection(),
+  // integrations
+  'settings.saveSlack':         () => saveSlackIntegration(),
+  'settings.deleteSlack':       () => deleteSlackIntegration(),
+  'settings.saveStripe':        () => saveStripeIntegration(),
+  'settings.deleteStripe':      () => deleteStripeIntegration(),
+  'settings.saveShopify':       () => saveShopifyIntegration(),
+  'settings.deleteShopify':     () => deleteShopifyIntegration(),
+  // outgoing webhooks
+  'settings.createWebhook':     () => createOutgoingWebhook(),
+  'settings.editWebhook':       (ds) => editOutgoingWebhook(ds.id),
+  'settings.deleteWebhook':     (ds) => deleteOutgoingWebhook(ds.id),
+  'settings.webhookDeliveries': (ds) => showOutgoingWebhookDeliveries(ds.id, ds.name),
+  'settings.retryDelivery':     (ds) => retryWebhookDelivery(ds.webhookId, ds.deliveryId),
+  'settings.saveWebhookEdit':   () => saveOutgoingWebhookEdit(),
+  'settings.rotateSecret':      () => rotateOutgoingWebhookSecret(),
+  'settings.closeModal':        () => closeModal(),
+  // suppression list
+  'settings.resetSuppressed':   (ds) => resetSuppressedCustomer(ds.id),
+});
+
+registerChangeActions({
+  'settings.toggleDark':    (ds, el) => { setTheme(el.checked ? 'dark' : 'light'); window.renderPage('settings'); },
+  'settings.toggleSystem':  (ds, el) => { setTheme(el.checked ? 'system' : ds.fallback); window.renderPage('settings'); },
+  'settings.toggleNotif':   (ds, el) => toggleNotifPref(ds.key, el.checked),
+  'settings.setMentionEmail':(ds, el) => setMentionEmailPref(el.checked),
+  'settings.setAiModel':    (ds, el) => setAIModel(el.value),
+  'settings.setAutoBump':   (ds, el) => setAutoPriorityBump(el.checked),
+  'settings.setLang':       (ds, el) => setAgentPreferredLang(el.value),
+  'settings.setKbCfg':      setKbCfgHandler,
+});
+
+registerInputActions({
+  'settings.updateName':     (ds, el) => updateProfileName(el.value),
+  'settings.updateInitials': (ds, el) => updateProfileInitials(el.value),
+  'settings.setAiKey':       (ds, el) => setAIKey(el.value),
+  'settings.setKbCfg':       setKbCfgHandler,
+  // color picker → mirror its value into the hex text input
+  'settings.syncBrandColor': (ds, el) => { const t = document.getElementById('brand-primary-color'); if (t) t.value = el.value; },
+});

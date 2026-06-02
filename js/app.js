@@ -48,7 +48,7 @@ import {
   macAddStep, macRemoveStep, macStepKindChange,
   macNew, macEdit, macDelete, renderMacros,
 } from './tickets/macros.js';
-import { addMockAttachment, removeAttachment, showAttachPanel } from './tickets/attachments.js';
+import { showAttachPanel } from './tickets/attachments.js';
 import { renderAI, initAI } from './ai/page.js';
 import { renderPortal } from './portal/preview.js';
 import { renderInbox } from './inbox/index.js';
@@ -161,7 +161,6 @@ import * as Snooze from './tickets/snooze.js';
 import * as Linked from './tickets/linked.js';
 import * as Mentions from './tickets/mentions.js';
 import * as Macros from './tickets/macros.js';
-import * as Attachments from './tickets/attachments.js';
 import * as KBIntegration from './kb-integration/index.js';
 import * as Modal from './core/modal.js';
 import * as Collapsible from './core/collapsible.js';
@@ -433,7 +432,7 @@ Object.assign(
     showAgentLogin, submitAgentLogin },
   Theme, AIClient, Summarize, Translate, AIReply,
   TimeTracking, Snooze, Linked, Mentions,
-  Macros, Attachments,
+  Macros,
   KBIntegration,
   Modal, Collapsible, Keybindings,
   GlobalSearch,

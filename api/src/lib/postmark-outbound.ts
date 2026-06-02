@@ -83,11 +83,18 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     headers.push({ Name: 'In-Reply-To', Value: msgId });
     headers.push({ Name: 'References', Value: msgId });
   }
-  if (args.replyTo) {
-    headers.push({ Name: 'Reply-To', Value: args.replyTo });
-  }
-
-  const body = {
+  // Reply-To is a reserved header in Postmark's Email API: passing it inside
+  // the Headers array is rejected with HTTP 422 "Header 'Reply-To' not
+  // allowed". It must go in the dedicated top-level `ReplyTo` field instead.
+  const body: {
+    From: string;
+    To: string;
+    Subject: string;
+    TextBody: string;
+    MessageStream: string;
+    Headers: Array<{ Name: string; Value: string }>;
+    ReplyTo?: string;
+  } = {
     From: formatFrom(args.fromName, args.fromEmail),
     To: args.to,
     Subject: args.subject,
@@ -95,6 +102,9 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     MessageStream: STREAM,
     Headers: headers,
   };
+  if (args.replyTo) {
+    body.ReplyTo = args.replyTo;
+  }
 
   const res = await fetch(ENDPOINT, {
     method: 'POST',

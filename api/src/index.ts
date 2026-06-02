@@ -103,5 +103,8 @@ startCsatReminderWorker(supabaseAdmin);
 
 export default {
   port: env.PORT,
+  // Triage and other AI calls can run ~12s; Bun's default idleTimeout is 10s,
+  // which closes the socket mid-response. Raise it so long requests complete.
+  idleTimeout: 30,
   fetch: app.fetch,
 };

@@ -10,11 +10,7 @@ import {
   showTranslatorModal, runTranslator, copyTxResult,
 } from './ai/translate.js';
 import { aiAction } from './ai/reply.js';
-import {
-  snoozeTicket, unsnoozeTicket, checkSnoozeWakeups,
-  formatSnoozeUntil, snoozePresetIso,
-  showSnoozeModal, bulkSnoozeTickets,
-} from './tickets/snooze.js';
+import { checkSnoozeWakeups } from './tickets/snooze.js';
 import {
   SLA_WARN_FRACTION, BUSINESS_HOURS,
   slaNowForDemo, invalidateSLAClock,
@@ -142,7 +138,6 @@ import * as AIClient from './ai/client.js';
 import * as Summarize from './ai/summarize.js';
 import * as Translate from './ai/translate.js';
 import * as AIReply from './ai/reply.js';
-import * as Snooze from './tickets/snooze.js';
 import * as Macros from './tickets/macros.js';
 import * as KBIntegration from './kb-integration/index.js';
 import * as Modal from './core/modal.js';
@@ -414,7 +409,6 @@ Object.assign(
     // Agent (real-auth) sign-in panel — onclick handlers in static index.html
     showAgentLogin, submitAgentLogin },
   Theme, AIClient, Summarize, Translate, AIReply,
-  Snooze,
   Macros,
   KBIntegration,
   Modal, Collapsible, Keybindings,

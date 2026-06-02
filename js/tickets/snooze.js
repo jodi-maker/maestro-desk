@@ -13,12 +13,21 @@
 //
 // SESSION, CURRENT_TICKET, CURRENT_PAGE, TICKET_SELECTED_IDS come from
 // core/state.js via the global lexical env.
+//
+// No window-bridge namespace: unsnooze + showSnoozeModal are consumed by
+// tickets/detail.js (td.unsnooze / td.snooze) and formatSnoozeUntil by
+// detail.js + list.js, all via direct ES import; checkSnoozeWakeups is
+// called by app.js's wakeup timer. The inline handlers — the preset chips
+// and the list-page "Snooze…" bulk button — are delegated as snooze.preset
+// and snooze.bulkSnooze below. snooze.bulkSnooze fires from a data-action
+// rendered by tickets/list.js but is owned here (this module owns the fn).
 
 import { refreshNotifBadge } from '../notifications/index.js';
 import { refreshTicketSLA } from './sla.js';
 import { apiPost, apiDelete } from '../core/api-client.js';
+import { registerActions } from '../core/event-delegation.js';
 
-export async function snoozeTicket(id, untilIso, reason) {
+async function snoozeTicket(id, untilIso, reason) {
   const t = TICKETS.find(x => x.id === id);
   if (!t || !untilIso) return;
   const until = new Date(untilIso);
@@ -93,7 +102,7 @@ export function formatSnoozeUntil(iso) {
   return d.toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
 }
 
-export function snoozePresetIso(key) {
+function snoozePresetIso(key) {
   const d = new Date();
   if (key === '1h')   { d.setHours(d.getHours() + 1); return d.toISOString(); }
   if (key === '4h')   { d.setHours(d.getHours() + 4); return d.toISOString(); }
@@ -124,7 +133,7 @@ export function showSnoozeModal(ticketId) {
     { key:'monday',   label:'Next Monday 9:00' },
   ];
   const pillRow = presets.map(p => `
-    <button type="button" class="btn btn-sm" style="flex:1" onclick="document.getElementById('snz-when').value=snoozePresetIso('${p.key}').slice(0,16)">${p.label}</button>`).join('');
+    <button type="button" class="btn btn-sm" style="flex:1" data-action="snooze.preset" data-key="${p.key}">${p.label}</button>`).join('');
   const defaultIso = snoozePresetIso('4h').slice(0, 16);
   window.showModal(`Snooze ${window.escHtml(t.id)}`, `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">SLA evaluation pauses while snoozed. The ticket wakes itself when the time is reached and posts a notification.</div>
@@ -146,7 +155,7 @@ export function showSnoozeModal(ticketId) {
   }, 'Snooze');
 }
 
-export function bulkSnoozeTickets() {
+function bulkSnoozeTickets() {
   if (TICKET_SELECTED_IDS.size === 0) return;
   const n = TICKET_SELECTED_IDS.size;
   const presets = [
@@ -156,7 +165,7 @@ export function bulkSnoozeTickets() {
     { key:'monday',   label:'Next Monday 9:00' },
   ];
   const pillRow = presets.map(p => `
-    <button type="button" class="btn btn-sm" style="flex:1" onclick="document.getElementById('snz-when').value=snoozePresetIso('${p.key}').slice(0,16)">${p.label}</button>`).join('');
+    <button type="button" class="btn btn-sm" style="flex:1" data-action="snooze.preset" data-key="${p.key}">${p.label}</button>`).join('');
   const defaultIso = snoozePresetIso('4h').slice(0, 16);
   window.showModal(`Snooze ${n} ticket${n===1?'':'s'}`, `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">Each ticket gets the same wake-up time. Already-snoozed tickets are overwritten.</div>
@@ -180,3 +189,8 @@ export function bulkSnoozeTickets() {
     window.renderPage('tickets');
   }, 'Snooze');
 }
+
+registerActions({
+  'snooze.preset':     (ds) => { const el = document.getElementById('snz-when'); if (el) el.value = snoozePresetIso(ds.key).slice(0, 16); },
+  'snooze.bulkSnooze': () => bulkSnoozeTickets(),
+});

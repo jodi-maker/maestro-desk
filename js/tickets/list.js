@@ -354,10 +354,10 @@ function manageSavedSearches() {
       ? `<span style="color:var(--ink3)"> · shared by ${window.escHtml(s.owner_name || 'someone')}</span>`
       : (s.is_shared ? '<span style="color:var(--purple)"> · shared with workspace</span>' : '');
     const pinBtn = owned ? `
-      <button class="btn btn-sm" data-action="tickets.togglePin" data-id="${window.escAttr(s.id)}" data-pinned="${s.is_pinned ? 'true' : 'false'}" title="${s.is_pinned ? 'Remove from view chips' : 'Pin as a view chip'}">${s.is_pinned ? 'Unpin' : 'Pin'}</button>
+      <button class="btn btn-sm" data-action="tickets.togglePin" data-id="${window.escAttr(s.id)}" data-pinned="${s.is_pinned ? 'false' : 'true'}" title="${s.is_pinned ? 'Remove from view chips' : 'Pin as a view chip'}">${s.is_pinned ? 'Unpin' : 'Pin'}</button>
     ` : '';
     const shareBtn = owned ? `
-      <button class="btn btn-sm" data-action="tickets.toggleShare" data-id="${window.escAttr(s.id)}" data-shared="${s.is_shared ? 'true' : 'false'}" title="${s.is_shared ? 'Stop sharing with workspace' : 'Share with workspace'}">${s.is_shared ? 'Unshare' : 'Share'}</button>
+      <button class="btn btn-sm" data-action="tickets.toggleShare" data-id="${window.escAttr(s.id)}" data-shared="${s.is_shared ? 'false' : 'true'}" title="${s.is_shared ? 'Stop sharing with workspace' : 'Share with workspace'}">${s.is_shared ? 'Unshare' : 'Share'}</button>
     ` : '';
     const deleteBtn = owned ? `
       <button class="btn btn-sm btn-danger" data-action="tickets.deleteSearch" data-id="${window.escAttr(s.id)}">Delete</button>
@@ -627,8 +627,8 @@ registerActions({
   'tickets.saveSearch':    () => saveCurrentSearch(),
   'tickets.manageSearches':() => manageSavedSearches(),
   'tickets.applySearch':   (ds) => applySavedSearch(ds.id),
-  'tickets.togglePin':     (ds) => toggleSavedSearchPin(ds.id, ds.pinned !== 'true'),
-  'tickets.toggleShare':   (ds) => toggleSavedSearchShare(ds.id, ds.shared !== 'true'),
+  'tickets.togglePin':     (ds) => toggleSavedSearchPin(ds.id, ds.pinned === 'true'),
+  'tickets.toggleShare':   (ds) => toggleSavedSearchShare(ds.id, ds.shared === 'true'),
   'tickets.deleteSearch':  (ds) => deleteSavedSearch(ds.id),
   // status tabs / view chips / sort / row open / topbar
   'tickets.setStatus':     (ds) => setStatusFilter(ds.status),

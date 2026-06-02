@@ -14,6 +14,7 @@
 
 import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
 import { apiPost, apiPatch, apiDelete } from '../core/api-client.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 export function renderTemplates() {
   const admin = window.isAdmin();
@@ -123,7 +124,7 @@ function tplMapResponse(r) {
 
 function tplNew() {
   if (!window.isAdmin()) return;
-  window.showModal('New template', tplFormBody(null), async () => {
+  showModal('New template', tplFormBody(null), async () => {
     const name = document.getElementById('tpl-name').value.trim();
     const cat  = document.getElementById('tpl-cat').value.trim() || 'General';
     const text = document.getElementById('tpl-text').value;
@@ -136,14 +137,14 @@ function tplNew() {
     } else {
       CANNED_RESPONSES.unshift({ id: tplNextId(), name, category:cat, text });
     }
-    window.closeModal(); window.renderPage('templates');
+    closeModal(); window.renderPage('templates');
   }, 'Create');
 }
 
 function tplEdit(id) {
   if (!window.isAdmin()) return;
   const t = CANNED_RESPONSES.find(x => x.id === id); if (!t) return;
-  window.showModal(`Edit ${t.id}`, tplFormBody(t), async () => {
+  showModal(`Edit ${t.id}`, tplFormBody(t), async () => {
     const name = document.getElementById('tpl-name').value.trim();
     const cat  = document.getElementById('tpl-cat').value.trim() || 'General';
     const text = document.getElementById('tpl-text').value;
@@ -153,7 +154,7 @@ function tplEdit(id) {
       catch (err) { alert(`Couldn't save: ${err?.message || err}`); return; }
     }
     t.name = name; t.category = cat; t.text = text;
-    window.closeModal(); window.renderPage('templates');
+    closeModal(); window.renderPage('templates');
   }, 'Save');
 }
 
@@ -176,14 +177,14 @@ function tplDuplicate(id) {
 function tplDelete(id) {
   if (!window.isAdmin()) return;
   const t = CANNED_RESPONSES.find(x => x.id === id); if (!t) return;
-  window.showModal('Delete template', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(t.name)}</strong>?</div>`, async () => {
+  showModal('Delete template', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(t.name)}</strong>?</div>`, async () => {
     if (t._uuid) {
       try { await apiDelete(`/api/v1/canned-responses/${t._uuid}`); }
       catch (err) { alert(`Couldn't delete: ${err?.message || err}`); return; }
     }
     const i = CANNED_RESPONSES.findIndex(x => x.id === id);
     if (i >= 0) CANNED_RESPONSES.splice(i, 1);
-    window.closeModal(); window.renderPage('templates');
+    closeModal(); window.renderPage('templates');
   }, 'Delete');
 }
 

@@ -8,7 +8,6 @@ const modules = [
   ['Translate',              '../js/ai/translate.js'],
   ['AIReply',                '../js/ai/reply.js'],
   ['KBIntegration',          '../js/kb-integration/index.js'],
-  ['Modal',                  '../js/core/modal.js'],
   ['Collapsible',            '../js/core/collapsible.js'],
   ['Keybindings',            '../js/core/keybindings.js'],
   ['CustomerModals',         '../js/customers/modals.js'],

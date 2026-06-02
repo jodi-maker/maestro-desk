@@ -25,6 +25,7 @@ import { registerActions, registerChangeActions } from '../core/event-delegation
 import { openAgentFromDash } from '../dashboard/index.js';
 import { apiPost, apiPatch, apiDelete } from '../core/api-client.js';
 import { getRoleUuid, setRoleUuid, clearRoleUuid, renameRoleUuid } from '../core/bootstrap.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 function rolesApiBacked() {
   // If any role row carries a UUID lookup, the workspace is API-backed.
@@ -226,14 +227,14 @@ function renderRoleAgentsPage(role) {
 
 function renameRolePrompt(oldName) {
   if (!window.isAdmin() || oldName === 'Admin') return;
-  window.showModal('Rename role', `
+  showModal('Rename role', `
     <div class="form-row">
       <label class="form-label">New name</label>
       <input class="form-input" id="rn-name" value="${String(oldName).replace(/"/g,'&quot;')}"/>
     </div>
   `, async () => {
     const newName = document.getElementById('rn-name').value.trim();
-    if (!newName || newName === oldName) { window.closeModal(); return; }
+    if (!newName || newName === oldName) { closeModal(); return; }
     if (ROLES_MATRIX[newName]) return; // duplicate guard
     const uuid = getRoleUuid(oldName);
     if (uuid) {
@@ -245,7 +246,7 @@ function renameRolePrompt(oldName) {
     delete ROLES_MATRIX[oldName];
     AGENTS.forEach(a => { if (a.role === oldName) a.role = newName; });
     if (ROLES_VIEW_AGENTS === oldName) ROLES_VIEW_AGENTS = newName;
-    window.closeModal(); window.renderPage('roles');
+    closeModal(); window.renderPage('roles');
   }, 'Rename');
 }
 
@@ -302,7 +303,7 @@ export async function setAgentActive(name, active) {
 
 export function deleteAgentPrompt(name) {
   if (!window.isAdmin()) return;
-  window.showModal('Delete agent', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently remove <strong style="color:var(--ink)">${name}</strong>? Tickets currently assigned to them will keep the historical assignment.</div>`, async () => {
+  showModal('Delete agent', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently remove <strong style="color:var(--ink)">${name}</strong>? Tickets currently assigned to them will keep the historical assignment.</div>`, async () => {
     const a = AGENTS.find(x => x.name === name);
     if (a?.userId) {
       try { await apiDelete(`/api/v1/agents/${a.userId}`); }
@@ -311,13 +312,13 @@ export function deleteAgentPrompt(name) {
     const i = AGENTS.findIndex(x => x.name === name);
     if (i >= 0) AGENTS.splice(i, 1);
     if (AGENT_SELECTED === name) AGENT_SELECTED = null;
-    window.closeModal(); window.renderPage(CURRENT_PAGE);
+    closeModal(); window.renderPage(CURRENT_PAGE);
   }, 'Delete');
 }
 
 function addAgentToRolePrompt(role) {
   if (!window.isAdmin()) return;
-  window.showModal(`Add agent to ${role}`, `
+  showModal(`Add agent to ${role}`, `
     <div class="form-grid">
       <div class="form-row"><label class="form-label">Full name</label><input class="form-input" id="ar-name" placeholder="Jane Doe"/></div>
       <div class="form-row"><label class="form-label">Initials</label><input class="form-input" id="ar-init" placeholder="JD" maxlength="3"/></div>
@@ -328,13 +329,13 @@ function addAgentToRolePrompt(role) {
     if (!name || AGENTS.find(a => a.name === name)) return;
     if (!init) init = name.split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
     AGENTS.push({name, initials:init, role, active:true});
-    window.closeModal(); window.renderPage('roles');
+    closeModal(); window.renderPage('roles');
   }, 'Add');
 }
 
 function addRolePrompt() {
   if (!window.isAdmin()) return;
-  window.showModal('New role', `
+  showModal('New role', `
     <div class="form-row"><label class="form-label">Role name</label><input class="form-input" id="nr-name" placeholder="e.g. Compliance Officer"/></div>
     <div class="form-row"><label class="form-label">Copy permissions from</label>
       <select class="form-input" id="nr-base">
@@ -356,13 +357,13 @@ function addRolePrompt() {
       setRoleUuid(resp.role.name, resp.role.id);
     }
     ROLES_MATRIX[name] = perms;
-    window.closeModal(); window.renderPage('roles');
+    closeModal(); window.renderPage('roles');
   }, 'Create');
 }
 
 function addPermissionPrompt() {
   if (!window.isAdmin()) return;
-  window.showModal('New permission', `
+  showModal('New permission', `
     <div class="form-row"><label class="form-label">Display label</label><input class="form-input" id="np-label" placeholder="e.g. Billing Refunds"/></div>
     <div class="form-row"><label class="form-label">Internal key</label><input class="form-input" id="np-key" placeholder="auto-generated from label if blank"/></div>
   `, () => {
@@ -373,7 +374,7 @@ function addPermissionPrompt() {
     if (!key || PERMISSIONS.find(p => p.key === key)) return;
     PERMISSIONS.push({key, label});
     Object.keys(ROLES_MATRIX).forEach(r => { if (ROLES_MATRIX[r][key] === undefined) ROLES_MATRIX[r][key] = false; });
-    window.closeModal(); window.renderPage('roles');
+    closeModal(); window.renderPage('roles');
   }, 'Add');
 }
 
@@ -381,10 +382,10 @@ function deleteRolePrompt(role) {
   if (!window.isAdmin() || role === 'Admin') return;
   const inUse = AGENTS.filter(a => a.role === role).length;
   if (inUse > 0) {
-    window.showModal('Cannot delete role', `<div style="font-size:13px;color:var(--ink2);line-height:1.6"><strong style="color:var(--ink)">${inUse}</strong> agent${inUse===1?' is':'s are'} still assigned to <strong style="color:var(--ink)">${role}</strong>. Reassign them to another role first.</div>`, null, null);
+    showModal('Cannot delete role', `<div style="font-size:13px;color:var(--ink2);line-height:1.6"><strong style="color:var(--ink)">${inUse}</strong> agent${inUse===1?' is':'s are'} still assigned to <strong style="color:var(--ink)">${role}</strong>. Reassign them to another role first.</div>`, null, null);
     return;
   }
-  window.showModal('Delete role', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete the <strong style="color:var(--ink)">${role}</strong> role?</div>`, async () => {
+  showModal('Delete role', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete the <strong style="color:var(--ink)">${role}</strong> role?</div>`, async () => {
     const uuid = getRoleUuid(role);
     if (uuid) {
       try { await apiDelete(`/api/v1/roles/${uuid}`); }
@@ -392,7 +393,7 @@ function deleteRolePrompt(role) {
       clearRoleUuid(role);
     }
     delete ROLES_MATRIX[role];
-    window.closeModal(); window.renderPage('roles');
+    closeModal(); window.renderPage('roles');
   }, 'Delete');
 }
 

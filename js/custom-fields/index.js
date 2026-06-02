@@ -18,6 +18,7 @@
 
 import { apiPost, apiPatch, apiDelete } from '../core/api-client.js';
 import { registerActions, registerChangeActions } from '../core/event-delegation.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 function cfApiBacked() {
   return CUSTOM_FIELDS.some((f) => f._uuid);
@@ -157,7 +158,7 @@ function cfNextId() {
 
 function cfNew() {
   if (!window.isAdmin()) return;
-  window.showModal('New custom field', cfFormBody(null), async () => {
+  showModal('New custom field', cfFormBody(null), async () => {
     const data = cfReadForm();
     if (!data.label) return;
     if (cfApiBacked()) {
@@ -178,14 +179,14 @@ function cfNew() {
       if (data.options) field.options = data.options;
       CUSTOM_FIELDS.unshift(field);
     }
-    window.closeModal(); window.renderPage('custom-fields');
+    closeModal(); window.renderPage('custom-fields');
   }, 'Create');
 }
 
 function cfEdit(id) {
   if (!window.isAdmin()) return;
   const f = CUSTOM_FIELDS.find(x => x.id === id); if (!f) return;
-  window.showModal(`Edit ${f.id}`, cfFormBody(f), async () => {
+  showModal(`Edit ${f.id}`, cfFormBody(f), async () => {
     const data = cfReadForm();
     if (!data.label) return;
     // entity_type isn't editable server-side (would orphan custom_field_values
@@ -208,26 +209,26 @@ function cfEdit(id) {
     f.label = data.label; f.type = data.type; f.entity = data.entity;
     f.required = data.required; f.defaultValue = data.defaultValue;
     if (data.options) f.options = data.options; else delete f.options;
-    window.closeModal(); window.renderPage('custom-fields');
+    closeModal(); window.renderPage('custom-fields');
   }, 'Save');
 }
 
 function cfDelete(id) {
   if (!window.isAdmin()) return;
   const f = CUSTOM_FIELDS.find(x => x.id === id); if (!f) return;
-  window.showModal('Delete custom field', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(f.label)}</strong>? Existing values stored on customer / ticket records will become orphaned (not deleted).</div>`, async () => {
+  showModal('Delete custom field', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(f.label)}</strong>? Existing values stored on customer / ticket records will become orphaned (not deleted).</div>`, async () => {
     if (f._uuid) {
       try { await apiDelete(`/api/v1/custom-fields/${f._uuid}`); }
       catch (err) { alert(`Couldn't delete: ${err?.message || err}`); return; }
     }
     const i = CUSTOM_FIELDS.findIndex(x => x.id === id);
     if (i >= 0) CUSTOM_FIELDS.splice(i, 1);
-    window.closeModal(); window.renderPage('custom-fields');
+    closeModal(); window.renderPage('custom-fields');
   }, 'Delete');
 }
 
 export function showManageFieldsModal() {
-  window.showModal('Manage custom fields', `
+  showModal('Manage custom fields', `
     ${CUSTOM_FIELDS.map(f => `<div class="ts-row"><span class="ts-key">${f.label}</span><span class="ts-val">${f.type}</span></div>`).join('')}
     <div style="font-size:11px;color:var(--ink3);margin-top:14px">Custom fields appear as toggleable columns in the customer table.</div>
   `, null, null);

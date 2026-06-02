@@ -29,6 +29,7 @@ import { registerActions, registerChangeActions } from '../core/event-delegation
 import { navTo } from '../core/keybindings.js';
 import { openTicket } from './detail.js';
 import { apiPatch } from '../core/api-client.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 function csatStarString(n) {
   const score = Math.max(0, Math.min(5, parseInt(n, 10) || 0));
@@ -112,7 +113,7 @@ function openCSATSurveyModal(id) {
   // ticketId captured by closure rather than re-read from DOM, so the modal can't
   // submit against a different ticket if it's reused mid-flight.
   const ticketId = t.id;
-  window.showModal('Customer satisfaction survey', body, () => {
+  showModal('Customer satisfaction survey', body, () => {
     const score = parseInt(document.getElementById('csat-pick').value, 10);
     const comment = document.getElementById('csat-comment').value.trim();
     if (!Number.isInteger(score) || score < 1 || score > 5) {
@@ -175,7 +176,7 @@ async function submitCSAT(id, score, comment) {
   t.csatRequestedAt = requestedAt;
   logTicketEvent(id, 'system', `CSAT submitted: ${clamped}/5${comment ? ' with comment' : ''}`);
   fireWebhook('csat.submitted', { ...ticketPayload(t), csat: clamped, comment: comment || null });
-  window.closeModal();
+  closeModal();
   if (CURRENT_TICKET === id) openTicket(id);
   if (CURRENT_PAGE === 'csat') window.renderPage('csat');
 }

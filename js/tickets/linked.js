@@ -24,7 +24,7 @@
 import { refreshTicketSLA } from './sla.js';
 import { openTicket } from './detail.js';
 import { apiPost } from '../core/api-client.js';
-import { closeModal } from '../core/modal.js';
+import { closeModal, showModal } from '../core/modal.js';
 import { registerMousedownActions } from '../core/event-delegation.js';
 
 function linkTickets(id, otherId) {
@@ -65,7 +65,7 @@ export function showMergeTicketModal(id) {
       </div>`;
   const sameCust = TICKETS.filter(x => x.id !== id && !x.mergedInto && x.customerId === t.customerId);
   const others   = TICKETS.filter(x => x.id !== id && !x.mergedInto && x.customerId !== t.customerId);
-  window.showModal('Merge ticket into…', `
+  showModal('Merge ticket into…', `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">${window.escHtml(t.id)} will be marked as a duplicate of the primary you choose. Its messages copy across, the audit trail is preserved on both sides, and ${window.escHtml(t.id)} is set to <strong style="color:var(--ink)">resolved</strong>.</div>
     ${sameCust.length ? `<div style="font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Same customer (most likely duplicate)</div>${sameCust.map(card).join('')}` : ''}
     ${others.length ? `<div style="font-size:11px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Other tickets</div><div style="max-height:240px;overflow-y:auto">${others.map(card).join('')}</div>` : ''}
@@ -159,7 +159,7 @@ export function showLinkTicketModal(id) {
           <span style="flex:1;font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.subject}</span>
         </div>`).join('')
     : '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px 0">No tickets available to link</div>';
-  window.showModal('Link a ticket', `
+  showModal('Link a ticket', `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">Linking creates a bidirectional reference between two tickets so an agent can see related context.</div>
     <div style="max-height:380px;overflow-y:auto">${list}</div>
   `, null, null);

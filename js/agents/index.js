@@ -24,6 +24,7 @@ import { navTo } from '../core/keybindings.js';
 import { openTicket } from '../tickets/detail.js';
 import { showAgentOOOModal, isAgentOOO } from '../tickets/assignment-rules.js';
 import { reassignAgent, setAgentActive, deleteAgentPrompt } from '../roles/index.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 let AGENT_FILTER_ROLE = 'all';
 let AGENT_FILTER_STATUS = 'all';
@@ -364,7 +365,7 @@ function agentSetQuery(v) {
 function agentNew() {
   if (!window.isAdmin()) return;
   const allRoles = Object.keys(ROLES_MATRIX);
-  window.showModal('Add agent', `
+  showModal('Add agent', `
     <div class="form-grid">
       <div class="form-row"><label class="form-label">Full name</label><input class="form-input" id="ag-name" placeholder="Jane Doe"/></div>
       <div class="form-row"><label class="form-label">Initials</label><input class="form-input" id="ag-init" maxlength="3" placeholder="JD"/></div>
@@ -379,7 +380,7 @@ function agentNew() {
     if (!name || AGENTS.find(a => a.name === name)) return;
     if (!init) init = name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
     AGENTS.push({ name, initials: init, role, active: true });
-    window.closeModal(); window.renderPage('agents');
+    closeModal(); window.renderPage('agents');
   }, 'Add');
 }
 

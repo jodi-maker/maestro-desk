@@ -19,6 +19,7 @@
 // lex env, so direct refs work from the module).
 
 import { registerActions, registerChangeActions } from '../core/event-delegation.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 const WEBHOOK_EVENT_TYPES = [
   { v:'ticket.created',   l:'Ticket created' },
@@ -214,7 +215,7 @@ function whFormModal(h) {
   const events = WEBHOOK_EVENT_TYPES;
   const subscribed = (h?.events) || [];
   const templateOptions = WEBHOOK_TEMPLATES.map(t => `<option value="${window.escAttr(t.id)}">${window.escHtml(t.name)}</option>`).join('');
-  window.showModal(h ? `Edit webhook · ${h.id}` : 'New webhook', `
+  showModal(h ? `Edit webhook · ${h.id}` : 'New webhook', `
     ${!h ? `<div class="form-row">
       <label class="form-label">Start from a template (optional)</label>
       <select class="form-input" id="wh-template" data-change-action="webhooks.applyTemplate">
@@ -245,7 +246,7 @@ function whFormModal(h) {
       WEBHOOKS.unshift({ id: whNextId(), name, url, secret, events, active: true, deliveries: [], createdAt: new Date().toISOString().slice(0,10) });
     }
     saveWebhooks();
-    window.closeModal(); window.renderPage('webhooks');
+    closeModal(); window.renderPage('webhooks');
   }, h ? 'Save' : 'Create');
 }
 function whToggle(id, active) {
@@ -256,11 +257,11 @@ function whToggle(id, active) {
 function whDelete(id) {
   if (!window.isAdmin()) return;
   const h = WEBHOOKS.find(x => x.id === id); if (!h) return;
-  window.showModal('Delete webhook', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(h.name)}</strong>? Past deliveries will be lost.</div>`, () => {
+  showModal('Delete webhook', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(h.name)}</strong>? Past deliveries will be lost.</div>`, () => {
     const i = WEBHOOKS.findIndex(x => x.id === id);
     if (i >= 0) WEBHOOKS.splice(i, 1);
     saveWebhooks();
-    window.closeModal(); window.renderPage('webhooks');
+    closeModal(); window.renderPage('webhooks');
   }, 'Delete');
 }
 async function whTestFire(id) {

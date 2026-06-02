@@ -1378,7 +1378,7 @@ async function saveOutgoingWebhookEdit() {
     // Replace the row in module state so the panel re-renders with
     // the new values without a full refetch.
     OUTGOING_WEBHOOKS = OUTGOING_WEBHOOKS.map((w) => w.id === id ? { ...w, ...res.webhook } : w);
-    window.closeModal();
+    closeModal();
     window.renderPage('settings');
   } catch (err) {
     msg.textContent = err?.message || 'Save failed';
@@ -1397,7 +1397,7 @@ async function rotateOutgoingWebhookSecret() {
     // create — close the modal so the user can see it on the panel.
     LAST_REVEALED_SECRET = res.secret;
     OUTGOING_WEBHOOKS = OUTGOING_WEBHOOKS.map((w) => w.id === id ? { ...w, ...res.webhook } : w);
-    window.closeModal();
+    closeModal();
     window.renderPage('settings');
   } catch (err) {
     msg.textContent = err?.message || 'Rotation failed';

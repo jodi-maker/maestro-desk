@@ -113,7 +113,6 @@ import * as Summarize from './ai/summarize.js';
 import * as Translate from './ai/translate.js';
 import * as AIReply from './ai/reply.js';
 import * as KBIntegration from './kb-integration/index.js';
-import * as Modal from './core/modal.js';
 import * as Collapsible from './core/collapsible.js';
 import * as Keybindings from './core/keybindings.js';
 import * as CustomerModals from './customers/modals.js';
@@ -381,7 +380,7 @@ Object.assign(
     setSettingsTab },
   Theme, AIClient, Summarize, Translate, AIReply,
   KBIntegration,
-  Modal, Collapsible, Keybindings,
+  Collapsible, Keybindings,
   CustomerModals,
 );
 

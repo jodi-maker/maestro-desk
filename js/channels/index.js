@@ -15,6 +15,7 @@
 // CHANNELS, TICKETS, AGENTS come from data.js; CH_FILTER comes from state.js.
 
 import { registerActions, registerChangeActions } from '../core/event-delegation.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 const CH_TYPES = [
   { v:'email',   l:'Email',     icon:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M1.5 3.5L7 8l5.5-4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
@@ -103,7 +104,7 @@ export function renderChannels() {
 
 function openChannel(id) {
   const c = CHANNELS.find(x => x.id === id); if (!c) return;
-  window.showModal(`${c.name} (${c.id})`, `
+  showModal(`${c.name} (${c.id})`, `
     <div class="form-grid">
       <div class="form-row"><label class="form-label">Type</label><div style="font-size:13px;color:var(--ink);padding:9px 12px;background:var(--off2);border:1px solid var(--rule);border-radius:var(--r);text-transform:capitalize">${chTypeLabel(c.type)}</div></div>
       <div class="form-row"><label class="form-label">Status</label><div style="font-size:13px;padding:9px 12px;background:var(--off2);border:1px solid var(--rule);border-radius:var(--r);text-transform:capitalize"><span class="tag ${c.status==='active'?'tag-resolved':'tag-pending'}">${c.status}</span></div></div>
@@ -159,7 +160,7 @@ function chNextId() {
 
 function chNew() {
   if (!window.isAdmin()) return;
-  window.showModal('New channel', chFormBody(null), () => {
+  showModal('New channel', chFormBody(null), () => {
     const name = document.getElementById('ch-name').value.trim();
     const type = document.getElementById('ch-type').value;
     const address = document.getElementById('ch-address').value.trim();
@@ -172,14 +173,14 @@ function chNew() {
       status:          document.getElementById('ch-active').checked ? 'active' : 'inactive',
       volume30d: 0,
     });
-    window.closeModal(); window.renderPage('channels');
+    closeModal(); window.renderPage('channels');
   }, 'Create');
 }
 
 function chEdit(id) {
   if (!window.isAdmin()) return;
   const c = CHANNELS.find(x => x.id === id); if (!c) return;
-  window.showModal(`Edit ${c.id}`, chFormBody(c), () => {
+  showModal(`Edit ${c.id}`, chFormBody(c), () => {
     const name = document.getElementById('ch-name').value.trim();
     const address = document.getElementById('ch-address').value.trim();
     if (!name || !address) return;
@@ -190,17 +191,17 @@ function chEdit(id) {
     c.defaultAgent = document.getElementById('ch-agent').value;
     c.signature = document.getElementById('ch-sig').value;
     c.status = document.getElementById('ch-active').checked ? 'active' : 'inactive';
-    window.closeModal(); window.renderPage('channels');
+    closeModal(); window.renderPage('channels');
   }, 'Save');
 }
 
 function chDelete(id) {
   if (!window.isAdmin()) return;
   const c = CHANNELS.find(x => x.id === id); if (!c) return;
-  window.showModal('Delete channel', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(c.name)}</strong>? Inbound tickets attributed to this channel will lose the channel reference.</div>`, () => {
+  showModal('Delete channel', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(c.name)}</strong>? Inbound tickets attributed to this channel will lose the channel reference.</div>`, () => {
     const i = CHANNELS.findIndex(x => x.id === id);
     if (i >= 0) CHANNELS.splice(i, 1);
-    window.closeModal(); window.renderPage('channels');
+    closeModal(); window.renderPage('channels');
   }, 'Delete');
 }
 

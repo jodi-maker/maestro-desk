@@ -20,6 +20,7 @@
 import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
 import { showNewTicketModal } from '../tickets/detail.js';
 import { apiPost, apiPatch, apiDelete } from '../core/api-client.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 function ttApiBacked() {
   return TICKET_TEMPLATES.some((t) => t._uuid);
@@ -130,7 +131,7 @@ function ttNextId() {
 
 function ttNew() {
   if (!window.isAdmin()) return;
-  window.showModal('New ticket template', ttFormBody(null), async () => {
+  showModal('New ticket template', ttFormBody(null), async () => {
     const name = document.getElementById('tt-name').value.trim();
     const category = document.getElementById('tt-cat').value.trim() || 'General';
     const priority = document.getElementById('tt-pri').value;
@@ -145,14 +146,14 @@ function ttNew() {
     } else {
       TICKET_TEMPLATES.unshift({ id: ttNextId(), name, category, priority, subject, body });
     }
-    window.closeModal(); window.renderPage('ticket-templates');
+    closeModal(); window.renderPage('ticket-templates');
   }, 'Create');
 }
 
 function ttEdit(id) {
   if (!window.isAdmin()) return;
   const t = TICKET_TEMPLATES.find(x => x.id === id); if (!t) return;
-  window.showModal(`Edit ${t.id}`, ttFormBody(t), async () => {
+  showModal(`Edit ${t.id}`, ttFormBody(t), async () => {
     const name = document.getElementById('tt-name').value.trim();
     const category = document.getElementById('tt-cat').value.trim() || 'General';
     const priority = document.getElementById('tt-pri').value;
@@ -164,7 +165,7 @@ function ttEdit(id) {
       catch (err) { alert(`Couldn't save: ${err?.message || err}`); return; }
     }
     t.name = name; t.category = category; t.priority = priority; t.subject = subject; t.body = body;
-    window.closeModal(); window.renderPage('ticket-templates');
+    closeModal(); window.renderPage('ticket-templates');
   }, 'Save');
 }
 
@@ -187,14 +188,14 @@ function ttDuplicate(id) {
 function ttDelete(id) {
   if (!window.isAdmin()) return;
   const t = TICKET_TEMPLATES.find(x => x.id === id); if (!t) return;
-  window.showModal('Delete template', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(t.name)}</strong>?</div>`, async () => {
+  showModal('Delete template', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(t.name)}</strong>?</div>`, async () => {
     if (t._uuid) {
       try { await apiDelete(`/api/v1/ticket-templates/${t._uuid}`); }
       catch (err) { alert(`Couldn't delete: ${err?.message || err}`); return; }
     }
     const i = TICKET_TEMPLATES.findIndex(x => x.id === id);
     if (i >= 0) TICKET_TEMPLATES.splice(i, 1);
-    window.closeModal(); window.renderPage('ticket-templates');
+    closeModal(); window.renderPage('ticket-templates');
   }, 'Delete');
 }
 

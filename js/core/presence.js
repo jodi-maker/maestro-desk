@@ -21,6 +21,7 @@
 // real UUID. This module no-ops cleanly when nothing is active.
 
 import { apiPost, API_BASE, getJwt, getWorkspaceId } from './api-client.js';
+import { registerActions } from './event-delegation.js';
 
 const HEARTBEAT_MS = 5000;
 
@@ -119,41 +120,52 @@ export function confirmIfOthersComposing() {
 // background-click and × dismiss bypass the onConfirm callback (they call
 // closeModal directly), which would leak the pending promise on cancel.
 // Every dismiss path here routes through finish() so the promise always
-// settles. window.__presenceConfirm carries the inline-onclick callback
-// since the markup is dropped in via innerHTML.
+// settles. The pending resolver is held in a module-local (_pendingConfirm)
+// and invoked from the presence.confirm / presence.cancel delegated actions
+// (registered at module load); the modal box uses the data-action="" absorber
+// so a click inside it doesn't bubble to the backdrop's cancel.
+let _pendingConfirm = null;
+
 function showPresenceConfirm(names, verb) {
   return new Promise(resolve => {
     let done = false;
     const finish = (ok) => {
       if (done) return;
       done = true;
-      delete window.__presenceConfirm;
+      _pendingConfirm = null;
       const c = document.getElementById('modal-container');
       if (c) c.innerHTML = '';
       resolve(ok);
     };
-    window.__presenceConfirm = finish;
+    _pendingConfirm = finish;
     const container = document.getElementById('modal-container');
     if (!container) return finish(true);  // no modal slot — fall through optimistically
     container.innerHTML = `
-      <div class="modal-bg" onclick="window.__presenceConfirm(false)">
-        <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-bg" data-action="presence.cancel">
+        <!-- data-action="" is the absorber: closest() stops here, so a click
+             inside the dialog never reaches the backdrop's presence.cancel -->
+        <div class="modal" data-action="">
           <div class="modal-head">
             <div class="modal-title">Others are replying</div>
-            <div class="modal-close" onclick="window.__presenceConfirm(false)">×</div>
+            <div class="modal-close" data-action="presence.cancel">×</div>
           </div>
           <div class="modal-body">
             <p style="margin:0 0 6px;font-size:13px;color:var(--ink);line-height:1.5"><strong>${escHtml(names)}</strong> ${escHtml(verb)} to this ticket.</p>
             <p style="margin:0;font-size:12px;color:var(--ink2);line-height:1.5">Sending now could result in conflicting replies to the customer.</p>
           </div>
           <div class="modal-foot">
-            <button class="btn" onclick="window.__presenceConfirm(false)">Cancel</button>
-            <button class="btn btn-solid" onclick="window.__presenceConfirm(true)">Send anyway</button>
+            <button class="btn" data-action="presence.cancel">Cancel</button>
+            <button class="btn btn-solid" data-action="presence.confirm">Send anyway</button>
           </div>
         </div>
       </div>`;
   });
 }
+
+registerActions({
+  'presence.confirm': () => { if (_pendingConfirm) _pendingConfirm(true); },
+  'presence.cancel':  () => { if (_pendingConfirm) _pendingConfirm(false); },
+});
 
 async function tick() {
   if (!state.entityType || !state.entityId) return;

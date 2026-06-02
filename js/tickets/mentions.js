@@ -21,8 +21,8 @@
 // focusout hides the dropdown (detail.js delays hide by 150ms).
 
 import { registerMousedownActions } from '../core/event-delegation.js';
-
 import { onComposeInput } from './detail.js';
+
 export function parseMentions(text) {
   const out = [];
   if (!text) return out;

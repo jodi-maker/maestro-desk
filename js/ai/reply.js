@@ -15,8 +15,8 @@
 // extracted to its own module, these become proper imports.
 
 import { AI_API_KEY, callClaude } from './client.js';
-
 import { onComposeInput } from '../tickets/detail.js';
+
 export async function aiAction(id, action) {
   // Close the AI-action menu (one-line helper; inlined to avoid a bridge entry).
   const menu = document.getElementById('ai-menu-' + id);

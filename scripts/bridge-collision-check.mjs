@@ -12,7 +12,6 @@ const modules = [
   ['Linked',                 '../js/tickets/linked.js'],
   ['Mentions',               '../js/tickets/mentions.js'],
   ['Macros',                 '../js/tickets/macros.js'],
-  ['Attachments',            '../js/tickets/attachments.js'],
   ['KBIntegration',          '../js/kb-integration/index.js'],
   ['Modal',                  '../js/core/modal.js'],
   ['Collapsible',            '../js/core/collapsible.js'],

@@ -142,6 +142,8 @@ function showPresenceConfirm(names, verb) {
     if (!container) return finish(true);  // no modal slot — fall through optimistically
     container.innerHTML = `
       <div class="modal-bg" data-action="presence.cancel">
+        <!-- data-action="" is the absorber: closest() stops here, so a click
+             inside the dialog never reaches the backdrop's presence.cancel -->
         <div class="modal" data-action="">
           <div class="modal-head">
             <div class="modal-title">Others are replying</div>

@@ -29,11 +29,6 @@ import {
 } from './tickets/sla.js';
 import { renderSLA } from './tickets/sla-policies.js';
 import {
-  linkTickets, unlinkTicket,
-  mergeTickets, unmergeTicket,
-  showLinkTicketModal, showMergeTicketModal,
-} from './tickets/linked.js';
-import {
   parseMentions, renderTextWithMentions,
   updateMentionDropdown, hideMentionDropdown,
   insertMention, mentionDropdownKey,
@@ -162,7 +157,6 @@ import * as Translate from './ai/translate.js';
 import * as AIReply from './ai/reply.js';
 import * as TimeTracking from './tickets/time-tracking.js';
 import * as Snooze from './tickets/snooze.js';
-import * as Linked from './tickets/linked.js';
 import * as Mentions from './tickets/mentions.js';
 import * as Macros from './tickets/macros.js';
 import * as Attachments from './tickets/attachments.js';
@@ -437,7 +431,7 @@ Object.assign(
     // Agent (real-auth) sign-in panel — onclick handlers in static index.html
     showAgentLogin, submitAgentLogin },
   Theme, AIClient, Summarize, Translate, AIReply,
-  TimeTracking, Snooze, Linked, Mentions,
+  TimeTracking, Snooze, Mentions,
   Macros, Attachments,
   KBIntegration,
   Modal, Collapsible, Keybindings,

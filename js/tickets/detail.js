@@ -57,6 +57,7 @@ import { showModal, closeModal } from '../core/modal.js';
 import { isFieldVisible, isFieldRequired } from '../layouts/index.js';
 import { ticketCSATBlock } from './csat.js';
 import { runAssignmentRulesOnTicket } from './assignment-rules.js';
+import { showGDPRModal, openCustomerModal } from '../customers/modals.js';
 import {
   startPresence, setComposing, confirmIfOthersComposing,
   setTicketChangedCallback,
@@ -1114,10 +1115,8 @@ function ntApplyTemplate(id) {
 // retire until all three slices land.
 //
 // `td.*` action prefix avoids collisions with other modules. Most
-// handlers call locally-imported fns directly. `navTo` and the
-// customers/modals `openCustomerModal` go through `window` to avoid
-// adding new import edges in this PR; will move to direct imports in
-// the follow-up cleanup pass.
+// handlers call locally-imported fns directly. `navTo` still goes
+// through `window` (lifts when the Keybindings namespace retires).
 
 registerActions({
   // Snooze + merge banners
@@ -1144,7 +1143,7 @@ registerActions({
   'td.mergeTicket':    (ds) => showMergeTicketModal(ds.ticketId),
   'td.unlink':         (ds) => unlinkTicket(ds.ticketId, ds.linkedId),
   // Customer panel
-  'td.openCustomer':   (ds) => window.openCustomerModal(ds.custId),
+  'td.openCustomer':   (ds) => openCustomerModal(ds.custId),
   // Per-ticket GDPR sidebar (stubs — same as the inline alerts they replace)
   'td.gdprErasure':    () => alert('Erasure request initiated'),
   'td.gdprRedact':     () => alert('Data redacted'),
@@ -1167,10 +1166,10 @@ registerActions({
   'td.setComposeTab':  (ds) => setComposeTab(ds.tab, ds.ticketId),
   'td.insertVar':      (ds) => insertVar(ds.ticketId, ds.token),
   'td.macroPanel':     (ds) => showMacroPanel(ds.ticketId),
-  // GDPR modal lives in customers/modals.js — kept on window to avoid
-  // a detail↔customers/modals↔customers/index cycle (the customers/index
-  // → detail edge from PR #127 already exists).
-  'td.gdprModal':      (ds) => window.showGDPRModal(ds.ticketId),
+  // GDPR modal lives in customers/modals.js. The detail↔modals↔customers/index
+  // cycle (customers/index→detail edge from #127) is tolerated — the binding
+  // is only used inside this closure, never at module top level.
+  'td.gdprModal':      (ds) => showGDPRModal(ds.ticketId),
   'td.toggleAIMenu':   (ds) => toggleAIMenu(ds.ticketId),
   'td.aiAction':       (ds) => aiAction(ds.ticketId, ds.verb),
   'td.send':           (ds) => sendCompose(ds.ticketId),

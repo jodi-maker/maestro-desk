@@ -14,12 +14,12 @@
 // rule).
 //
 // External reaches (interim, via window): escAttr, escHtml, isAdmin,
-// renderPage — all still in app.js. openTicket and
-// showManageFieldsModal are direct ES imports. showCSVModal /
-// showNewCustomerModal STAY as `window.X` to avoid worsening the
-// customers↔customers/modals.js ES-import cycle (modals.js already
-// imports refreshCustTable from this module). Will become direct
-// imports once customer-modals retires from the bridge.
+// renderPage — all still in app.js. openTicket, showManageFieldsModal,
+// showCSVModal and showNewCustomerModal are direct ES imports. The
+// customers↔customers/modals.js cycle (modals.js imports refreshCustTable
+// from this module; this module imports the modal openers back) is tolerated
+// — the openers are only used inside registerActions closures, never at
+// module top level.
 //
 // CUSTOMERS, TICKETS, CUSTOM_FIELDS, SESSION come from data.js / state.js via
 // the global lexical env; CUSTOMER_SELECTED, CUSTOMER_SELECTED_IDS,
@@ -31,6 +31,7 @@ import { isFieldVisible } from '../layouts/index.js';
 import { registerActions, registerChangeActions, registerInputActions, registerMousedownActions } from '../core/event-delegation.js';
 import { openTicket } from '../tickets/detail.js';
 import { showManageFieldsModal } from '../custom-fields/index.js';
+import { showCSVModal, showNewCustomerModal } from './modals.js';
 import { apiGet, apiPut } from '../core/api-client.js';
 import { startPresence } from '../core/presence.js';
 
@@ -950,10 +951,10 @@ registerActions({
   'cust.clearSelection':  () => clearCustSelection(),
   'cust.showColumnPanel': () => showColumnPanel(),
   'cust.manageFields':    () => showManageFieldsModal(),
-  // showCSVModal/showNewCustomerModal stay on window to avoid worsening
-  // the customers↔customers/modals.js ES-import cycle. See header.
-  'cust.csvImport':       () => window.showCSVModal(),
-  'cust.new':             () => window.showNewCustomerModal(),
+  // Direct imports despite the customers↔customers/modals.js cycle — the
+  // openers are only referenced inside these closures. See header.
+  'cust.csvImport':       () => showCSVModal(),
+  'cust.new':             () => showNewCustomerModal(),
   'cust.export':          () => exportCustomerList(),
   'cust.closeGdpr':       () => closeModal(),
   // Detail-page actions

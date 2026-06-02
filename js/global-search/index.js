@@ -30,6 +30,7 @@
 
 import { navTo } from '../core/keybindings.js';
 import { openTicket } from '../tickets/detail.js';
+import { openCustomerModal } from '../customers/modals.js';
 import {
   registerActions, registerMousedownActions, registerInputActions,
 } from '../core/event-delegation.js';
@@ -144,7 +145,7 @@ function gsGo(type, id) {
   if (input) input.blur();
 
   if (type === 'ticket') openTicket(id);
-  else if (type === 'customer') window.openCustomerModal(id);
+  else if (type === 'customer') openCustomerModal(id);
   else if (type === 'article') {
     KB_SELECTED = id;
     document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));

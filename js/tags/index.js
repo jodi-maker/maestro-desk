@@ -24,6 +24,7 @@ import { registerActions, registerChangeActions, registerInputActions, registerM
 import { navTo } from '../core/keybindings.js';
 import { openTicket } from '../tickets/detail.js';
 import { apiPatch, apiPost, apiDelete } from '../core/api-client.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 export function renderTags() {
   if (TAG_SELECTED) return renderTagDetail(TAG_SELECTED);
@@ -199,7 +200,7 @@ function bulkDeleteTags() {
   if (!window.isAdmin()) return;
   const n = TAG_SELECTED_NAMES.size;
   if (n === 0) return;
-  window.showModal(`Delete ${n} tag${n===1?'':'s'}`, `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${n}</strong> tag${n===1?'':'s'}? They will be removed from any tickets currently using them.</div>`, async () => {
+  showModal(`Delete ${n} tag${n===1?'':'s'}`, `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${n}</strong> tag${n===1?'':'s'}? They will be removed from any tickets currently using them.</div>`, async () => {
     const names = [...TAG_SELECTED_NAMES];
     if (tagsApiBacked()) {
       try {
@@ -217,7 +218,7 @@ function bulkDeleteTags() {
       if (i >= 0) TAG_LIBRARY.splice(i, 1);
     });
     TAG_SELECTED_NAMES.clear();
-    window.closeModal();
+    closeModal();
     window.renderPage('tags');
   }, 'Delete');
 }
@@ -239,7 +240,7 @@ async function convertTagType(tagName) {
 function mergeTagPrompt(sourceName) {
   if (!window.isAdmin()) return;
   const candidates = TAG_LIBRARY.filter(t => t.tag !== sourceName);
-  window.showModal(`Merge "${sourceName}" into…`, `
+  showModal(`Merge "${sourceName}" into…`, `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">All tickets using <strong style="color:var(--ink)">${sourceName}</strong> will be re-tagged with the target. The source tag will be deleted.</div>
     <div style="max-height:380px;overflow-y:auto">
       ${candidates.length ? candidates.map(t => `
@@ -417,7 +418,7 @@ function tagShowUsage(tagName) {
           <span style="flex:1;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.subject}</span>
         </div>`).join('')
     : '<div style="font-size:12px;color:var(--ink3);text-align:center;padding:24px">No tickets currently use this tag</div>';
-  window.showModal(`Tag: ${tagName}`, `
+  showModal(`Tag: ${tagName}`, `
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--rule)">
       <span class="tag tag-neutral">${tagName}</span>
       ${def ? `<span style="font-size:11px;color:var(--ink3)">${def.type==='ai'?'AI-suggested':'Manual'}${def.conf?` · ${def.conf}% confidence`:''}</span>` : ''}
@@ -449,20 +450,20 @@ function normalizeTagName(s) {
 
 function tagNew() {
   if (!window.isAdmin()) return;
-  window.showModal('New tag', tagFormBody(null), () => {
+  showModal('New tag', tagFormBody(null), () => {
     const name = normalizeTagName(document.getElementById('tag-name').value);
     const type = document.getElementById('tag-type').value;
     const conf = type === 'ai' ? (parseInt(document.getElementById('tag-conf').value) || null) : null;
     if (!name || TAG_LIBRARY.find(t => t.tag === name)) return;
     TAG_LIBRARY.unshift({ tag: name, count: 0, type, conf });
-    window.closeModal(); window.renderPage('tags');
+    closeModal(); window.renderPage('tags');
   }, 'Create');
 }
 
 function tagEdit(name) {
   if (!window.isAdmin()) return;
   const t = TAG_LIBRARY.find(x => x.tag === name); if (!t) return;
-  window.showModal(`Edit tag`, tagFormBody(t), () => {
+  showModal(`Edit tag`, tagFormBody(t), () => {
     const newName = normalizeTagName(document.getElementById('tag-name').value);
     const type = document.getElementById('tag-type').value;
     const conf = type === 'ai' ? (parseInt(document.getElementById('tag-conf').value) || null) : null;
@@ -475,7 +476,7 @@ function tagEdit(name) {
       });
     }
     t.tag = newName; t.type = type; t.conf = conf;
-    window.closeModal(); window.renderPage('tags');
+    closeModal(); window.renderPage('tags');
   }, 'Save');
 }
 
@@ -483,14 +484,14 @@ function tagDelete(name) {
   if (!window.isAdmin()) return;
   const t = TAG_LIBRARY.find(x => x.tag === name); if (!t) return;
   const inUse = TICKETS.filter(tk => (tk.tags||[]).includes(name) || (tk.aiTags||[]).some(at => at.tag === name)).length;
-  window.showModal('Delete tag', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${name}</strong>?${inUse?` This tag is currently used by <strong style="color:var(--ink)">${inUse} ticket${inUse===1?'':'s'}</strong> — it will be removed from those tickets.`:''}</div>`, () => {
+  showModal('Delete tag', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${name}</strong>?${inUse?` This tag is currently used by <strong style="color:var(--ink)">${inUse} ticket${inUse===1?'':'s'}</strong> — it will be removed from those tickets.`:''}</div>`, () => {
     TICKETS.forEach(tk => {
       tk.tags = (tk.tags || []).filter(x => x !== name);
       tk.aiTags = (tk.aiTags || []).filter(at => at.tag !== name);
     });
     const i = TAG_LIBRARY.findIndex(x => x.tag === name);
     if (i >= 0) TAG_LIBRARY.splice(i, 1);
-    window.closeModal(); window.renderPage('tags');
+    closeModal(); window.renderPage('tags');
   }, 'Delete');
 }
 
@@ -531,6 +532,6 @@ registerMousedownActions({
   // it, then dispatch the action. Uses mousedown (not click) so the
   // action fires before core/dismiss.js's mousedown listener sees the
   // outside-click and tries to clean up.
-  'tags.mergeFromModal':      (ds) => { window.closeModal(); mergeTags(ds.source, ds.target); },
-  'tags.openTicketFromModal': (ds) => { window.closeModal(); openTicket(ds.ticketId); },
+  'tags.mergeFromModal':      (ds) => { closeModal(); mergeTags(ds.source, ds.target); },
+  'tags.openTicketFromModal': (ds) => { closeModal(); openTicket(ds.ticketId); },
 });

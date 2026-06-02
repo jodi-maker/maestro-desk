@@ -18,6 +18,7 @@
 
 import { AI_API_KEY, callClaude } from './client.js';
 import { openTicket } from '../tickets/detail.js';
+import { showModal } from '../core/modal.js';
 
 export let AGENT_PREFERRED_LANG = localStorage.getItem('agent_preferred_lang') || 'English';
 
@@ -147,7 +148,7 @@ export function setAgentPreferredLang(v) {
 
 export function showTranslatorModal(prefillText) {
   const langs = TRANSLATOR_LANGS.map(l => `<option value="${l}">${l}</option>`).join('');
-  window.showModal('Translator', `
+  showModal('Translator', `
     <div class="form-row">
       <label class="form-label">Source text</label>
       <textarea class="form-input" id="tx-src" placeholder="Paste text to translate…" style="min-height:120px;font-family:'Inter',sans-serif">${prefillText ? window.escHtml(prefillText) : ''}</textarea>

@@ -287,7 +287,7 @@ function macNew() {
       usageCount: 0,
       lastUsed: null,
     });
-    window.closeModal(); window.renderPage('macros');
+    closeModal(); window.renderPage('macros');
   }, 'Create');
 }
 
@@ -303,7 +303,7 @@ function macEdit(id) {
     m.icon = document.getElementById('mac-icon').value.trim() || '⚡';
     m.description = document.getElementById('mac-desc').value.trim();
     m.actions = actions;
-    window.closeModal(); window.renderPage('macros');
+    closeModal(); window.renderPage('macros');
   }, 'Save');
 }
 
@@ -313,7 +313,7 @@ function macDelete(id) {
   showModal('Delete macro', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(m.name)}</strong>?</div>`, () => {
     const i = MACROS.findIndex(x => x.id === id);
     if (i >= 0) MACROS.splice(i, 1);
-    window.closeModal(); window.renderPage('macros');
+    closeModal(); window.renderPage('macros');
   }, 'Delete');
 }
 

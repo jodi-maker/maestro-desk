@@ -12,6 +12,7 @@
 // remove mutators are now module-internal (dispatched via att.* actions).
 
 import { registerActions } from '../core/event-delegation.js';
+import { showModal } from '../core/modal.js';
 
 function addMockAttachment(id) {
   const t = TICKETS.find(x => x.id === id);
@@ -46,7 +47,7 @@ export function showAttachPanel(id) {
           <button class="btn btn-sm btn-danger" data-action="att.remove" data-id="${window.escAttr(id)}" data-idx="${i}" style="padding:2px 8px;font-size:11px">Remove</button>
         </div>`).join('')
     : '<div style="font-size:12px;color:var(--ink3);text-align:center;padding:18px 0">No attachments yet</div>';
-  window.showModal('Attachments', `
+  showModal('Attachments', `
     <div class="attach-zone" data-action="att.add" data-id="${window.escAttr(id)}">Click to add a sample attachment</div>
     <div style="margin-top:14px;font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;font-weight:500;margin-bottom:8px">${t.attachments.length} file${t.attachments.length===1?'':'s'}</div>
     ${list}

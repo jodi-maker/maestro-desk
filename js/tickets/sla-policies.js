@@ -18,6 +18,7 @@
 import { findMatchingSLAPolicy, fmtSLAMinutes } from './sla.js';
 import { registerActions, registerChangeActions } from '../core/event-delegation.js';
 import { apiPost, apiPatch, apiDelete } from '../core/api-client.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 // Map a row to the API body shape used by POST/PATCH.
 function slaToApiBody(data) {
@@ -181,7 +182,7 @@ function slaReadAndValidate() {
 
 function slaNew() {
   if (!window.isAdmin()) return;
-  window.showModal('New SLA policy', slaFormBody(null), async () => {
+  showModal('New SLA policy', slaFormBody(null), async () => {
     const data = slaReadAndValidate(); if (!data) return;
     // API-backed if any existing row carries a _uuid (loaded from the server).
     const apiBacked = SLA_POLICIES.some((x) => x._uuid);
@@ -203,35 +204,35 @@ function slaNew() {
     } else {
       SLA_POLICIES.unshift({ id: slaNextId(), ...data });
     }
-    window.closeModal(); window.renderPage('sla');
+    closeModal(); window.renderPage('sla');
   }, 'Create');
 }
 
 function slaEdit(id) {
   if (!window.isAdmin()) return;
   const p = SLA_POLICIES.find(x => x.id === id); if (!p) return;
-  window.showModal(`Edit ${p.id}`, slaFormBody(p), async () => {
+  showModal(`Edit ${p.id}`, slaFormBody(p), async () => {
     const data = slaReadAndValidate(); if (!data) return;
     if (p._uuid) {
       try { await apiPatch(`/api/v1/sla-policies/${p._uuid}`, slaToApiBody(data)); }
       catch (err) { slaShowError(err?.message || String(err)); return; }
     }
     Object.assign(p, data);
-    window.closeModal(); window.renderPage('sla');
+    closeModal(); window.renderPage('sla');
   }, 'Save');
 }
 
 function slaDelete(id) {
   if (!window.isAdmin()) return;
   const p = SLA_POLICIES.find(x => x.id === id); if (!p) return;
-  window.showModal('Delete policy', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${p.name}</strong>?</div>`, async () => {
+  showModal('Delete policy', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${p.name}</strong>?</div>`, async () => {
     if (p._uuid) {
       try { await apiDelete(`/api/v1/sla-policies/${p._uuid}`); }
       catch (err) { alert(`Couldn't delete: ${err?.message || err}`); return; }
     }
     const i = SLA_POLICIES.findIndex(x => x.id === id);
     if (i >= 0) SLA_POLICIES.splice(i, 1);
-    window.closeModal(); window.renderPage('sla');
+    closeModal(); window.renderPage('sla');
   }, 'Delete');
 }
 

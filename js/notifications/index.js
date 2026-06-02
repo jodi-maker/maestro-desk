@@ -31,6 +31,7 @@
 import { registerActions, registerChangeActions, registerMousedownActions } from '../core/event-delegation.js';
 import { navTo } from '../core/keybindings.js';
 import { openTicket } from '../tickets/detail.js';
+import { showModal, closeModal } from '../core/modal.js';
 // setSettingsTab is reached via window to avoid a notifications↔settings
 // import cycle (settings imports refreshNotifBadge from here). Settings is
 // still bridged; this can become a direct import once Settings migrates.
@@ -174,10 +175,10 @@ function dismissNotif(id) {
 }
 
 function clearAllNotifications() {
-  window.showModal('Clear notifications', '<div style="font-size:13px;color:var(--ink2);line-height:1.6">Dismiss all current notifications? They will be removed from the bell and the notifications page.</div>', () => {
+  showModal('Clear notifications', '<div style="font-size:13px;color:var(--ink2);line-height:1.6">Dismiss all current notifications? They will be removed from the bell and the notifications page.</div>', () => {
     getNotifications().forEach(n => NOTIFICATIONS_DISMISSED.add(n.id));
     refreshNotifBadge();
-    window.closeModal(); window.renderPage('notifications');
+    closeModal(); window.renderPage('notifications');
   }, 'Clear all');
 }
 

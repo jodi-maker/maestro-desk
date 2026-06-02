@@ -15,6 +15,7 @@
 
 import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../core/api-client.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 const WF_TRIGGER_PRESETS = [
   'Ticket created',
@@ -342,7 +343,7 @@ function wfFormBody(w) {
 
 function wfNew() {
   if (!window.isAdmin()) return;
-  window.showModal('New workflow', wfFormBody(null), async () => {
+  showModal('New workflow', wfFormBody(null), async () => {
     const name    = document.getElementById('wf-name').value.trim();
     const trigger = document.getElementById('wf-trigger').value.trim();
     const action  = document.getElementById('wf-action').value.trim();
@@ -372,14 +373,14 @@ function wfNew() {
       const id = 'WF-' + String(WORKFLOWS.length + 1).padStart(3, '0');
       WORKFLOWS.unshift({ id, name, trigger, action, status, runCount:0, lastRun:null });
     }
-    window.closeModal(); window.renderPage('workflows');
+    closeModal(); window.renderPage('workflows');
   }, 'Create');
 }
 
 function wfEdit(id) {
   if (!window.isAdmin()) return;
   const w = WORKFLOWS.find(x => x.id === id); if (!w) return;
-  window.showModal(`Edit ${w.id}`, wfFormBody(w), async () => {
+  showModal(`Edit ${w.id}`, wfFormBody(w), async () => {
     const name    = document.getElementById('wf-name').value.trim();
     const trigger = document.getElementById('wf-trigger').value.trim();
     const action  = document.getElementById('wf-action').value.trim();
@@ -392,21 +393,21 @@ function wfEdit(id) {
     }
     w.name = name; w.trigger = trigger; w.action = action;
     w.status = status;
-    window.closeModal(); window.renderPage('workflows');
+    closeModal(); window.renderPage('workflows');
   }, 'Save');
 }
 
 function wfDelete(id) {
   if (!window.isAdmin()) return;
   const w = WORKFLOWS.find(x => x.id === id); if (!w) return;
-  window.showModal('Delete workflow', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${w.name}</strong>? This cannot be undone.</div>`, async () => {
+  showModal('Delete workflow', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${w.name}</strong>? This cannot be undone.</div>`, async () => {
     if (w._uuid) {
       try { await apiDelete(`/api/v1/workflows/${w._uuid}`); }
       catch (err) { alert(`Couldn't delete: ${err?.message || err}`); return; }
     }
     const i = WORKFLOWS.findIndex(x => x.id === id);
     if (i >= 0) WORKFLOWS.splice(i, 1);
-    window.closeModal(); window.renderPage('workflows');
+    closeModal(); window.renderPage('workflows');
   }, 'Delete');
 }
 

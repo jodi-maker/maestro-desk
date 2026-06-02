@@ -20,6 +20,7 @@
 import { apiPost, apiDelete } from '../core/api-client.js';
 import { openTicket } from './detail.js';
 import { registerActions } from '../core/event-delegation.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 function timeEntryNextId() {
   return 'TE-' + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -98,7 +99,7 @@ export async function removeTimeEntry(ticketId, entryId) {
 export function showLogTimeModal(ticketId) {
   const t = TICKETS.find(x => x.id === ticketId);
   if (!t) return;
-  window.showModal(`Log time on ${window.escHtml(t.id)}`, `
+  showModal(`Log time on ${window.escHtml(t.id)}`, `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">Logged time rolls up in the ticket sidebar, the agent's totals, and the Reports page.</div>
     <div class="form-row"><label class="form-label">Quick presets</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -120,7 +121,7 @@ export function showLogTimeModal(ticketId) {
     const note = document.getElementById('te-note').value;
     const billable = document.getElementById('te-billable').checked;
     addTimeEntry(ticketId, min, note, billable);
-    window.closeModal();
+    closeModal();
   }, 'Log time');
 }
 

@@ -27,6 +27,7 @@ import { openTicket } from './detail.js';
 import { refreshTicketSLA } from './sla.js';
 import { apiPost, apiDelete } from '../core/api-client.js';
 import { registerActions } from '../core/event-delegation.js';
+import { showModal, closeModal } from '../core/modal.js';
 
 async function snoozeTicket(id, untilIso, reason) {
   const t = TICKETS.find(x => x.id === id);
@@ -136,7 +137,7 @@ export function showSnoozeModal(ticketId) {
   const pillRow = presets.map(p => `
     <button type="button" class="btn btn-sm" style="flex:1" data-action="snooze.preset" data-key="${p.key}">${p.label}</button>`).join('');
   const defaultIso = snoozePresetIso('4h').slice(0, 16);
-  window.showModal(`Snooze ${window.escHtml(t.id)}`, `
+  showModal(`Snooze ${window.escHtml(t.id)}`, `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">SLA evaluation pauses while snoozed. The ticket wakes itself when the time is reached and posts a notification.</div>
     <div class="form-row"><label class="form-label">Quick presets</label>
       <div style="display:flex;gap:6px">${pillRow}</div>
@@ -152,7 +153,7 @@ export function showSnoozeModal(ticketId) {
     if (!when) { alert('Pick a wake-up time.'); return; }
     const reason = document.getElementById('snz-reason').value.trim();
     snoozeTicket(ticketId, new Date(when).toISOString(), reason);
-    window.closeModal();
+    closeModal();
   }, 'Snooze');
 }
 
@@ -168,7 +169,7 @@ function bulkSnoozeTickets() {
   const pillRow = presets.map(p => `
     <button type="button" class="btn btn-sm" style="flex:1" data-action="snooze.preset" data-key="${p.key}">${p.label}</button>`).join('');
   const defaultIso = snoozePresetIso('4h').slice(0, 16);
-  window.showModal(`Snooze ${n} ticket${n===1?'':'s'}`, `
+  showModal(`Snooze ${n} ticket${n===1?'':'s'}`, `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">Each ticket gets the same wake-up time. Already-snoozed tickets are overwritten.</div>
     <div class="form-row"><label class="form-label">Quick presets</label>
       <div style="display:flex;gap:6px">${pillRow}</div>
@@ -186,7 +187,7 @@ function bulkSnoozeTickets() {
     const reason = document.getElementById('snz-reason').value.trim();
     [...TICKET_SELECTED_IDS].forEach(id => snoozeTicket(id, iso, reason));
     TICKET_SELECTED_IDS.clear();
-    window.closeModal();
+    closeModal();
     window.renderPage('tickets');
   }, 'Snooze');
 }

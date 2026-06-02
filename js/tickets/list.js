@@ -187,7 +187,7 @@ export function renderTickets() {
       <button class="btn btn-sm" onclick="bulkAddTag()">Add tag…</button>
       <button class="btn btn-sm" data-action="snooze.bulkSnooze">💤 Snooze…</button>
       <button class="btn btn-sm" onclick="bulkApplyAssignmentRules()">⇄ Run rules</button>
-      <select class="filter-select" onchange="bulkRunMacro(this.value)">
+      <select class="filter-select" data-change-action="macros.bulkRun">
         <option value="">Run macro…</option>
         ${MACROS.map(m => `<option value="${window.escAttr(m.id)}">${window.escHtml(m.icon || '⚡')} ${window.escHtml(m.name)}</option>`).join('')}
       </select>

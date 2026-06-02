@@ -3,7 +3,6 @@
 
 const modules = [
   ['Keybindings',            '../js/core/keybindings.js'],
-  ['CustomerModals',         '../js/customers/modals.js'],
 ];
 
 // state.js + data.js are classic scripts that reference `document`/`localStorage`

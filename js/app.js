@@ -53,9 +53,6 @@ import { renderWorkflows } from './workflows/index.js';
 import { renderTags } from './tags/index.js';
 import { renderCustomers } from './customers/index.js';
 import {
-  showGDPRModal, openCustomerModal, showCSVModal, showNewCustomerModal,
-} from './customers/modals.js';
-import {
   renderDashboard,
   DASH_WIDGETS, DEFAULT_DASH_LAYOUT,
 } from './dashboard/index.js';
@@ -75,7 +72,6 @@ import { renderCSAT } from './tickets/csat.js';
 // per-function list (~318 entries) is gone — bun dedupes the duplicate
 // imports at bundle time.
 import * as Keybindings from './core/keybindings.js';
-import * as CustomerModals from './customers/modals.js';
 import { stopPresence } from './core/presence.js';
 import { startListSync, stopListSync } from './tickets/list-sync.js';
 
@@ -328,7 +324,6 @@ Object.assign(
     // notifications reaches this via window to avoid a settings↔notifications cycle
     setSettingsTab },
   Keybindings,
-  CustomerModals,
 );
 
 // Static index.html shell handlers (sidebar nav items + the sign-out foot).

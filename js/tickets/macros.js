@@ -166,7 +166,7 @@ function bulkRunMacro(macroId) {
 
 export function showApplyMacroModal(ticketId) {
   if (MACROS.length === 0) {
-    window.showModal('Apply macro', '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px 0">No macros defined yet. Create one in <span class="link" data-action="macros.gotoManage">Config → Macros</span>.</div>', null, null);
+    showModal('Apply macro', '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px 0">No macros defined yet. Create one in <span class="link" data-action="macros.gotoManage">Config → Macros</span>.</div>', null, null);
     return;
   }
   const items = MACROS.map(m => `
@@ -178,7 +178,7 @@ export function showApplyMacroModal(ticketId) {
       </div>
       <div style="font-size:11px;color:var(--ink2);line-height:1.5">${(m.actions || []).map(macActionSummary).join('<span style="color:var(--ink3)"> · </span>')}</div>
     </div>`).join('');
-  window.showModal('Apply macro', `
+  showModal('Apply macro', `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">Each step runs in order. Reply text is staged in the composer for review before sending.</div>
     <div style="max-height:380px;overflow-y:auto">${items}</div>
   `, null, null);
@@ -273,7 +273,7 @@ function macStepKindChange(i, newKind) {
 function macNew() {
   if (!window.isAdmin()) return;
   const seed = { actions: [{ kind:'status', value:'pending' }] };
-  window.showModal('New macro', macFormBody(seed), () => {
+  showModal('New macro', macFormBody(seed), () => {
     const name = document.getElementById('mac-name').value.trim();
     if (!name) { alert('Name is required.'); return; }
     const actions = _macReadDraft().filter(a => a.kind && (a.value || a.text || a.templateId));
@@ -294,7 +294,7 @@ function macNew() {
 function macEdit(id) {
   if (!window.isAdmin()) return;
   const m = MACROS.find(x => x.id === id); if (!m) return;
-  window.showModal('Edit macro · ' + m.id, macFormBody(m), () => {
+  showModal('Edit macro · ' + m.id, macFormBody(m), () => {
     const name = document.getElementById('mac-name').value.trim();
     if (!name) { alert('Name is required.'); return; }
     const actions = _macReadDraft().filter(a => a.kind && (a.value || a.text || a.templateId));
@@ -310,7 +310,7 @@ function macEdit(id) {
 function macDelete(id) {
   if (!window.isAdmin()) return;
   const m = MACROS.find(x => x.id === id); if (!m) return;
-  window.showModal('Delete macro', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(m.name)}</strong>?</div>`, () => {
+  showModal('Delete macro', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(m.name)}</strong>?</div>`, () => {
     const i = MACROS.findIndex(x => x.id === id);
     if (i >= 0) MACROS.splice(i, 1);
     window.closeModal(); window.renderPage('macros');

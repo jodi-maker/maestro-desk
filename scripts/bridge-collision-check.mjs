@@ -7,7 +7,6 @@ const modules = [
   ['Summarize',              '../js/ai/summarize.js'],
   ['Translate',              '../js/ai/translate.js'],
   ['AIReply',                '../js/ai/reply.js'],
-  ['Macros',                 '../js/tickets/macros.js'],
   ['KBIntegration',          '../js/kb-integration/index.js'],
   ['Modal',                  '../js/core/modal.js'],
   ['Collapsible',            '../js/core/collapsible.js'],

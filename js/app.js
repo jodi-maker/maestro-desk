@@ -24,12 +24,7 @@ import { loadDraft, saveDraft, clearDraft } from './tickets/drafts.js';
 import {
   logTicketEvent, getTicketEvents, renderActivityLog,
 } from './core/activity-log.js';
-import {
-  MACROS,
-  runMacro, bulkRunMacro, showApplyMacroModal, showMacroPanel,
-  macAddStep, macRemoveStep, macStepKindChange,
-  macNew, macEdit, macDelete, renderMacros,
-} from './tickets/macros.js';
+import { renderMacros } from './tickets/macros.js';
 import { showAttachPanel } from './tickets/attachments.js';
 import { renderAI, initAI } from './ai/page.js';
 import { renderPortal } from './portal/preview.js';
@@ -137,7 +132,6 @@ import * as AIClient from './ai/client.js';
 import * as Summarize from './ai/summarize.js';
 import * as Translate from './ai/translate.js';
 import * as AIReply from './ai/reply.js';
-import * as Macros from './tickets/macros.js';
 import * as KBIntegration from './kb-integration/index.js';
 import * as Modal from './core/modal.js';
 import * as Collapsible from './core/collapsible.js';
@@ -407,7 +401,6 @@ Object.assign(
     // Agent (real-auth) sign-in panel — onclick handlers in static index.html
     showAgentLogin, submitAgentLogin },
   Theme, AIClient, Summarize, Translate, AIReply,
-  Macros,
   KBIntegration,
   Modal, Collapsible, Keybindings,
   GlobalSearch,

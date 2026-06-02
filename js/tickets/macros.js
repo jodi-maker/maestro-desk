@@ -6,8 +6,19 @@
 //
 // External reaches (interim, via window): changeTicketStatus,
 // changeTicketPriority, changeTicketAgent, addTicketTag, openTicket,
-// isAdmin, escHtml, escAttr, closeModal, navTo, renderPage — still in
-// app.js. showModal is a direct ES import from core/modal.js.
+// isAdmin, escHtml, escAttr, renderPage — still in app.js. showModal /
+// closeModal are direct ES imports from core/modal.js; navTo from
+// core/keybindings.js; insertMacro from tickets/detail.js.
+//
+// No window-bridge namespace: the inline on*= handlers are delegated as
+// macros.* actions (bottom of file). showMacroPanel / showApplyMacroModal
+// stay exported (detail.js imports them as td.macroPanel / td.macroModal);
+// MACROS (data) is imported by list.js; renderMacros by the router. The
+// mutators run via the actions and are module-internal.
+//
+// insertMacro lives in tickets/detail.js which imports showMacroPanel /
+// showApplyMacroModal back from here — a cycle, fine because the binding is
+// only used inside the action closure (deferred), not at module-eval time.
 //
 // logTicketEvent is imported from core/activity-log.js since that's already
 // extracted.
@@ -17,7 +28,13 @@
 // MACRO_FILTER_QUERY come from core/state.js the same way.
 
 import { logTicketEvent } from '../core/activity-log.js';
-import { showModal } from '../core/modal.js';
+import { showModal, closeModal } from '../core/modal.js';
+import { navTo } from '../core/keybindings.js';
+import { insertMacro } from './detail.js';
+import {
+  registerActions, registerChangeActions,
+  registerMousedownActions, registerInputActions,
+} from '../core/event-delegation.js';
 
 export const MACROS = [
   { id:'MAC-001', name:'Waiting on customer', icon:'⏸', description:'Pause for customer reply',
@@ -71,12 +88,12 @@ function macActionSummary(a) {
 }
 
 // Picker for inserting a CANNED_RESPONSES entry into the compose box of
-// ticket `id`. Inline onclick=insertMacro(...) resolves through window;
-// the surrounding labels go through escAttr/escHtml on the way in.
+// ticket `id`. Rows carry data-action="macros.insert"; the handler calls
+// insertMacro (from detail.js). Labels go through escAttr/escHtml on the way in.
 export function showMacroPanel(id) {
   const items = CANNED_RESPONSES.map((r, i) => {
     const preview = r.text.replace(/\n+/g, ' ').slice(0, 100);
-    return `<div class="macro-item" onclick="insertMacro('${window.escAttr(id)}',${i})">
+    return `<div class="macro-item" data-action="macros.insert" data-id="${window.escAttr(id)}" data-idx="${i}">
       <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--ink)">${window.escHtml(r.name)}</div>
         <div style="font-size:11px;color:var(--ink3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${window.escHtml(preview)}</div>
@@ -86,7 +103,7 @@ export function showMacroPanel(id) {
   showModal('Insert canned response', `<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">{name} placeholders are auto-filled with the customer\'s first name.</div>${items}`, null, null);
 }
 
-export function runMacro(macroId, ticketId) {
+function runMacro(macroId, ticketId) {
   const macro = MACROS.find(m => m.id === macroId);
   const t = TICKETS.find(x => x.id === ticketId);
   if (!macro || !t) return;
@@ -139,7 +156,7 @@ export function runMacro(macroId, ticketId) {
   }
 }
 
-export function bulkRunMacro(macroId) {
+function bulkRunMacro(macroId) {
   if (!macroId || TICKET_SELECTED_IDS.size === 0) return;
   const ids = [...TICKET_SELECTED_IDS];
   ids.forEach(id => runMacro(macroId, id));
@@ -149,11 +166,11 @@ export function bulkRunMacro(macroId) {
 
 export function showApplyMacroModal(ticketId) {
   if (MACROS.length === 0) {
-    window.showModal('Apply macro', '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px 0">No macros defined yet. Create one in <span class="link" onclick="closeModal();navTo(\'macros\')">Config → Macros</span>.</div>', null, null);
+    showModal('Apply macro', '<div style="color:var(--ink3);font-size:12px;text-align:center;padding:18px 0">No macros defined yet. Create one in <span class="link" data-action="macros.gotoManage">Config → Macros</span>.</div>', null, null);
     return;
   }
   const items = MACROS.map(m => `
-    <div onmousedown="closeModal();runMacro(${window.escHtml(JSON.stringify(m.id))},${window.escHtml(JSON.stringify(ticketId))})" style="padding:10px 12px;border:1px solid var(--rule);border-radius:var(--r);cursor:pointer;background:var(--off2);margin-bottom:6px;transition:all .15s" onmouseover="this.style.borderColor='var(--purple)';this.style.background='var(--purple-lt)'" onmouseout="this.style.borderColor='var(--rule)';this.style.background='var(--off2)'">
+    <div data-mousedown-action="macros.runAndClose" data-macro-id="${window.escAttr(m.id)}" data-ticket-id="${window.escAttr(ticketId)}" style="padding:10px 12px;border:1px solid var(--rule);border-radius:var(--r);cursor:pointer;background:var(--off2);margin-bottom:6px;transition:all .15s" onmouseover="this.style.borderColor='var(--purple)';this.style.background='var(--purple-lt)'" onmouseout="this.style.borderColor='var(--rule)';this.style.background='var(--off2)'">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
         <span style="font-size:14px">${window.escHtml(m.icon || '⚡')}</span>
         <span style="font-size:13px;font-weight:600;color:var(--ink)">${window.escHtml(m.name)}</span>
@@ -161,7 +178,7 @@ export function showApplyMacroModal(ticketId) {
       </div>
       <div style="font-size:11px;color:var(--ink2);line-height:1.5">${(m.actions || []).map(macActionSummary).join('<span style="color:var(--ink3)"> · </span>')}</div>
     </div>`).join('');
-  window.showModal('Apply macro', `
+  showModal('Apply macro', `
     <div style="font-size:12px;color:var(--ink3);margin-bottom:12px;line-height:1.5">Each step runs in order. Reply text is staged in the composer for review before sending.</div>
     <div style="max-height:380px;overflow-y:auto">${items}</div>
   `, null, null);
@@ -189,9 +206,9 @@ function macStepRow(a, i) {
   })();
   return `
     <div class="mac-step" data-mac-step="${i}" style="display:flex;gap:6px;align-items:flex-start;margin-bottom:6px">
-      <select class="form-input" style="flex:0 0 130px" data-mac-kind="${i}" onchange="macStepKindChange(${i}, this.value)">${MAC_ACTION_KINDS.map(k=>`<option value="${k.kind}" ${a.kind===k.kind?'selected':''}>${k.label}</option>`).join('')}</select>
+      <select class="form-input" style="flex:0 0 130px" data-mac-kind="${i}" data-change-action="macros.stepKind" data-idx="${i}">${MAC_ACTION_KINDS.map(k=>`<option value="${k.kind}" ${a.kind===k.kind?'selected':''}>${k.label}</option>`).join('')}</select>
       <div style="flex:1">${valueInput}</div>
-      <button type="button" class="btn btn-sm" onclick="macRemoveStep(${i})" title="Remove step">×</button>
+      <button type="button" class="btn btn-sm" data-action="macros.removeStep" data-idx="${i}" title="Remove step">×</button>
     </div>`;
 }
 
@@ -205,7 +222,7 @@ function macFormBody(m) {
       <div class="form-row"><label class="form-label">Description</label><input class="form-input" id="mac-desc" value="${esc(m?.description)}" placeholder="What this macro does"/></div>
     </div>
     <div class="form-row">
-      <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">Steps <button type="button" class="btn btn-sm" onclick="macAddStep()">+ Add step</button></label>
+      <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">Steps <button type="button" class="btn btn-sm" data-action="macros.addStep">+ Add step</button></label>
       <div id="mac-steps">${steps}</div>
     </div>`;
 }
@@ -231,17 +248,17 @@ function _macReplaceSteps(actions) {
   root.innerHTML = actions.map(macStepRow).join('');
 }
 
-export function macAddStep() {
+function macAddStep() {
   const draft = _macReadDraft();
   draft.push({ kind:'status', value:'open' });
   _macReplaceSteps(draft);
 }
-export function macRemoveStep(i) {
+function macRemoveStep(i) {
   const draft = _macReadDraft();
   draft.splice(i, 1);
   _macReplaceSteps(draft);
 }
-export function macStepKindChange(i, newKind) {
+function macStepKindChange(i, newKind) {
   const draft = _macReadDraft();
   // Reset value when kind changes; pick a sensible default per kind so the row
   // doesn't render empty inputs.
@@ -253,10 +270,10 @@ export function macStepKindChange(i, newKind) {
   _macReplaceSteps(draft);
 }
 
-export function macNew() {
+function macNew() {
   if (!window.isAdmin()) return;
   const seed = { actions: [{ kind:'status', value:'pending' }] };
-  window.showModal('New macro', macFormBody(seed), () => {
+  showModal('New macro', macFormBody(seed), () => {
     const name = document.getElementById('mac-name').value.trim();
     if (!name) { alert('Name is required.'); return; }
     const actions = _macReadDraft().filter(a => a.kind && (a.value || a.text || a.templateId));
@@ -274,10 +291,10 @@ export function macNew() {
   }, 'Create');
 }
 
-export function macEdit(id) {
+function macEdit(id) {
   if (!window.isAdmin()) return;
   const m = MACROS.find(x => x.id === id); if (!m) return;
-  window.showModal('Edit macro · ' + m.id, macFormBody(m), () => {
+  showModal('Edit macro · ' + m.id, macFormBody(m), () => {
     const name = document.getElementById('mac-name').value.trim();
     if (!name) { alert('Name is required.'); return; }
     const actions = _macReadDraft().filter(a => a.kind && (a.value || a.text || a.templateId));
@@ -290,10 +307,10 @@ export function macEdit(id) {
   }, 'Save');
 }
 
-export function macDelete(id) {
+function macDelete(id) {
   if (!window.isAdmin()) return;
   const m = MACROS.find(x => x.id === id); if (!m) return;
-  window.showModal('Delete macro', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(m.name)}</strong>?</div>`, () => {
+  showModal('Delete macro', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(m.name)}</strong>?</div>`, () => {
     const i = MACROS.findIndex(x => x.id === id);
     if (i >= 0) MACROS.splice(i, 1);
     window.closeModal(); window.renderPage('macros');
@@ -325,8 +342,8 @@ export function renderMacros() {
       <td style="font-family:'DM Mono',monospace;font-size:12px">${m.usageCount || 0}</td>
       <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3)">${window.escHtml(m.lastUsed || '—')}</td>
       ${admin ? `<td style="text-align:right;white-space:nowrap">
-        <button class="btn btn-sm" onclick="macEdit('${window.escAttr(m.id)}')">Edit</button>
-        <button class="btn btn-sm btn-danger" onclick="macDelete('${window.escAttr(m.id)}')">Delete</button>
+        <button class="btn btn-sm" data-action="macros.edit" data-id="${window.escAttr(m.id)}">Edit</button>
+        <button class="btn btn-sm btn-danger" data-action="macros.delete" data-id="${window.escAttr(m.id)}">Delete</button>
       </td>` : ''}
     </tr>`).join('');
 
@@ -335,7 +352,7 @@ export function renderMacros() {
       <div class="topbar">
         <div class="tb-title">Macros</div>
         ${admin
-          ? `<button class="btn btn-solid btn-sm" onclick="macNew()">+ New Macro</button>`
+          ? `<button class="btn btn-solid btn-sm" data-action="macros.new">+ New Macro</button>`
           : `<span style="font-size:11px;color:var(--ink3);font-style:italic">Read-only — admin access required to edit</span>`}
       </div>
       <div class="kpi-bar">
@@ -345,7 +362,7 @@ export function renderMacros() {
       </div>
       <div class="filter-bar">
         <span class="filter-label">Search</span>
-        <input class="filter-select" placeholder="name, description, action…" style="width:300px" value="${window.escHtml(MACRO_FILTER_QUERY)}" oninput="MACRO_FILTER_QUERY=this.value;renderPage('macros')"/>
+        <input class="filter-select" placeholder="name, description, action…" style="width:300px" value="${window.escHtml(MACRO_FILTER_QUERY)}" data-input-action="macros.filter"/>
         <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--ink3);margin-left:auto">${list.length} of ${total}</span>
       </div>
       <div class="page-scroll">
@@ -361,3 +378,29 @@ export function renderMacros() {
       </div>
     </div>`;
 }
+
+registerActions({
+  'macros.insert':     (ds) => insertMacro(ds.id, parseInt(ds.idx, 10)),
+  'macros.gotoManage': () => { closeModal(); navTo('macros'); },
+  'macros.removeStep': (ds) => macRemoveStep(parseInt(ds.idx, 10)),
+  'macros.addStep':    () => macAddStep(),
+  'macros.edit':       (ds) => macEdit(ds.id),
+  'macros.delete':     (ds) => macDelete(ds.id),
+  'macros.new':        () => macNew(),
+});
+
+registerChangeActions({
+  // step-kind select in the macro editor (idx on data-idx, new kind on el.value)
+  'macros.stepKind': (ds, el) => macStepKindChange(parseInt(ds.idx, 10), el.value),
+  // bulk "run macro" select rendered by tickets/list.js
+  'macros.bulkRun':  (ds, el) => bulkRunMacro(el.value),
+});
+
+registerMousedownActions({
+  // apply-macro picker rows — mousedown so it fires before the modal dismiss
+  'macros.runAndClose': (ds) => { closeModal(); runMacro(ds.macroId, ds.ticketId); },
+});
+
+registerInputActions({
+  'macros.filter': (ds, el) => { MACRO_FILTER_QUERY = el.value; window.renderPage('macros'); },
+});

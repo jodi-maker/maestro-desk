@@ -200,6 +200,7 @@ function setWidgetChart(scope, id, chartType) {
 function resetWidgetLayout(scope) {
   const isDash = scope === 'dash';
   const src = catalogDefaultLayout(scope);
+  if (!src) return;
   const layout = { order: [...src.order], hidden: [...src.hidden], charts: { ...src.charts } };
   if (isDash) DASH_LAYOUT = layout; else REPORT_LAYOUT = layout;
   saveLayout(isDash ? 'dash_layout' : 'report_layout', layout);

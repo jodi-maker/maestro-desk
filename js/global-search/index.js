@@ -67,7 +67,7 @@ export const SEARCH_PAGES = [
 
 let SEARCH_PAGE_QUERY = '';
 
-export function globalSearch(q) {
+function globalSearch(q) {
   const results = document.getElementById('gs-results');
   if (!results) return;
   const ql = (q || '').toLowerCase().trim();
@@ -174,7 +174,7 @@ function gsGo(type, id) {
   }
 }
 
-export function gsKey(e) {
+function gsKey(e) {
   const results = document.getElementById('gs-results');
   if (!results || !results.classList.contains('show')) {
     if (e.key === 'Escape') e.target.blur();
@@ -379,3 +379,16 @@ registerMousedownActions({
 registerInputActions({
   'gs.setQuery': (ds, el) => searchPageSetQuery(el.value),
 });
+
+// The top-bar search input (#gs-input) is static markup in index.html, so its
+// input / focus / keydown handlers are wired once at startup (app.js calls
+// this) rather than via the delegation harness — focus + keydown are sparse,
+// single-element events not worth a registry, and globalSearch/gsKey are now
+// module-internal (no longer on the window bridge).
+export function initGlobalSearchInput() {
+  const el = document.getElementById('gs-input');
+  if (!el) return;
+  el.addEventListener('input',   () => globalSearch(el.value));
+  el.addEventListener('focus',   () => globalSearch(el.value));
+  el.addEventListener('keydown', (e) => gsKey(e));
+}

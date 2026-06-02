@@ -11,7 +11,6 @@ const modules = [
   ['Modal',                  '../js/core/modal.js'],
   ['Collapsible',            '../js/core/collapsible.js'],
   ['Keybindings',            '../js/core/keybindings.js'],
-  ['Settings',               '../js/settings/index.js'],
   ['CustomerModals',         '../js/customers/modals.js'],
   ['TicketDetail',           '../js/tickets/detail.js'],
 ];

@@ -46,13 +46,7 @@ import { navTo, focusGlobalSearch } from './core/keybindings.js';
 import { renderProfile } from './profile/index.js';
 import { renderAgents } from './agents/index.js';
 import './profile-menu/index.js';  // side-effect: registers profmenu.* actions for the static top-bar dropdown
-import {
-  renderSearchResults,
-  // globalSearch + gsKey: the static index.html top-bar search input calls
-  // them inline (oninput/onfocus/onkeydown) — kept as explicit bridge entries
-  // until the index.html pass migrates that markup.
-  globalSearch, gsKey,
-} from './global-search/index.js';
+import { renderSearchResults, initGlobalSearchInput } from './global-search/index.js';
 import {
   showAuthPanel, togglePassword, ssoLogin,
   submitLogin, submitForgot, submitCreate, updatePwStrength,
@@ -370,8 +364,6 @@ Object.assign(
     showPlatformAdminLogin, submitPlatformAdminLogin,
     // Agent (real-auth) sign-in panel — onclick handlers in static index.html
     showAgentLogin, submitAgentLogin,
-    // Top-bar search input in static index.html (oninput/onfocus/onkeydown)
-    globalSearch, gsKey,
     // notifications reaches this via window to avoid a settings↔notifications cycle
     setSettingsTab },
   Theme, AIClient, Summarize, Translate, AIReply,
@@ -387,6 +379,10 @@ registerActions({
   'app.nav':    (ds, el) => nav(ds.page, el),
   'app.logout': () => logout(),
 });
+
+// Wire the static top-bar search input (#gs-input) — its input/focus/keydown
+// handlers are attached programmatically (sparse events, single static element).
+initGlobalSearchInput();
 
 // ─── Startup: resume a real-auth session if one is in sessionStorage ───
 // Agent resume wins if a workspace_id is stored — that's the user's

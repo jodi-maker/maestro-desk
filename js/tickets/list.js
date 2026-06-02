@@ -185,7 +185,7 @@ export function renderTickets() {
         <option value="low">Low</option>
       </select>
       <button class="btn btn-sm" onclick="bulkAddTag()">Add tag…</button>
-      <button class="btn btn-sm" onclick="bulkSnoozeTickets()">💤 Snooze…</button>
+      <button class="btn btn-sm" data-action="snooze.bulkSnooze">💤 Snooze…</button>
       <button class="btn btn-sm" onclick="bulkApplyAssignmentRules()">⇄ Run rules</button>
       <select class="filter-select" onchange="bulkRunMacro(this.value)">
         <option value="">Run macro…</option>

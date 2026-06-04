@@ -9,7 +9,7 @@
 // External reaches (interim, via window): escAttr, escHtml, fmtMinutes —
 // all still in app.js. navTo is a direct ES import.
 
-import { AGENTS, CANNED_RESPONSES, CUSTOMERS, KB_ARTICLES, TAG_LIBRARY, TICKETS, TICKET_TEMPLATES } from '../core/data.js';
+import { AGENTS, CANNED_RESPONSES, CATEGORIES, CUSTOMERS, KB_ARTICLES, TAG_LIBRARY, TICKETS, TICKET_TEMPLATES } from '../core/data.js';
 import { COMPOSE_TAB, CURRENT_TICKET, SESSION, setAiThinking, setComposeTabValue, setCurrentTicket, setKbSelected } from '../core/state.js';
 import { renderPage, updateNavBadges } from '../core/router.js';
 import { summarizeTicket, clearTicketSummary } from '../ai/summarize.js';
@@ -1001,7 +1001,13 @@ async function sendCompose(id) {
 }
 
 export function showNewTicketModal(templateId) {
-  const cats = [...new Set([...TICKETS.map(t=>t.category), ...TICKET_TEMPLATES.map(t=>t.category)])];
+  // Prefer the workspace's canonical active categories (loaded from the API);
+  // fall back to deriving from existing tickets/templates when CATEGORIES is
+  // empty (demo persona, which never calls loadWorkspaceData).
+  const activeCats = CATEGORIES.filter(c => c.is_active).map(c => c.label);
+  const cats = activeCats.length
+    ? activeCats
+    : [...new Set([...TICKETS.map(t=>t.category), ...TICKET_TEMPLATES.map(t=>t.category)])];
   const tpl = templateId ? TICKET_TEMPLATES.find(t => t.id === templateId) : null;
   const esc = s => String(s||'').replace(/"/g,'&quot;');
   const tplOptions = TICKET_TEMPLATES.map(t => `<option value="${window.escAttr(t.id)}" ${tpl?.id===t.id?'selected':''}>${window.escHtml(t.name)}</option>`).join('');
@@ -1012,7 +1018,7 @@ export function showNewTicketModal(templateId) {
     : '';
   const categoryRow = visible('category')
     ? `<div class="form-row"><label class="form-label">Category${req('category')}</label>
-        <select class="form-input" id="nt-cat">${cats.map(c=>`<option ${tpl?.category===c?'selected':''}>${c}</option>`).join('')}</select>
+        <select class="form-input" id="nt-cat">${cats.map(c=>`<option ${tpl?.category===c?'selected':''}>${window.escHtml(c)}</option>`).join('')}</select>
       </div>`
     : '';
   const priorityRow = visible('priority')

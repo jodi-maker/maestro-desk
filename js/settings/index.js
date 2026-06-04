@@ -19,7 +19,7 @@
 // window.setSettingsTab to dodge the settings↔notifications import cycle
 // (settings already imports refreshNotifBadge from notifications).
 
-import { CUSTOMERS } from '../core/data.js';
+import { CUSTOMERS, CATEGORIES } from '../core/data.js';
 import { NOTIF_PREFS, SESSION, SETTINGS_TAB, setSettingsTabValue } from '../core/state.js';
 import { renderPage } from '../core/router.js';
 import { THEME, setTheme } from '../core/theme.js';
@@ -51,6 +51,7 @@ let WORKSPACE_SETTINGS = null;
 let WORKSPACE_SETTINGS_LOADED = false;
 let ME_PREFS = null;
 let ME_PREFS_LOADED = false;
+let CATEGORIES_LOADED = false;   // Categories tab lazy-load guard
 const SLACK_EVENTS = [
   { k: 'ticket.created',   l: 'Ticket created' },
   { k: 'ticket.resolved',  l: 'Ticket resolved' },
@@ -71,6 +72,8 @@ export function renderSettings() {
     {k:'knowledge-base', l:'Knowledge Base'},
     {k:'language',      l:'Language'},
     {k:'integrations',  l:'Integrations'},
+    // Categories is workspace config — admins only.
+    ...(window.isAdmin() ? [{k:'categories', l:'Categories'}] : []),
   ];
   const tabbar = tabs.map(t => `<div class="settings-tab ${SETTINGS_TAB===t.k?'active':''}" data-action="settings.setTab" data-tab="${window.escAttr(t.k)}">${t.l}</div>`).join('');
   let panel = '';
@@ -81,6 +84,7 @@ export function renderSettings() {
   else if (SETTINGS_TAB === 'knowledge-base') panel = settingsKnowledgeBase();
   else if (SETTINGS_TAB === 'language')      panel = settingsLanguage();
   else if (SETTINGS_TAB === 'integrations')  panel = settingsIntegrations();
+  else if (SETTINGS_TAB === 'categories')    panel = settingsCategories();
   return `
     <div class="page">
       <div class="topbar"><div class="tb-title">Settings</div></div>
@@ -1469,6 +1473,104 @@ const setKbCfgHandler = (ds, el) => {
   setKbCfg(ds.key, v);
 };
 
+// ─── Categories (admin) ────────────────────────────────────────────────────
+// Manage the workspace's ticket categories: disable a default (reversible —
+// hidden from new tickets + AI triage, history preserved) or create a new one.
+// Backed by /api/v1/categories. Admin-only (the tab is gated in renderSettings).
+function settingsCategories() {
+  if (!CATEGORIES_LOADED) {
+    CATEGORIES_LOADED = true;
+    refreshCategories().catch((err) => console.warn('[settings] categories load failed:', err));
+  }
+  const isAdmin = window.isAdmin();
+  const sorted   = [...CATEGORIES].sort((a, b) => (a.label || '').localeCompare(b.label || ''));
+  const active   = sorted.filter((c) => c.is_active);
+  const disabled = sorted.filter((c) => !c.is_active);
+
+  const row = (c, nextActive) => `
+    <div class="settings-row">
+      <div style="font-size:13px;color:var(--ink)">${window.escHtml(c.label)}
+        <span style="font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;margin-left:6px">${window.escHtml(c.key)}</span>
+      </div>
+      <button class="btn btn-sm" data-action="settings.toggleCategory" data-key="${window.escAttr(c.key)}" data-next="${nextActive}" ${isAdmin ? '' : 'disabled'}>${nextActive === 'true' ? 'Enable' : 'Disable'}</button>
+    </div>`;
+
+  const activeList = active.length
+    ? active.map((c) => row(c, 'false')).join('')
+    : `<div style="font-size:12px;color:var(--ink3);padding:8px 0">No active categories yet.</div>`;
+  const disabledList = disabled.length
+    ? `<div class="settings-h" style="margin-top:18px">Disabled</div>
+       <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Hidden from new tickets and AI triage; existing tickets keep the category. Re-enable any time.</div>
+       ${disabled.map((c) => row(c, 'true')).join('')}`
+    : '';
+
+  return `
+    <div class="settings-section">
+      <div class="settings-h">Ticket categories</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:14px;line-height:1.5">
+        The categories agents and AI triage can assign to tickets. Disable one to retire it without losing history; create new ones for your workflows. Admins only.
+      </div>
+      ${activeList}
+      ${disabledList}
+      <div class="form-row" style="margin-top:18px">
+        <label class="form-label">Add a category</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="form-input" id="new-cat-label" type="text" maxlength="64" placeholder="e.g. Withdrawals" ${isAdmin ? '' : 'disabled'} style="flex:1"/>
+          <button class="btn btn-solid btn-sm" data-action="settings.addCategory" ${isAdmin ? '' : 'disabled'}>Add</button>
+        </div>
+        <span id="cat-msg" style="font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;margin-top:6px;display:block"></span>
+      </div>
+    </div>`;
+}
+
+// Re-fetch the canonical category list (active + inactive) and repaint. The
+// shared CATEGORIES array is mutated in place so the New-Ticket dropdown
+// (which imports it) reflects changes too.
+function refreshCategories() {
+  return apiGet('/api/v1/categories').then((res) => {
+    CATEGORIES.length = 0;
+    for (const c of (res.categories || [])) CATEGORIES.push(c);
+    renderPage('settings');
+  });
+}
+
+// Write to the shared status line under the add-category form. Re-queries each
+// call (refreshCategories repaints the panel) and no-ops safely if the element
+// isn't present — both add + toggle route their feedback through here so an
+// error is never dropped silently.
+function setCatMsg(text, color) {
+  const m = document.getElementById('cat-msg');
+  if (m) { m.textContent = text; m.style.color = color; }
+}
+
+async function addCategory() {
+  if (!window.isAdmin()) return;
+  const input = document.getElementById('new-cat-label');
+  const label = (input?.value || '').trim();
+  if (!label) { setCatMsg('Enter a category name', 'var(--red)'); return; }
+  setCatMsg('Adding…', 'var(--ink3)');
+  try {
+    await apiPost('/api/v1/categories', { label });
+    await refreshCategories();   // repaints — clears the input + shows the new row
+    setCatMsg('✓ Added', 'var(--green)');
+  } catch (err) {
+    // 409 carries a helpful message (incl. the re-enable hint for a disabled clash).
+    setCatMsg(err?.message || 'Add failed', 'var(--red)');
+  }
+}
+
+// nextActive is a real boolean here — the handler converts the stringy
+// data-next attribute ('true'/'false') to a boolean before calling this.
+async function toggleCategory(key, nextActive) {
+  if (!window.isAdmin()) return;
+  try {
+    await apiPatch(`/api/v1/categories/${encodeURIComponent(key)}`, { is_active: nextActive });
+    await refreshCategories();
+  } catch (err) {
+    setCatMsg(err?.message || 'Update failed', 'var(--red)');
+  }
+}
+
 registerActions({
   'settings.setTab':             (ds) => setSettingsTab(ds.tab),
   'settings.logout':            () => window.logout(),
@@ -1500,6 +1602,9 @@ registerActions({
   'settings.closeModal':        () => closeModal(),
   // suppression list
   'settings.resetSuppressed':   (ds) => resetSuppressedCustomer(ds.id),
+  // categories (admin)
+  'settings.addCategory':       () => addCategory(),
+  'settings.toggleCategory':    (ds) => toggleCategory(ds.key, ds.next === 'true'),
 });
 
 registerChangeActions({

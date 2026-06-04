@@ -16,7 +16,7 @@
 // CHANNELS, ROLES_MATRIX, CANNED_RESPONSES, TICKET_TEMPLATES, CUSTOM_FIELDS,
 // ASSIGN_RULES are still seeded from data.js. Each migrates per-feature.
 
-import { AGENTS, ASSIGN_RULES, CANNED_RESPONSES, CHANNELS, CUSTOMERS, CUSTOM_FIELDS, INBOX, KB_ARTICLES, PERMISSIONS, ROLES_MATRIX, SLA_POLICIES, TAG_LIBRARY, TICKETS, TICKET_TEMPLATES, WORKFLOWS, setPermissions } from './data.js';
+import { AGENTS, ASSIGN_RULES, CANNED_RESPONSES, CATEGORIES, CHANNELS, CUSTOMERS, CUSTOM_FIELDS, INBOX, KB_ARTICLES, PERMISSIONS, ROLES_MATRIX, SLA_POLICIES, TAG_LIBRARY, TICKETS, TICKET_TEMPLATES, WORKFLOWS, setPermissions } from './data.js';
 import { apiGet } from './api-client.js';
 
 // Tickets pagination state. Bootstrap loads the first page; the SPA's
@@ -168,7 +168,7 @@ function mapTicket(t, customerByUuid, userByUuid) {
 }
 
 export async function loadWorkspaceData() {
-  const [ticketsRes, customersRes, agentsRes, inboxRes, channelsRes, workflowsRes, slaRes, tagsRes, kbRes, cannedRes, ttRes, cfRes, arRes, rolesRes, permsRes, cvRes] = await Promise.all([
+  const [ticketsRes, customersRes, agentsRes, inboxRes, channelsRes, workflowsRes, slaRes, tagsRes, kbRes, cannedRes, ttRes, cfRes, arRes, rolesRes, permsRes, cvRes, catsRes] = await Promise.all([
     // First page only. Subsequent pages load via loadMoreTickets() when
     // the user clicks "Load more" on the tickets list. Total comes back
     // in ticketsRes.total so the UI can show "showing N of M".
@@ -188,6 +188,7 @@ export async function loadWorkspaceData() {
     apiGet('/api/v1/roles'),
     apiGet('/api/v1/permissions'),
     apiGet('/api/v1/custom-values?entity_type=customer'),
+    apiGet('/api/v1/categories'),
   ]);
 
   const customersRaw = customersRes.customers || [];
@@ -478,6 +479,12 @@ export async function loadWorkspaceData() {
     lastMatchAt:  r.last_match_at ? isoDate(r.last_match_at) : null,
   }));
   replaceInPlace(ASSIGN_RULES, mappedAr);
+
+  // ─── CATEGORIES ─────────────────────────────────────────────────────────
+  // {key, label, is_active} straight from the API. Includes inactive rows so
+  // the admin Categories settings tab can show + re-enable them; the
+  // New-Ticket dropdown filters to is_active.
+  replaceInPlace(CATEGORIES, (catsRes.categories || []));
 }
 
 // Role-name → UUID lookup populated by loadWorkspaceData; consumed by

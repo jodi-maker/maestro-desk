@@ -137,6 +137,13 @@ export const TICKET_TEMPLATES = [
   {id:'TT-005', name:'Feature request',                category:'Feature',   priority:'low',    subject:'Feature request: [short description]',    body:'Customer suggested a new feature. Capture the use case, expected behaviour, and any business impact. Add to the product backlog and acknowledge the customer with an expected review timeframe.'},
 ];
 
+// Workspace ticket categories — {key, label, is_active}. Empty in the demo
+// seed (the New-Ticket modal falls back to deriving categories from existing
+// tickets/templates when this is empty); loadWorkspaceData() fills it from
+// GET /api/v1/categories on real-auth sign-in. Mutated in place (see
+// CLAUDE.md). Holds active AND inactive rows — consumers filter is_active.
+export const CATEGORIES = [];
+
 export const CHANNELS = [
   {id:'CH-001', name:'Support inbox',          type:'email',   address:'support@maestrodesk.com',     status:'active',   defaultCategory:'all',       defaultAgent:'',                 volume30d:142, signature:'— Maestro Desk Support'},
   {id:'CH-002', name:'Billing inbox',          type:'email',   address:'billing@maestrodesk.com',     status:'active',   defaultCategory:'Billing',   defaultAgent:'Sofia Reyes',      volume30d:38,  signature:'— Maestro Desk Billing'},

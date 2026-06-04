@@ -8,22 +8,23 @@ Stack: **Supabase** (new prod project) · **Fly.io** (Bun/Hono API) · **Cloudfl
 
 ## Status (prod stood up 2026-06-03)
 Prod Supabase project: **`maestro-desk-prod`** · ref **`lswyvrohumwbszegmybx`** · eu-central-1 · Free.
-**Done:** project created · all migrations applied (52 tables, 56 policies) · `site_url` + redirect allow-list set · Custom Access Token Hook enabled.
-**Your immediate action:** reset the prod DB password (Dashboard → Settings → Database) — the generated one is held nowhere.
-**Pending:** real-workspace + agents bootstrap · Fly deploy · Cloudflare Pages domain wiring · Postmark domain + DNS.
+**Done:** project created · all migrations applied (incl. the two 2026-06-04 category migrations, recorded in `schema_migrations`) · `site_url` + redirect allow-list set · Custom Access Token Hook enabled · DB password reset (2026-06-04) · **real workspace `Maestro-Desk` provisioned** (slug `maestro-desk`, id `6b3639f5-a511-489a-b5e4-5e9451c7be59`, 11 iGaming categories) · **`jodi@weezboo.com` created as platform admin + workspace Admin** (auth uid `058de714-b946-4780-b8a6-4757cf88a6f6`; hook-claim injection verified). jodi has **no password yet** — set it via a recovery link once the SPA is deployed (step 4/5; redirect host must be live first).
+**Pending:** agent invites · Fly deploy · Cloudflare Pages domain wiring · Postmark domain + DNS.
+**Cleanup note:** prod also contains the seeded **`demo`** workspace (TK-001 etc.) from the initial migration set — harmless (separate workspace) but can be purged later if a truly clean prod is wanted.
 
 ## 1. Supabase prod project ✅
 - [x] 🤖 Project created via Management API — ref `lswyvrohumwbszegmybx`, region eu-central-1, Free.
 - [x] 🤖 Migrations applied (`supabase db push --db-url …`) — 52 tables, 56 policies.
 - [x] 🤖 `site_url` → `https://desk.maestro-desk.com` + redirect allow-list for `desk.`/`help.`.
 - [x] 🤖 Custom Access Token Hook enabled → `pg-functions://postgres/public/custom_access_token_hook`. **(RLS depends on this — done via API, not the dashboard.)**
-- [ ] 👤 Reset the prod DB password (Dashboard → Settings → Database) — the generated one isn't stored anywhere. Upgrade to Pro when you want daily backups + HIBP.
+- [x] 👤 Reset the prod DB password (Dashboard → Settings → Database) — done 2026-06-04. Upgrade to Pro when you want daily backups + HIBP.
+- [x] 🤖 Pushed the two 2026-06-04 category migrations to prod via the Management API query endpoint + recorded `schema_migrations` ledger rows (the local CLI is linked to dev, and the new DB password isn't held here, so `db push --linked` couldn't target prod).
 
 ## 2. Bootstrap your real workspace (clean-slate, not the demo seed)
-- [ ] 🤖 Create your workspace via `public.provision_brand(...)` (seeds roles + permissions + status/priority/category lookups + business hours). Supply your company name/slug + categories.
-- [ ] 🤖 Set `is_platform_admin = true` on `jodi@weezboo.com`.
+- [x] 🤖 Created workspace via `provision_brand('Maestro-Desk','maestro-desk')` — id `6b3639f5-a511-489a-b5e4-5e9451c7be59`; 3 roles, 5 statuses, 4 priorities, 11 categories.
+- [x] 🤖 `is_platform_admin = true` on `jodi@weezboo.com` (auth uid `058de714-…`) + added as workspace **Admin**. Hook-claim injection verified (`workspace_ids` + `is_platform_admin`).
 - [ ] 👤 Invite your support agents (auth users) → 🤖 add them to `workspace_members` with the Agent/Admin role.
-- [ ] 🤖 Do **not** load the demo seed (TK-001 etc.) into prod.
+- [x] 🤖 Did **not** load the demo seed into the real workspace. (A separate seeded `demo` workspace exists from the initial migration set — see cleanup note in Status.)
 
 ## 3. API on Fly.io
 - [ ] 👤 `fly auth login` (your Fly account).

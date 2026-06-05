@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import { HTTPException } from 'hono/http-exception';
 import { env } from './lib/env.ts';
 import { supabaseAdmin } from './lib/supabase.ts';
+import { auth } from './lib/auth.ts';
 import { startWebhookWorker } from './lib/outgoing-webhooks.ts';
 import { startCsatReminderWorker } from './lib/csat-survey.ts';
 import { health } from './routes/health.ts';
@@ -44,6 +45,11 @@ app.use('*', cors({
   allowHeaders: ['Authorization', 'Content-Type', 'X-Workspace-Id'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
+
+// Better Auth handler (migration to Neon — Step 2). Serves sign-in, session,
+// and account endpoints under /api/auth/*. Mounted before the v1 routes; the
+// v1 auth middleware will verify Better Auth sessions once the cutover lands.
+app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
 
 app.route('/api/v1/health', health);
 app.route('/api/v1/config', config);

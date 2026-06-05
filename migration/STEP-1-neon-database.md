@@ -44,22 +44,21 @@
 - [x] **Proven against real Neon:** runner connects, created `schema_migrations`, `select version()` → PostgreSQL 18.4.
 - [x] Safety: fixed `.gitignore` so `.env` files can never be committed.
 
-### C. Port the structural schema  *(my actions)*
-- [ ] Create the `db/migrations/` folder.
-- [ ] Produce **Neon-compatible** versions of the schema, in order, containing **only**: `create extension` (pgcrypto, citext), tables, indexes, the `trigger_set_updated_at` helper, and the updated-at triggers.
-- [ ] **Strip out** for now: all `enable row level security`, `create policy`, `grant ... to authenticated/anon/service_role`, `auth.uid()`, `auth.users`, the custom-access-token hook, and `storage.*` references. (These come back differently in Steps 2–3.)
-- [ ] For the `users` reference: stand up a minimal placeholder `users` table so foreign keys hold, with a note that Better Auth replaces it in Step 2. *(Open question below.)*
-- [ ] Apply the migrations to the Neon **dev** branch with the runner; fix any errors until it applies cleanly from empty.
+### C. Port the structural schema  *(my actions)*  ✅ DONE
+- [x] Create the `db/migrations/` folder.
+- [x] Produce **Neon-compatible** schema: extensions (pgcrypto, citext), tables, indexes, helper + updated-at triggers, the `provision_brand`/`deduct_ai_credits` functions.
+- [x] **Strip out** all RLS, policies, role grants, `auth.uid()`, the auth hook, and `storage.*`. (38 copied verbatim, 13 stripped, 22 omitted — see `db/migrations/README.md`.)
+- [x] `users` table already exists structurally (with `password_hash`) — no placeholder needed; Better Auth reconciles in Step 2.
+- [x] Applied all 52 migrations to Neon cleanly **from empty**. Verified: **53 tables, 0 with RLS**, custom functions present.
 
-### D. Migrate the data  *(my actions, with your go-ahead)*
-- [ ] Dump the current data from Supabase (`pg_dump --data-only`, or per-table CSV for the big tables).
-- [ ] Load it into Neon dev and check row counts match.
-- [ ] Note: this is a **copy** — Supabase is untouched and still live.
+### D. Migrate the data  *(deliberately deferred — see rationale)*
+- [~] **Deferred to when it's actually needed.** Nothing reads Neon until Step 3, so a data copy now would immediately go stale against the live Supabase DB. The demo **seed** already populates Neon (2 workspaces) — enough to build and test against.
+- [ ] *(Later)* Dump live Supabase data (`pg_dump --data-only`) → load into Neon → verify row counts, done right before Step 3 routes start reading Neon (final fresh copy at cutover).
 
-### E. Prove it works  *(my actions)*
-- [ ] Add a read+write check to the existing health route (`api/src/routes/health.ts`) that runs a trivial query against Neon and reports OK.
-- [ ] Run the API locally (`cd api; bun run dev`) and confirm the health check passes against Neon.
-- [ ] `bun run typecheck` stays green.
+### E. Prove it works  *(my actions)*  ✅ DONE
+- [x] Added `GET /api/v1/health/ready/neon` — runs raw SQL against Neon (leaves the existing Supabase `/ready` untouched).
+- [x] Booted the API locally and hit it: `{"ok":true,"db":"neon","workspaces":2}`.
+- [x] `bun run typecheck` green.
 
 ### F. Wrap up the branch
 - [ ] Commit in small, labelled chunks.

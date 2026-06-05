@@ -50,32 +50,41 @@
 - [x] Applied via `bun run migrate`; verified tables + uuid FK types on Neon.
 - [x] **Proven end-to-end:** sign-up + sign-in via `/api/auth/*` returned bearer tokens; user row landed in `users`, `account` holds the password hash, `session` rows created (test user then deleted).
 
-### C. Migrate the auth data (targeted slice)  ⏳ NEXT — start of the cutover
-- [ ] Copy `users`, `workspace_members`, `roles`, `role_permissions` from Supabase → Neon, **preserving ids**.
-- [ ] Per decision #1: either import password hashes into Better Auth's `account` table, or trigger invite/reset for each agent.
-- [ ] Verify a test agent + a platform admin can sign in.
+### C / D / E — the login cutover → **MOVED TO STEP 3** (decision below)
 
-### D. Switch the backend (4 files)
-- [ ] `middleware/auth.ts` + `middleware/platform-admin.ts`: verify the Better Auth session instead of `supabaseAdmin.auth.getUser`; resolve `userId`. (Membership/`is_platform_admin` lookups move to Neon here, since that's where Better Auth's users now live.)
-- [ ] `routes/config.ts`: stop shipping `supabase_url`/`anon_key` for login (serve Better Auth's base path instead).
-- [ ] `routes/god.ts`: replace `auth.admin.generateLink` invite with Better Auth's invite/create-user flow.
+**Why moved:** the cutover (switch the login token + the auth middleware + the
+frontend) cannot be cleanly separated from Step 3. **23 feature routes** read
+the DB through the Supabase **user token + RLS** (`c.get('sbUser')`). A Better
+Auth token is not a Supabase JWT, so flipping the login token breaks all 23 at
+once unless they're rewritten to raw SQL on Neon with per-route authorization —
+which **is** Step 3. (Every one of the 23 also self-scopes by `workspace_id`,
+so RLS was a second layer, not the only one.)
 
-### E. Switch the frontend
-- [ ] `js/core/auth-client.js`: `signIn` calls Better Auth's sign-in endpoint instead of the Supabase token URL; keep storing the returned token for `api-client` to attach as Bearer.
-- [ ] Confirm `rehydrateUser`, `signOut`, platform-admin path still work.
+Rather than introduce a transitional window where those routes run on
+service-role with **no RLS**, we keep Step 2 scoped to "Better Auth stood up
+and proven," and do the actual switch in Step 3 as one cutover:
+**token switch + 23 routes → Neon raw SQL + per-route authz middleware**,
+landing together with no security gap.
 
-### F. Prove it + wrap up
-- [ ] Local: backend up, sign in as agent (workspace auto-pick) and as platform admin (god panel); `/whoami` works.
-- [ ] `bun run typecheck` green; CI smokes green.
-- [ ] Small commits → PR `Step 2: replace login with Better Auth` → `/cem-pr-loop` to 4+/5.
-- [ ] **Don't merge** until a real sign-in works end-to-end against Neon.
+So Step 3 absorbs the original C/D/E:
+- Targeted auth-data copy (users/memberships) into Neon, preserving ids.
+- Re-invite/reset flow for agents (no hash export).
+- `middleware/auth.ts`, `middleware/platform-admin.ts`, `whoami.ts` → verify Better Auth session + read identity/membership from Neon.
+- `routes/config.ts` → serve Better Auth base path instead of Supabase keys.
+- `routes/god.ts` → Better Auth invite/create-user instead of `auth.admin.generateLink`.
+- `js/core/auth-client.js` → sign in via Better Auth, keep the Bearer pattern.
+
+### F. Ship Step 2 (A+B) ✅
+- [x] `bun run typecheck` green.
+- [ ] PR `Step 2: stand up Better Auth on Neon` → `/cem-pr-loop` to 4+/5.
+- [x] Better Auth is purely additive here — mounted alongside Supabase, nothing switched, so nothing can break.
 
 ---
 
 ## Risks / notes
-- **Don't lock anyone out:** keep the Supabase login path working until Better Auth sign-in is proven, then cut over. The targeted data copy + id preservation is what makes the membership checks keep working.
-- **Split-brain guard:** once Better Auth users live in Neon, the membership lookups in the auth middleware must also read Neon (small, included in D) — otherwise identity (Neon) and membership (Supabase) disagree.
+- **Auth + Step 3 are one cutover.** Confirmed by the 23 `sbUser` routes — see above. Step 2 deliberately stops short of flipping the token.
+- **Better Auth is dormant until Step 3.** It's stood up, schema on Neon, login proven on seed data — but no live traffic uses it yet.
 - No production cutover in this step.
 
 ---
-*Status: checklist drafted, pending the 4 decisions above. Branch created off the merged Step 1 `main`.*
+*Status: A+B DONE + verified on Neon. C/D/E folded into Step 3. Decisions locked. Branch off the merged Step 1 `main`.*

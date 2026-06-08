@@ -12,7 +12,10 @@
 //      ships). No match → role=note (internal-only, attributed as
 //      "via Slack: $name").
 
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { getDb } from './db.ts';
+
+// Migration to Neon — Step 3 (tickets megabatch). DB via getDb(); `sb` kept
+// ignored. Slack users.info HTTP unchanged.
 
 interface SlackEventPayload {
   type:  string;
@@ -31,12 +34,13 @@ interface SlackEventInner {
 }
 
 export async function handleSlackEvent(args: {
-  sb:          SupabaseClient;
+  sb:          unknown;
   workspaceId: string;
   botToken:    string | null;
   payload:     SlackEventPayload;
 }) {
-  const { sb, workspaceId, botToken, payload } = args;
+  const { workspaceId, botToken, payload } = args;
+  const sql = getDb();
   const ev = payload.event;
   if (!ev || ev.type !== 'message') return;
   if (ev.subtype) return;          // skip edits / joins / channel-name changes / bot_message
@@ -48,13 +52,10 @@ export async function handleSlackEvent(args: {
   // Look up the ticket this thread is tied to. Bail silently if the
   // user is replying in some thread we don't know about — keeps random
   // unrelated Slack chatter out of our DB.
-  const { data: mapping } = await sb
-    .from('slack_thread_mappings')
-    .select('ticket_id')
-    .eq('workspace_id', workspaceId)
-    .eq('channel_id', ev.channel)
-    .eq('thread_ts', ev.thread_ts)
-    .maybeSingle();
+  const [mapping] = await sql<{ ticket_id: string }[]>`
+    select ticket_id from slack_thread_mappings
+    where workspace_id = ${workspaceId} and channel_id = ${ev.channel} and thread_ts = ${ev.thread_ts}
+  `;
   if (!mapping) return;
 
   // Resolve the Slack user → maestro user via email. Requires the
@@ -67,11 +68,9 @@ export async function handleSlackEvent(args: {
     const profile = await slackUserInfo(botToken, ev.user);
     if (profile?.email) {
       authorName = `via Slack: ${profile.name || profile.email}`;
-      const { data: u } = await sb
-        .from('users')
-        .select('id, name')
-        .eq('email', profile.email)
-        .maybeSingle();
+      const [u] = await sql<{ id: string; name: string | null }[]>`
+        select id, name from users where email = ${profile.email}
+      `;
       if (u) {
         authorUserId = u.id;
         authorName   = u.name || profile.email;
@@ -87,17 +86,13 @@ export async function handleSlackEvent(args: {
   // 'note' rows never leave the workspace.
   const role: 'agent' | 'note' = authorUserId ? 'agent' : 'note';
 
-  const { error } = await sb.from('ticket_messages').insert({
-    workspace_id:   workspaceId,
-    ticket_id:      mapping.ticket_id,
-    role,
-    author_user_id: authorUserId,
-    author_label:   authorName,
-    body:           ev.text,
-    mentions:       [],
-  });
-  if (error) {
-    console.error('[slack-inbound] ticket_messages insert failed:', error.message);
+  try {
+    await sql`
+      insert into ticket_messages (workspace_id, ticket_id, role, author_user_id, author_label, body)
+      values (${workspaceId}, ${mapping.ticket_id}, ${role}, ${authorUserId}, ${authorName}, ${ev.text})
+    `;
+  } catch (err) {
+    console.error('[slack-inbound] ticket_messages insert failed:', err instanceof Error ? err.message : err);
   }
 }
 

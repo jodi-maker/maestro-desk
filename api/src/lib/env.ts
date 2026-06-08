@@ -10,6 +10,16 @@ const Env = z.object({
   // boot without it (CI, existing dev). lib/db.ts throws a clear error if it
   // is used while unset. Becomes required at the production cutover step.
   DATABASE_URL: z.string().url().optional(),
+  // Better Auth (migration to Neon — Step 2). Owns sessions/users sign-in.
+  // SECRET signs sessions/tokens — generate with `openssl rand -base64 32`.
+  // URL is the API's own base URL (where Better Auth's /api/auth/* is served).
+  // Both optional for now so the app still boots mid-migration; Better Auth
+  // warns + uses a dev fallback when the secret is unset.
+  // Min 32 chars — Better Auth's own recommended length (`openssl rand -base64
+  // 32`). Optional only because the app must still boot mid-migration while
+  // Better Auth is dormant; it becomes required at the Step 3 cutover.
+  BETTER_AUTH_SECRET: z.string().min(32).optional(),
+  BETTER_AUTH_URL: z.string().url().default('http://localhost:3001'),
   ANTHROPIC_API_KEY: z.string().min(20),
   // Secret Postmark passes as a query string on the inbound webhook URL:
   // https://<tunnel-host>/api/v1/webhooks/postmark/inbound?secret=<value>

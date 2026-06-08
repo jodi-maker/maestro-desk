@@ -14,7 +14,7 @@
 // event log in the dashboard.
 
 import { z } from 'zod';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { getDb } from './db.ts';
 
 export const PostmarkBounce = z
   .object({
@@ -74,66 +74,62 @@ export interface BounceProcessResult {
  *     create a customer-shaped row for a bouncer)
  */
 export async function processBounceEvent(args: {
-  sb:        SupabaseClient;
   payload:   PostmarkBounce;
   fromDomain: string | null;
 }): Promise<BounceProcessResult | { ok: false; error: string }> {
-  const { sb, payload, fromDomain } = args;
+  // Migration to Neon — Step 3. Reads/writes go through getDb() raw SQL so
+  // the bounce state stays consistent with the Neon-backed customers route +
+  // suppression list (which read it).
+  const sql = getDb();
+  const { payload, fromDomain } = args;
   const state = classifyBounce(payload);
   const recipient = payload.Email.trim().toLowerCase();
   if (!recipient) return { ok: false, error: 'Missing recipient email' };
 
-  // Resolve workspace from sending domain. Bounces for non-configured
-  // sending domains shouldn't happen, but if they do we bail rather
-  // than write into the unrouted bucket — that bucket is for inbound
+  // Resolve workspace from the sending domain. Bail (don't write the unrouted
+  // bucket) for non-configured sending domains — that bucket is for inbound
   // misses, not outbound bookkeeping.
   if (!fromDomain) return { ok: false, error: 'Missing From domain' };
-  const { data: domainRow, error: domainErr } = await sb
-    .from('workspace_email_domains')
-    .select('workspace_id')
-    .eq('domain', fromDomain)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (domainErr) return { ok: false, error: `Domain lookup: ${domainErr.message}` };
-  if (!domainRow) return { ok: false, error: `Unknown From domain: ${fromDomain}` };
-  const workspaceId = domainRow.workspace_id as string;
 
-  // Find the customer in this workspace by email.
-  const { data: customer, error: cErr } = await sb
-    .from('customers')
-    .select('id, email_bounce_count')
-    .eq('workspace_id', workspaceId)
-    .ilike('email', recipient)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (cErr) return { ok: false, error: `Customer lookup: ${cErr.message}` };
-  if (!customer) {
-    return { ok: true, matched: false, workspaceId, customerId: null, state };
+  // DB errors are caught and returned as { ok: false } (not thrown): this
+  // webhook must always 200 so Postmark doesn't retry-storm on a transient DB
+  // failure. The route logs the { ok: false } error and acks 200.
+  try {
+    const [domainRow] = await sql<{ workspace_id: string }[]>`
+      select workspace_id from workspace_email_domains
+      where domain = ${fromDomain} and deleted_at is null
+    `;
+    if (!domainRow) return { ok: false, error: `Unknown From domain: ${fromDomain}` };
+    const workspaceId = domainRow.workspace_id;
+
+    // Find the customer in this workspace by email (citext → case-insensitive).
+    const [customer] = await sql<{ id: string; email_bounce_count: number; email_bounce_state: string | null }[]>`
+      select id, email_bounce_count, email_bounce_state from customers
+      where workspace_id = ${workspaceId} and email = ${recipient} and deleted_at is null
+    `;
+    if (!customer) {
+      return { ok: true, matched: false, workspaceId, customerId: null, state };
+    }
+
+    // Update the bounce summary. Only escalate state, never downgrade — once
+    // undeliverable, stay undeliverable (Postmark replay order isn't guaranteed).
+    const rank = (s: string) => ({ none: 0, soft: 1, hard: 2, spam: 2 }[s] ?? 0);
+    const nextState = rank(state) >= rank(customer.email_bounce_state || 'none')
+      ? state
+      : customer.email_bounce_state;
+    await sql`
+      update customers set
+        email_last_bounce_type = ${payload.Type},
+        email_last_bounce_at   = ${payload.BouncedAt || new Date().toISOString()},
+        email_bounce_count     = ${(customer.email_bounce_count || 0) + 1},
+        email_bounce_state     = ${nextState}
+      where id = ${customer.id}
+    `;
+
+    return { ok: true, matched: true, workspaceId, customerId: customer.id, state };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
-
-  // Update the bounce summary. We don't downgrade — if a customer
-  // already hit a hard bounce and a later soft event arrives, leave
-  // state='hard' rather than reverting (Postmark replays in order
-  // are not guaranteed, and "once undeliverable, stay undeliverable"
-  // is the safer default).
-  const nextCount = (customer.email_bounce_count || 0) + 1;
-  const updates: Record<string, unknown> = {
-    email_last_bounce_type: payload.Type,
-    email_last_bounce_at:   payload.BouncedAt || new Date().toISOString(),
-    email_bounce_count:     nextCount,
-  };
-  // Only escalate state, never downgrade.
-  const rank = (s: string) => ({ none: 0, soft: 1, hard: 2, spam: 2 }[s] ?? 0);
-  if (rank(state) >= rank((customer as any).email_bounce_state || 'none')) {
-    updates.email_bounce_state = state;
-  }
-  const { error: upErr } = await sb
-    .from('customers')
-    .update(updates)
-    .eq('id', customer.id);
-  if (upErr) return { ok: false, error: `Update failed: ${upErr.message}` };
-
-  return { ok: true, matched: true, workspaceId, customerId: customer.id, state };
 }
 
 /**

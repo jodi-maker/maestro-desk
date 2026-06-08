@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { anthropic, computeCostMicro } from './anthropic.ts';
+import { getDb } from './db.ts';
 import { assertHasBudget, BudgetExceededError, deductBudget } from './budget.ts';
 import {
   evaluateAutoReply,
@@ -177,7 +177,7 @@ export interface TriageInput {
   // null = system-triggered (e.g. auto-triage from inbound webhook). Schema
   // has user_id nullable on ai_usage_log specifically for this case.
   userId: string | null;
-  sb: SupabaseClient;
+  sb: unknown;   // retained for caller compat; DB now via getDb()
 }
 
 export interface TriageResult {
@@ -224,20 +224,13 @@ export async function triageTicket(input: TriageInput): Promise<TriageResult> {
     await assertHasBudget(sb, workspaceId);
   } catch (err) {
     if (err instanceof BudgetExceededError) {
-      await sb.from('ai_usage_log').insert({
-        workspace_id: workspaceId,
-        ticket_id: ticketId,
-        user_id: userId,
-        action: 'triage_blocked_no_budget',
-        model: MODEL,
-        input_tokens: 0,
-        cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0,
-        output_tokens: 0,
-        cost_usd_micro: 0,
-        duration_ms: 0,
-        request_id: null,
-      });
+      await getDb()`
+        insert into ai_usage_log (workspace_id, ticket_id, user_id, action, model,
+          input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens,
+          cost_usd_micro, duration_ms, request_id)
+        values (${workspaceId}, ${ticketId}, ${userId}, 'triage_blocked_no_budget', ${MODEL},
+          0, 0, 0, 0, 0, 0, null)
+      `;
     }
     throw err;
   }
@@ -423,139 +416,116 @@ export async function triageTicket(input: TriageInput): Promise<TriageResult> {
 // ─── Supabase helpers ──────────────────────────────────────────────────────
 
 async function loadTicketSnapshot(
-  sb: SupabaseClient,
+  _sb: unknown,
   ticketId: string,
   workspaceId: string,
 ): Promise<TicketSnapshot> {
-  const { data: ticket, error: tErr } = await sb
-    .from('tickets')
-    .select(
-      'id, display_id, subject, status_key, priority_key, category_key, customer_id, customers(first_name, last_name, vip_tier, brand, jurisdiction)',
-    )
-    .eq('id', ticketId)
-    .eq('workspace_id', workspaceId)
-    .is('deleted_at', null)
-    .single();
-  if (tErr || !ticket) throw new TriageError(`Ticket not found: ${tErr?.message ?? 'unknown'}`, 404);
+  const sql = getDb();
+  const [ticket] = await sql<{
+    display_id: string; subject: string; status_key: string;
+    priority_key: string | null; category_key: string | null;
+    first_name: string | null; last_name: string | null;
+    vip_tier: string | null; brand: string | null; jurisdiction: string | null;
+  }[]>`
+    select t.display_id, t.subject, t.status_key, t.priority_key, t.category_key,
+           c.first_name, c.last_name, c.vip_tier, c.brand, c.jurisdiction
+    from tickets t
+    left join customers c on c.id = t.customer_id
+    where t.id = ${ticketId} and t.workspace_id = ${workspaceId} and t.deleted_at is null
+  `;
+  if (!ticket) throw new TriageError('Ticket not found', 404);
 
-  const { data: msgs, error: mErr } = await sb
-    .from('ticket_messages')
-    .select('role, author_label, body, created_at')
-    .eq('ticket_id', ticketId)
-    .eq('workspace_id', workspaceId)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true });
-  if (mErr) throw new TriageError(`Failed to load messages: ${mErr.message}`, 500);
+  const msgs = await sql<{ role: string; author_label: string; body: string; created_at: string }[]>`
+    select role, author_label, body, created_at from ticket_messages
+    where ticket_id = ${ticketId} and workspace_id = ${workspaceId} and deleted_at is null
+    order by created_at asc
+  `;
 
-  // customers is an array because the select used a relation join; flatten.
-  const c = (Array.isArray(ticket.customers) ? ticket.customers[0] : ticket.customers) as
-    | { first_name: string | null; last_name: string | null; vip_tier: string | null; brand: string | null; jurisdiction: string | null }
-    | null;
-
+  const label = `${ticket.first_name ?? ''} ${ticket.last_name ?? ''}`.trim() || '(unknown)';
   return {
     display_id: ticket.display_id,
     subject: ticket.subject,
     current_category_key: ticket.category_key,
     current_priority_key: ticket.priority_key,
     current_status_key: ticket.status_key,
-    customer_label: c ? `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || '(unknown)' : '(unknown)',
-    customer_vip_tier: c?.vip_tier ?? null,
-    customer_brand: c?.brand ?? null,
-    customer_jurisdiction: c?.jurisdiction ?? null,
-    messages: msgs ?? [],
+    customer_label: label,
+    customer_vip_tier: ticket.vip_tier ?? null,
+    customer_brand: ticket.brand ?? null,
+    customer_jurisdiction: ticket.jurisdiction ?? null,
+    messages: [...msgs],
   };
 }
 
 async function loadWorkspaceLookups(
-  sb: SupabaseClient,
+  _sb: unknown,
   workspaceId: string,
 ): Promise<WorkspaceLookups> {
-  const [cats, prios, stats, ws] = await Promise.all([
-    // Only active categories are offered to the AI — disabled ones must not be
-    // suggested on new triage (existing tickets keep their stored category).
-    sb.from('ticket_categories').select('key, label').eq('workspace_id', workspaceId).eq('is_active', true).order('label'),
-    sb.from('ticket_priorities').select('key, label').eq('workspace_id', workspaceId).order('sort_order'),
-    sb.from('ticket_statuses').select('key, label').eq('workspace_id', workspaceId).order('sort_order'),
-    sb.from('workspaces')
-      .select('name, auto_reply_min_confidence, auto_reply_categories')
-      .eq('id', workspaceId)
-      .single(),
+  const sql = getDb();
+  // Only active categories are offered to the AI — disabled ones must not be
+  // suggested on new triage (existing tickets keep their stored category).
+  const [cats, prios, stats, wsRows] = await Promise.all([
+    sql<{ key: string; label: string }[]>`select key, label from ticket_categories where workspace_id = ${workspaceId} and is_active = true order by label`,
+    sql<{ key: string; label: string }[]>`select key, label from ticket_priorities where workspace_id = ${workspaceId} order by sort_order`,
+    sql<{ key: string; label: string }[]>`select key, label from ticket_statuses where workspace_id = ${workspaceId} order by sort_order`,
+    sql<{ name: string; auto_reply_min_confidence: number | null; auto_reply_categories: string[] | null }[]>`
+      select name, auto_reply_min_confidence, auto_reply_categories from workspaces where id = ${workspaceId}`,
   ]);
-  if (cats.error || prios.error || stats.error || ws.error) {
-    throw new TriageError(
-      `Failed to load lookups: ${cats.error?.message ?? prios.error?.message ?? stats.error?.message ?? ws.error?.message}`,
-      500,
-    );
-  }
+  const ws = wsRows[0];
   return {
-    categories: cats.data ?? [],
-    priorities: prios.data ?? [],
-    statuses: stats.data ?? [],
-    workspaceName: ws.data?.name ?? 'Support',
+    categories: [...cats],
+    priorities: [...prios],
+    statuses: [...stats],
+    workspaceName: ws?.name ?? 'Support',
     autoReply: {
-      min_confidence: ws.data?.auto_reply_min_confidence ?? null,
-      categories: ws.data?.auto_reply_categories ?? [],
-      name: ws.data?.name ?? 'Support',
+      min_confidence: ws?.auto_reply_min_confidence ?? null,
+      categories: ws?.auto_reply_categories ?? [],
+      name: ws?.name ?? 'Support',
     },
   };
 }
 
 async function persistTicketTriage(
-  sb: SupabaseClient,
+  _sb: unknown,
   ticketId: string,
   workspaceId: string,
   triage: TriageOutput,
 ) {
+  const sql = getDb();
   const now = new Date().toISOString();
-  const { error } = await sb
-    .from('tickets')
-    .update({
-      ai_summary: {
-        text: triage.summary,
-        sentiment: triage.sentiment,
-        confidence: triage.confidence,
-        suggested_category_key: triage.category_key,
-        suggested_priority_key: triage.priority_key,
-        model: MODEL,
-        generated_at: now,
-      },
-      ai_draft_reply: {
-        text: triage.draft_reply,
-        confidence: triage.confidence,
-        model: MODEL,
-        generated_at: now,
-      },
-    })
-    .eq('id', ticketId)
-    .eq('workspace_id', workspaceId);
-  if (error) throw new TriageError(`Failed to persist triage: ${error.message}`, 500);
+  const aiSummary = {
+    text: triage.summary,
+    sentiment: triage.sentiment,
+    confidence: triage.confidence,
+    suggested_category_key: triage.category_key,
+    suggested_priority_key: triage.priority_key,
+    model: MODEL,
+    generated_at: now,
+  };
+  const aiDraft = { text: triage.draft_reply, confidence: triage.confidence, model: MODEL, generated_at: now };
+  await sql`
+    update tickets set ai_summary = ${sql.json(aiSummary)}, ai_draft_reply = ${sql.json(aiDraft)}
+    where id = ${ticketId} and workspace_id = ${workspaceId}
+  `;
 }
 
 async function persistAITags(
-  sb: SupabaseClient,
+  _sb: unknown,
   ticketId: string,
   workspaceId: string,
   tags: TriageOutput['tags'],
 ) {
-  // Wipe and replace — simpler than diff/upsert, and AI tags are derived data
-  // we can always re-generate from another triage call.
-  const del = await sb.from('ticket_ai_tags').delete().eq('ticket_id', ticketId);
-  if (del.error) throw new TriageError(`Failed to clear AI tags: ${del.error.message}`, 500);
+  // Wipe and replace — AI tags are derived data we can re-generate.
+  const sql = getDb();
+  await sql`delete from ticket_ai_tags where ticket_id = ${ticketId}`;
   if (tags.length === 0) return;
-  const ins = await sb.from('ticket_ai_tags').insert(
-    tags.map((t) => ({
-      workspace_id: workspaceId,
-      ticket_id: ticketId,
-      tag: t.tag,
-      confidence: t.confidence,
-      accepted: false,
-    })),
-  );
-  if (ins.error) throw new TriageError(`Failed to insert AI tags: ${ins.error.message}`, 500);
+  const rows = tags.map((t) => ({
+    workspace_id: workspaceId, ticket_id: ticketId, tag: t.tag, confidence: t.confidence, accepted: false,
+  }));
+  await sql`insert into ticket_ai_tags ${sql(rows)}`;
 }
 
 async function logUsage(args: {
-  sb: SupabaseClient;
+  sb: unknown;
   workspaceId: string;
   ticketId: string;
   userId: string | null;
@@ -570,25 +540,19 @@ async function logUsage(args: {
   const cache_read_input_tokens = args.usage.cache_read_input_tokens ?? 0;
   const output_tokens = args.usage.output_tokens;
   const cost = computeCostMicro(args.model, {
-    input_tokens,
-    cache_creation_input_tokens,
-    cache_read_input_tokens,
-    output_tokens,
+    input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens,
   });
-  // Best-effort logging — failure to log usage should not break the request.
-  const { error } = await args.sb.from('ai_usage_log').insert({
-    workspace_id: args.workspaceId,
-    ticket_id: args.ticketId,
-    user_id: args.userId,
-    action: args.action,
-    model: args.model,
-    input_tokens,
-    cache_creation_input_tokens,
-    cache_read_input_tokens,
-    output_tokens,
-    cost_usd_micro: cost,
-    duration_ms: args.durationMs,
-    request_id: args.requestId ?? null,
-  });
-  if (error) console.error('ai_usage_log insert failed:', error.message);
+  // Best-effort — failure to log usage should not break the request.
+  try {
+    await getDb()`
+      insert into ai_usage_log (workspace_id, ticket_id, user_id, action, model,
+        input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens,
+        cost_usd_micro, duration_ms, request_id)
+      values (${args.workspaceId}, ${args.ticketId}, ${args.userId}, ${args.action}, ${args.model},
+        ${input_tokens}, ${cache_creation_input_tokens}, ${cache_read_input_tokens}, ${output_tokens},
+        ${cost}, ${args.durationMs}, ${args.requestId ?? null})
+    `;
+  } catch (err) {
+    console.error('ai_usage_log insert failed:', err instanceof Error ? err.message : err);
+  }
 }

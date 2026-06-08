@@ -1,6 +1,9 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { TriageOutput } from './triage.ts';
 import { env } from './env.ts';
+import { getDb } from './db.ts';
+
+// Migration to Neon — Step 3 (tickets megabatch). DB via getDb(); `sb` kept
+// (accepted-but-ignored) for caller compat. postmark-outbound is external HTTP.
 import {
   isPostmarkConfigured,
   PostmarkSendError,
@@ -49,7 +52,7 @@ export function evaluateAutoReply(
 // ─── Posting ─────────────────────────────────────────────────────────────
 
 export interface PostAutoReplyArgs {
-  sb: SupabaseClient;
+  sb: unknown;
   workspaceId: string;
   ticketId: string;
   draftReply: string;
@@ -85,18 +88,15 @@ export type PostAutoReplyResult =
  */
 export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoReplyResult> {
   const { sb, workspaceId, ticketId, draftReply, confidence, model, workspaceName } = args;
+  const sql = getDb();
 
   // 1. Idempotency check — has this ticket already been auto-replied?
-  const { data: existing, error: eErr } = await sb
-    .from('events')
-    .select('id')
-    .eq('workspace_id', workspaceId)
-    .eq('entity_type', 'ticket')
-    .eq('entity_id', ticketId)
-    .eq('kind', 'auto_reply')
-    .limit(1)
-    .maybeSingle();
-  if (eErr) throw new Error(`Auto-reply idempotency check failed: ${eErr.message}`);
+  const [existing] = await sql`
+    select id from events
+    where workspace_id = ${workspaceId} and entity_type = 'ticket'
+      and entity_id = ${ticketId} and kind = 'auto_reply'
+    limit 1
+  `;
   if (existing) {
     return { posted: false, reason: 'already_auto_replied' };
   }
@@ -157,33 +157,22 @@ export async function postAutoReply(args: PostAutoReplyArgs): Promise<PostAutoRe
   //    Store the FULL RFC Message-Id (with brackets + domain) — same format
   //    as customer inbound messages — so In-Reply-To matching on a reply
   //    finds this row exactly.
-  const { data: msg, error: mErr } = await sb
-    .from('ticket_messages')
-    .insert({
-      workspace_id: workspaceId,
-      ticket_id: ticketId,
-      role: 'ai',
-      author_user_id: null,
-      author_label: workspaceName,
-      body: draftReply,
-      external_message_id: rfcMessageId,
-    })
-    .select('id')
-    .single();
-  if (mErr) throw new Error(`Auto-reply message insert failed: ${mErr.message}`);
+  const [msg] = await sql<{ id: string }[]>`
+    insert into ticket_messages (workspace_id, ticket_id, role, author_user_id, author_label, body, external_message_id)
+    values (${workspaceId}, ${ticketId}, 'ai', null, ${workspaceName}, ${draftReply}, ${rfcMessageId})
+    returning id
+  `;
+  if (!msg) throw new Error('Auto-reply message insert failed');
 
-  // 6. Audit event. details captures confidence + model + the Postmark ID so
-  //    future review can correlate to Postmark's delivery dashboard.
-  const { error: evErr } = await sb.from('events').insert({
-    workspace_id: workspaceId,
-    entity_type: 'ticket',
-    entity_id: ticketId,
-    kind: 'auto_reply',
-    author_label: workspaceName,
-    details: `Auto-reply sent (confidence ${confidence}, model ${model}, postmark_id ${postmarkMessageId})`,
-  });
-  if (evErr) {
-    console.error('[auto-reply] event log failed:', evErr.message);
+  // 6. Audit event — confidence + model + Postmark ID for delivery correlation.
+  try {
+    await sql`
+      insert into events (workspace_id, entity_type, entity_id, kind, author_label, details)
+      values (${workspaceId}, 'ticket', ${ticketId}, 'auto_reply', ${workspaceName},
+        ${`Auto-reply sent (confidence ${confidence}, model ${model}, postmark_id ${postmarkMessageId})`})
+    `;
+  } catch (err) {
+    console.error('[auto-reply] event log failed:', err instanceof Error ? err.message : err);
     // Don't fail the whole post — the email already went out + message row exists.
   }
 
@@ -204,42 +193,29 @@ interface SendContext {
 }
 
 async function loadSendContext(
-  sb: SupabaseClient,
+  _sb: unknown,
   ticketId: string,
   workspaceId: string,
 ): Promise<SendContext> {
-  // Single ticket + customer join. customers comes back as an array because
-  // of the relation; flatten on read.
-  const { data: ticket, error: tErr } = await sb
-    .from('tickets')
-    .select('subject, customers(email)')
-    .eq('id', ticketId)
-    .eq('workspace_id', workspaceId)
-    .single();
-  if (tErr || !ticket) throw new Error(`Ticket lookup for send failed: ${tErr?.message ?? 'not found'}`);
+  const sql = getDb();
+  const [ticket] = await sql<{ subject: string; email: string | null }[]>`
+    select t.subject, c.email
+    from tickets t left join customers c on c.id = t.customer_id
+    where t.id = ${ticketId} and t.workspace_id = ${workspaceId}
+  `;
+  if (!ticket) throw new Error('Ticket lookup for send failed: not found');
 
-  const customer = (Array.isArray(ticket.customers) ? ticket.customers[0] : ticket.customers) as
-    | { email: string | null }
-    | null;
-
-  // Most recent customer message — its Message-ID becomes our In-Reply-To.
-  // If there isn't one (e.g. ticket created by an agent via UI), we still
-  // send, just without threading.
-  const { data: lastMsg, error: mErr } = await sb
-    .from('ticket_messages')
-    .select('external_message_id')
-    .eq('ticket_id', ticketId)
-    .eq('workspace_id', workspaceId)
-    .eq('role', 'customer')
-    .is('deleted_at', null)
-    .not('external_message_id', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (mErr) throw new Error(`Customer message lookup failed: ${mErr.message}`);
+  // Most recent customer message with a Message-ID → our In-Reply-To (if any).
+  const [lastMsg] = await sql<{ external_message_id: string }[]>`
+    select external_message_id from ticket_messages
+    where ticket_id = ${ticketId} and workspace_id = ${workspaceId} and role = 'customer'
+      and deleted_at is null and external_message_id is not null
+    order by created_at desc
+    limit 1
+  `;
 
   return {
-    customerEmail: customer?.email ?? null,
+    customerEmail: ticket.email ?? null,
     subject: ticket.subject,
     lastCustomerMessageId: lastMsg?.external_message_id ?? null,
   };

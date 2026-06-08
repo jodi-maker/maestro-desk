@@ -1,4 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { getDb } from './db.ts';
+
+// Migration to Neon — Step 3 (tickets megabatch). DB via getDb(); `sb` kept
+// (accepted-but-ignored) for caller compat.
 
 // ─── Trigger evaluation ──────────────────────────────────────────────────
 //
@@ -80,7 +83,7 @@ export function evaluateTrigger(trigger: unknown, row: Record<string, unknown>, 
 // notification dispatcher yet, so these act as audit-trail no-ops.
 
 interface ActionContext {
-  sb:           SupabaseClient;
+  sb:           unknown;
   workspaceId:  string;
   ticketId:     string;
   workflowId:   string;
@@ -89,78 +92,55 @@ interface ActionContext {
 
 async function executeAction(action: any, ctx: ActionContext): Promise<void> {
   if (!action || typeof action !== 'object' || typeof action.type !== 'string') return;
-  const { sb, workspaceId, ticketId } = ctx;
+  const { workspaceId, ticketId } = ctx;
+  const sql = getDb();
 
   switch (action.type) {
     case 'set_status':
-      await sb.from('tickets')
-        .update({ status_key: action.value })
-        .eq('id', ticketId)
-        .eq('workspace_id', workspaceId);
+      await sql`update tickets set status_key = ${action.value} where id = ${ticketId} and workspace_id = ${workspaceId}`;
       break;
 
     case 'set_priority':
-      await sb.from('tickets')
-        .update({ priority_key: action.value })
-        .eq('id', ticketId)
-        .eq('workspace_id', workspaceId);
+      await sql`update tickets set priority_key = ${action.value} where id = ${ticketId} and workspace_id = ${workspaceId}`;
       break;
 
     case 'add_tag': {
       const tag = String(action.value || '').trim().toLowerCase();
       if (!tag) break;
-      await sb.from('ticket_tags').upsert(
-        { workspace_id: workspaceId, ticket_id: ticketId, tag },
-        { onConflict: 'ticket_id,tag', ignoreDuplicates: true },
-      );
-      await sb.from('tag_library').upsert(
-        { workspace_id: workspaceId, tag, kind: 'manual' },
-        { onConflict: 'workspace_id,tag', ignoreDuplicates: true },
-      );
+      await sql`
+        insert into ticket_tags (workspace_id, ticket_id, tag) values (${workspaceId}, ${ticketId}, ${tag})
+        on conflict (ticket_id, tag) do nothing
+      `;
+      await sql`
+        insert into tag_library (workspace_id, tag, kind) values (${workspaceId}, ${tag}, 'manual')
+        on conflict (workspace_id, tag) do nothing
+      `;
       break;
     }
 
     case 'assign_role': {
-      // Pick the first active member with the named role — no fancy
-      // tie-break (least-busy etc.) for v1; the assignment-rules engine
-      // is where that lives, and it can still run on top.
-      const { data: role } = await sb.from('roles')
-        .select('id')
-        .eq('workspace_id', workspaceId)
-        .eq('name', action.role)
-        .maybeSingle();
-      if (!role) break;
-      const { data: member } = await sb.from('workspace_members')
-        .select('user_id')
-        .eq('workspace_id', workspaceId)
-        .eq('role_id', role.id)
-        .eq('active', true)
-        .limit(1)
-        .maybeSingle();
+      // First active member with the named role — no tie-break (the
+      // assignment-rules engine handles that and can still run on top).
+      const [member] = await sql<{ user_id: string }[]>`
+        select wm.user_id
+        from workspace_members wm
+        join roles r on r.id = wm.role_id
+        where wm.workspace_id = ${workspaceId} and r.name = ${action.role} and wm.active = true
+        limit 1
+      `;
       if (!member) break;
-      await sb.from('tickets')
-        .update({ assigned_user_id: member.user_id })
-        .eq('id', ticketId)
-        .eq('workspace_id', workspaceId);
+      await sql`update tickets set assigned_user_id = ${member.user_id} where id = ${ticketId} and workspace_id = ${workspaceId}`;
       break;
     }
 
     case 'notify':
     case 'flag': {
-      // Audit-only for v1. The trail goes through workflow_runs already;
-      // we add a per-event row to audit_events so it's visible in the god
-      // panel and queryable independently of workflow_runs.
-      await sb.from('audit_events').insert({
-        workspace_id: workspaceId,
-        action:       `workflow.${action.type}`,
-        target_type:  'ticket',
-        target_id:    ticketId,
-        metadata:     {
-          workflow_id:   ctx.workflowId,
-          workflow_name: ctx.workflowName,
-          target:        action.target ?? null,
-        },
-      });
+      // Audit-only for v1 — visible in the god panel independently of workflow_runs.
+      await sql`
+        insert into audit_events (workspace_id, action, target_type, target_id, metadata)
+        values (${workspaceId}, ${`workflow.${action.type}`}, 'ticket', ${ticketId},
+          ${sql.json({ workflow_id: ctx.workflowId, workflow_name: ctx.workflowName, target: action.target ?? null })})
+      `;
       break;
     }
 
@@ -188,7 +168,7 @@ async function executeAction(action: any, ctx: ActionContext): Promise<void> {
 // PATCH.
 
 export async function runWorkflowsForTicket(args: {
-  sb:           SupabaseClient;
+  sb:           unknown;
   workspaceId:  string;
   ticketId:     string;
   // Optional pre-update row — when present, change-detection triggers
@@ -197,17 +177,16 @@ export async function runWorkflowsForTicket(args: {
   // omit it; only field-state triggers will fire then.
   prevRow?:     Record<string, unknown> | null;
 }): Promise<void> {
-  const { sb, workspaceId, ticketId, prevRow } = args;
+  const { workspaceId, ticketId, prevRow } = args;
+  const sql = getDb();
 
   // Pull the post-update ticket row so the trigger evaluates against
   // what the API just wrote, not what the caller sent.
-  const { data: row, error: tErr } = await sb
-    .from('tickets')
-    .select('id, status_key, priority_key, category_key, customer_id, assigned_user_id, sla_state')
-    .eq('id', ticketId)
-    .eq('workspace_id', workspaceId)
-    .maybeSingle();
-  if (tErr || !row) return;
+  const [row] = await sql<Record<string, unknown>[]>`
+    select id, status_key, priority_key, category_key, customer_id, assigned_user_id, sla_state
+    from tickets where id = ${ticketId} and workspace_id = ${workspaceId}
+  `;
+  if (!row) return;
 
   // Build the changes map: { status_change: 'resolved', ... } only for
   // columns that actually changed in this PATCH.
@@ -220,18 +199,16 @@ export async function runWorkflowsForTicket(args: {
     }
   }
 
-  const { data: workflows, error: wErr } = await sb
-    .from('workflows')
-    .select('id, name, trigger, action, run_count')
-    .eq('workspace_id', workspaceId)
-    .eq('status', 'active');
-  if (wErr || !workflows) return;
+  const workflows = await sql<{ id: string; name: string; trigger: unknown; action: unknown; run_count: number }[]>`
+    select id, name, trigger, action, run_count from workflows
+    where workspace_id = ${workspaceId} and status = 'active'
+  `;
 
   for (const wf of workflows) {
-    if (!evaluateTrigger(wf.trigger, row as any, changes)) continue;
+    if (!evaluateTrigger(wf.trigger, row, changes)) continue;
     try {
       await executeAction(wf.action, {
-        sb,
+        sb: null,
         workspaceId,
         ticketId,
         workflowId:   wf.id,
@@ -239,15 +216,11 @@ export async function runWorkflowsForTicket(args: {
       });
       // Bump counters + audit. Best-effort; errors logged but don't break
       // the loop so a later workflow still gets its chance.
-      await sb.from('workflows')
-        .update({ run_count: (wf.run_count || 0) + 1, last_run_at: new Date().toISOString() })
-        .eq('id', wf.id);
-      await sb.from('workflow_runs').insert({
-        workspace_id: workspaceId,
-        workflow_id:  wf.id,
-        ticket_id:    ticketId,
-        kind:         'triggered',
-      });
+      await sql`update workflows set run_count = ${(wf.run_count || 0) + 1}, last_run_at = now() where id = ${wf.id}`;
+      await sql`
+        insert into workflow_runs (workspace_id, workflow_id, ticket_id, kind)
+        values (${workspaceId}, ${wf.id}, ${ticketId}, 'triggered')
+      `;
     } catch (err) {
       console.error(`[workflow-engine] workflow ${wf.id} failed:`, err);
     }

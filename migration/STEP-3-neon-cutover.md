@@ -19,8 +19,8 @@ A route rewritten to query Neon uses its existing `.eq('workspace_id', workspace
 ## Sub-PRs (incremental)
 
 ### PR 3.0 — Full data copy + access/authz foundation
-- [ ] One-time data migration script: `pg_dump --data-only` from Supabase → load into Neon (preserve ids; respect FK order; the schema is already there from Step 1). Verify row counts per table.
-- [ ] Establish the **data-access pattern**: raw tagged-template SQL via `getDb()` (from Step 1's `lib/db.ts`). Inline `sql\`…\`` in routes; add small shared helpers only for repeated shapes (workspace-scoped list/get/insert/update/soft-delete).
+- [x] **Data copy DONE.** `api/scripts/copy-from-supabase.ts` — copies all 52 data tables Supabase→Neon. `pg_dump` isn't available locally, so it's a programmatic copy: FK-topological order on NOT-NULL edges; nullable FK columns deferred (nulled on insert, patched after all loads) to break self-refs (`tickets`) and cross-table cycles (`tickets`↔`inbox_messages`); copies only columns common to both DBs; truncates seed first. Verified: all 52 tables match row counts; deferred FKs round-trip (customer_id 20/20, assigned_user_id 6/6, ai_usage_log.ticket_id 19). Reusable for the final resync.
+- [ ] Establish the **data-access pattern**: raw tagged-template SQL via `getDb()` (from Step 1's `lib/db.ts`). Inline `sql\`…\`` in routes; add small shared helpers only for repeated shapes. *(Lands with PR 3.1, where it's first exercised.)*
 - [ ] Establish **authz helpers** (replacing RLS policies):
   - `requireWorkspaceMember` — already in `middleware/auth.ts` (membership verified). Keep.
   - `requireWorkspaceAdmin(workspaceId)` — new: checks the caller's role `is_admin` in Neon. Replaces the admin-only RLS policies (`workspace_members` writes, `categories` writes).

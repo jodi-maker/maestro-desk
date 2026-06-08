@@ -1,8 +1,13 @@
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.ts';
+import { getDb } from '../lib/db.ts';
+import { requireWorkspaceAdmin } from '../lib/authz.ts';
 
-// Admin-managed ticket categories.
+// Admin-managed ticket categories. (Migration to Neon — Step 3, PR 3.1: this
+// is the template route. Data access is raw SQL on Neon via getDb(); the
+// admin gate is the requireWorkspaceAdmin helper that replaces the Supabase
+// `is_workspace_admin` RPC + the admin-write RLS policy.)
 //
 //   GET    /api/v1/categories        — list (any workspace member; the SPA
 //                                       New-Ticket dropdown filters is_active)
@@ -10,10 +15,8 @@ import { requireAuth } from '../middleware/auth.ts';
 //   PATCH  /api/v1/categories/:key   — rename / enable-disable (admin)
 //
 // There is no DELETE: retiring a category is is_active=false (reversible,
-// keeps existing tickets' category_key valid). Reads go through sbUser so the
-// select RLS policy applies; the admin check runs via the is_workspace_admin
-// RPC (same shape as routes/workspace.ts) and the write RLS policy enforces it
-// again as defense-in-depth.
+// keeps existing tickets' category_key valid). Membership is verified by the
+// auth middleware; the GET is open to any member, writes require admin.
 export const categories = new Hono();
 
 categories.use('*', requireAuth);
@@ -30,28 +33,18 @@ function keyFromLabel(label: string): string {
     .join('');
 }
 
-async function requireAdmin(c: Context): Promise<Response | null> {
-  const sbUser = c.get('sbUser');
-  const workspaceId = c.get('workspaceId');
-  const { data: isAdmin, error } = await sbUser.rpc('is_workspace_admin', { ws: workspaceId });
-  if (error) return c.json({ error: error.message }, 500);
-  if (!isAdmin) return c.json({ error: 'Admin permission required' }, 403);
-  return null;
-}
-
 // ─── GET / — list all categories (active + inactive) ─────────────────────
 categories.get('/', async (c) => {
-  const sb = c.get('sbUser');
+  const sql = getDb();
   const workspaceId = c.get('workspaceId');
 
-  const { data, error } = await sb
-    .from('ticket_categories')
-    .select('key, label, is_active')
-    .eq('workspace_id', workspaceId)
-    .order('label', { ascending: true });
-  if (error) return c.json({ error: error.message }, 500);
-
-  return c.json({ categories: data ?? [] });
+  const rows = await sql`
+    select key, label, is_active
+    from ticket_categories
+    where workspace_id = ${workspaceId}
+    order by label asc
+  `;
+  return c.json({ categories: rows });
 });
 
 // ─── POST / — create a category (admin) ──────────────────────────────────
@@ -60,10 +53,10 @@ const PostCategory = z.object({
 }).strict();
 
 categories.post('/', async (c) => {
-  const denied = await requireAdmin(c);
+  const denied = await requireWorkspaceAdmin(c);
   if (denied) return denied;
 
-  const sb = c.get('sbUser');
+  const sql = getDb();
   const workspaceId = c.get('workspaceId');
 
   const body = await c.req.json().catch(() => null);
@@ -82,23 +75,21 @@ categories.post('/', async (c) => {
   // to the same key (e.g. "Payments" / "payments" → "Payments"), and the
   // clashing row may be DISABLED — in which case the admin should re-enable it
   // rather than be told it "already exists" with no way to see it.
-  const { data, error } = await sb
-    .from('ticket_categories')
-    .insert({ workspace_id: workspaceId, key, label, is_active: true })
-    .select('key, label, is_active')
-    .single();
-  // 23505 = unique_violation on the (workspace_id, key) primary key.
-  if (error) {
-    if ((error as any).code === '23505') {
-      const { data: clash, error: clashErr } = await sb
-        .from('ticket_categories')
-        .select('key, label, is_active')
-        .eq('workspace_id', workspaceId)
-        .eq('key', key)
-        .maybeSingle();
-      // Best-effort enrichment only — the 23505 already tells us it's a
-      // conflict, so a failed/raced lookup just degrades to a generic message.
-      if (clashErr) console.warn('[categories] conflict lookup failed:', clashErr.message);
+  try {
+    const [row] = await sql`
+      insert into ticket_categories (workspace_id, key, label, is_active)
+      values (${workspaceId}, ${key}, ${label}, true)
+      returning key, label, is_active
+    `;
+    return c.json({ category: row }, 201);
+  } catch (err) {
+    // 23505 = unique_violation on the (workspace_id, key) primary key.
+    if ((err as any)?.code === '23505') {
+      const [clash] = await sql`
+        select key, label, is_active
+        from ticket_categories
+        where workspace_id = ${workspaceId} and key = ${key}
+      `;
       const hint = clash && !clash.is_active
         ? ' It is currently disabled — re-enable it instead of creating a duplicate.'
         : '';
@@ -107,10 +98,8 @@ categories.post('/', async (c) => {
         409,
       );
     }
-    return c.json({ error: error.message }, 500);
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
-
-  return c.json({ category: data }, 201);
 });
 
 // ─── PATCH /:key — rename or enable/disable (admin) ──────────────────────
@@ -120,10 +109,10 @@ const PatchCategory = z.object({
 }).strict();
 
 categories.patch('/:key', async (c) => {
-  const denied = await requireAdmin(c);
+  const denied = await requireWorkspaceAdmin(c);
   if (denied) return denied;
 
-  const sb = c.get('sbUser');
+  const sql = getDb();
   const workspaceId = c.get('workspaceId');
   const key = c.req.param('key');
 
@@ -136,15 +125,14 @@ categories.patch('/:key', async (c) => {
     return c.json({ error: 'No fields to update' }, 400);
   }
 
-  const { data, error } = await sb
-    .from('ticket_categories')
-    .update(parsed.data)
-    .eq('workspace_id', workspaceId)
-    .eq('key', key)
-    .select('key, label, is_active')
-    .maybeSingle();
-  if (error) return c.json({ error: error.message }, 500);
-  if (!data)  return c.json({ error: 'Category not found' }, 404);
+  // sql(obj) renders "set label = $1, is_active = $2" for whichever keys are present.
+  const [row] = await sql`
+    update ticket_categories
+    set ${sql(parsed.data)}
+    where workspace_id = ${workspaceId} and key = ${key}
+    returning key, label, is_active
+  `;
+  if (!row) return c.json({ error: 'Category not found' }, 404);
 
-  return c.json({ category: data });
+  return c.json({ category: row });
 });

@@ -12,8 +12,10 @@ export const integrations = new Hono();
 integrations.use('*', requireAuth);
 
 // postgres.js upsert helper: insert the row, on (workspace_id) conflict update
-// all of the row's columns except workspace_id.
-function upsertByWorkspace(sql: ReturnType<typeof getDb>, table: string, row: Record<string, unknown>) {
+// all of the row's columns except workspace_id. `table` is a literal union —
+// only these three tables can ever be passed (no caller-supplied table names).
+type IntegrationTable = 'slack_integrations' | 'stripe_integrations' | 'shopify_integrations';
+function upsertByWorkspace(sql: ReturnType<typeof getDb>, table: IntegrationTable, row: Record<string, unknown>) {
   const updateKeys = Object.keys(row).filter((k) => k !== 'workspace_id');
   return sql`insert into ${sql(table)} ${sql(row)} on conflict (workspace_id) do update set ${sql(row, ...updateKeys)}`;
 }

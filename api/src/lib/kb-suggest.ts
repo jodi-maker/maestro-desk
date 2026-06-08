@@ -1,7 +1,11 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { anthropic, computeCostMicro } from './anthropic.ts';
 import { assertHasBudget, BudgetExceededError, deductBudget } from './budget.ts';
+import { getDb } from './db.ts';
+
+// Migration to Neon — Step 3 (portal batch). DB via getDb(); the `sb` param is
+// kept (accepted-but-ignored) for caller compat and passed through to the
+// budget helpers (which also ignore it).
 
 // Haiku is the cost-optimised choice — accurate enough for ranking
 // short KB titles against a free-text question, and ~5× cheaper than
@@ -51,21 +55,22 @@ export interface KbSuggestResult {
  * still submits normally).
  */
 export async function suggestKbForQuestion(args: {
-  sb:          SupabaseClient;
+  sb:          unknown;
   workspaceId: string;
   question:    string;
 }): Promise<KbSuggestResult> {
   const { sb, workspaceId, question } = args;
+  const sql = getDb();
 
   // Pull the workspace's published articles. Body is truncated server-
   // side to keep input tokens bounded — the model just needs the gist.
-  const { data: articles, error } = await sb
-    .from('kb_articles')
-    .select('id, display_id, title, category, body')
-    .eq('workspace_id', workspaceId)
-    .eq('status', 'published')
-    .order('updated_at', { ascending: false });
-  if (error || !articles || articles.length === 0) {
+  const articles = await sql<{ id: string; display_id: string; title: string; category: string | null; body: string | null }[]>`
+    select id, display_id, title, category, body
+    from kb_articles
+    where workspace_id = ${workspaceId} and status = 'published'
+    order by updated_at desc
+  `;
+  if (articles.length === 0) {
     return { suggestions: [], cost_micro: 0 };
   }
 
@@ -135,19 +140,18 @@ Always use the suggest_kb_articles tool. Refer to articles by their display id (
   });
   try {
     await deductBudget(sb, workspaceId, costMicro);
-    await sb.from('ai_usage_log').insert({
-      workspace_id:                workspaceId,
-      user_id:                     null,
-      model:                       MODEL,
-      action:                      'kb_suggest',
-      input_tokens:                response.usage.input_tokens,
-      cache_creation_input_tokens: response.usage.cache_creation_input_tokens || 0,
-      cache_read_input_tokens:     response.usage.cache_read_input_tokens || 0,
-      output_tokens:               response.usage.output_tokens,
-      cost_usd_micro:              costMicro,
-      duration_ms:                 elapsedMs,
-      request_id:                  response.id,
-    });
+    await sql`
+      insert into ai_usage_log (
+        workspace_id, user_id, model, action,
+        input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens,
+        cost_usd_micro, duration_ms, request_id
+      ) values (
+        ${workspaceId}, null, ${MODEL}, 'kb_suggest',
+        ${response.usage.input_tokens}, ${response.usage.cache_creation_input_tokens || 0},
+        ${response.usage.cache_read_input_tokens || 0}, ${response.usage.output_tokens},
+        ${costMicro}, ${elapsedMs}, ${response.id}
+      )
+    `;
   } catch (err) {
     console.warn('[kb-suggest] usage log / deduct failed:', err);
   }

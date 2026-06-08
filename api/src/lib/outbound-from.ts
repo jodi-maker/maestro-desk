@@ -1,44 +1,30 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { getDb } from './db.ts';
 
-// Resolves the per-workspace "From" identity for outbound mail. Picks the
-// brand's first verified email domain (verified_at IS NOT NULL, deleted_at
-// IS NULL, ordered by created_at — i.e. the longest-standing verified
-// domain) and constructs `support@<domain>`. From-name falls back to the
-// workspace name when support_email_display_name is unset.
-//
-// Returns null when the workspace has no verified domain — the caller
-// should fall back to the platform-default sender (env.POSTMARK_OUTBOUND_FROM)
-// or skip the send entirely if the platform default isn't configured either.
-//
-// "support@" is hardcoded for v1. A future column on workspace_email_domains
-// (outbound_local_part text default 'support') could let brands customise.
+// Migration to Neon — Step 3 (tickets megabatch). DB via getDb(); `_sb` kept
+// for caller compat. Resolves the per-workspace "From" identity for outbound
+// mail: the brand's longest-standing verified email domain → `support@<domain>`.
+// Returns null when there's no verified domain (caller falls back to the
+// platform-default sender).
 
 export interface OutboundFrom {
   fromEmail: string;
   fromName: string;
 }
 
-export async function getOutboundFrom(
-  sb: SupabaseClient,
-  workspaceId: string,
-): Promise<OutboundFrom | null> {
-  const { data: ws, error: wErr } = await sb
-    .from('workspaces')
-    .select('name, support_email_display_name')
-    .eq('id', workspaceId)
-    .single();
-  if (wErr || !ws) return null;
+export async function getOutboundFrom(_sb: unknown, workspaceId: string): Promise<OutboundFrom | null> {
+  const sql = getDb();
+  const [ws] = await sql<{ name: string; support_email_display_name: string | null }[]>`
+    select name, support_email_display_name from workspaces where id = ${workspaceId}
+  `;
+  if (!ws) return null;
 
-  const { data: domain, error: dErr } = await sb
-    .from('workspace_email_domains')
-    .select('domain')
-    .eq('workspace_id', workspaceId)
-    .not('verified_at', 'is', null)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (dErr || !domain) return null;
+  const [domain] = await sql<{ domain: string }[]>`
+    select domain from workspace_email_domains
+    where workspace_id = ${workspaceId} and verified_at is not null and deleted_at is null
+    order by created_at asc
+    limit 1
+  `;
+  if (!domain) return null;
 
   return {
     fromEmail: `support@${domain.domain}`,

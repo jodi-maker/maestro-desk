@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { HTTPException } from 'hono/http-exception';
-import { supabaseAdmin } from '../lib/supabase.ts';
+import { getDb } from '../lib/db.ts';
 import { suggestKbForQuestion } from '../lib/kb-suggest.ts';
 import { createMagicLink, verifyMagicLink, customerForSession } from '../lib/portal-auth.ts';
 import { sendEmail, PostmarkSendError } from '../lib/postmark-outbound.ts';
@@ -10,25 +10,39 @@ import { env } from '../lib/env.ts';
 
 export const publicRoutes = new Hono();
 
+// Migration to Neon — Step 3 (portal batch). All data access uses getDb()
+// raw SQL, scoped by the workspace resolved from the URL slug. Lib calls
+// still pass sb:null for caller-signature compat; the libs open their own
+// getDb() connection internally.
+
 // No requireAuth — these endpoints are by design unauth. Workspace
 // identified by URL slug. Avoids leaking data: every handler scopes by
 // the resolved workspace_id, never the caller.
 
-async function resolveWorkspace(slug: string) {
-  const { data, error } = await supabaseAdmin
-    .from('workspaces')
-    .select('id, name, slug, primary_color, logo_url, suspended_at, is_unrouted_bucket, deleted_at')
-    .eq('slug', slug)
-    .maybeSingle();
-  if (error) throw new HTTPException(500, { message: error.message });
+interface ResolvedWorkspace {
+  id:            string;
+  name:          string;
+  slug:          string;
+  primary_color: string | null;
+  logo_url:      string | null;
+}
+
+async function resolveWorkspace(slug: string): Promise<ResolvedWorkspace> {
+  const sql = getDb();
+  const [data] = await sql<{
+    id: string; name: string; slug: string; primary_color: string | null; logo_url: string | null;
+    suspended_at: string | null; is_unrouted_bucket: boolean | null; deleted_at: string | null;
+  }[]>`
+    select id, name, slug, primary_color, logo_url, suspended_at, is_unrouted_bucket, deleted_at
+    from workspaces where slug = ${slug}
+  `;
   if (!data || data.deleted_at || data.is_unrouted_bucket) {
     throw new HTTPException(404, { message: 'Workspace not found' });
   }
   if (data.suspended_at) throw new HTTPException(403, { message: 'Workspace is suspended' });
-  return data;
+  return { id: data.id, name: data.name, slug: data.slug, primary_color: data.primary_color, logo_url: data.logo_url };
 }
 
-// ─── GET /:slug/config — workspace name + branding ───────────────────────
 // GET /api/v1/public/resolve-host?host=help.acme.com — returns the
 // workspace slug for a verified custom domain. The portal calls this
 // at boot when no ?ws= param is present, so a CNAMEd custom host
@@ -37,28 +51,25 @@ async function resolveWorkspace(slug: string) {
 publicRoutes.get('/resolve-host', async (c) => {
   const host = (c.req.query('host') || '').trim().toLowerCase();
   if (!host) return c.json({ error: 'host query param required' }, 400);
-  const { data, error } = await supabaseAdmin
-    .from('workspaces')
-    .select('slug')
-    .eq('portal_custom_domain', host)
-    .eq('portal_custom_domain_verified', true)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (error) throw new HTTPException(500, { message: error.message });
+  const sql = getDb();
+  const [data] = await sql<{ slug: string }[]>`
+    select slug from workspaces
+    where portal_custom_domain = ${host} and portal_custom_domain_verified = true and deleted_at is null
+  `;
   if (!data) return c.json({ slug: null }, 404);
   return c.json({ slug: data.slug });
 });
 
+// ─── GET /:slug/config — workspace name + branding ───────────────────────
 publicRoutes.get('/:slug/config', async (c) => {
   const ws = await resolveWorkspace(c.req.param('slug'));
+  const sql = getDb();
   // Portal copy lives on workspaces.* — resolveWorkspace's narrow
   // select doesn't carry them, so re-fetch the three optional fields
   // here. Single extra round-trip per portal boot, negligible.
-  const { data: copy } = await supabaseAdmin
-    .from('workspaces')
-    .select('portal_tagline, portal_intro, portal_footer')
-    .eq('id', ws.id)
-    .maybeSingle();
+  const [copy] = await sql<{ portal_tagline: string | null; portal_intro: string | null; portal_footer: string | null }[]>`
+    select portal_tagline, portal_intro, portal_footer from workspaces where id = ${ws.id}
+  `;
   return c.json({
     workspace: {
       slug:           ws.slug,
@@ -79,16 +90,14 @@ publicRoutes.get('/:slug/config', async (c) => {
 // scrape unpublished work.
 publicRoutes.get('/:slug/kb-articles', async (c) => {
   const ws = await resolveWorkspace(c.req.param('slug'));
-
-  const { data, error } = await supabaseAdmin
-    .from('kb_articles')
-    .select('id, display_id, title, category, body, view_count, helpful_count, unhelpful_count, updated_at')
-    .eq('workspace_id', ws.id)
-    .eq('status', 'published')
-    .order('updated_at', { ascending: false });
-  if (error) return c.json({ error: error.message }, 500);
-
-  return c.json({ articles: data || [] });
+  const sql = getDb();
+  const articles = await sql`
+    select id, display_id, title, category, body, view_count, helpful_count, unhelpful_count, updated_at
+    from kb_articles
+    where workspace_id = ${ws.id} and status = 'published'
+    order by updated_at desc
+  `;
+  return c.json({ articles });
 });
 
 // ─── POST /:slug/tickets — public ticket submission ──────────────────────
@@ -114,6 +123,7 @@ function nextCustomerDisplayId(): string {
 
 publicRoutes.post('/:slug/tickets', async (c) => {
   const ws = await resolveWorkspace(c.req.param('slug'));
+  const sql = getDb();
 
   const reqBody = await c.req.json().catch(() => null);
   const parsed = PublicTicket.safeParse(reqBody);
@@ -125,85 +135,57 @@ publicRoutes.post('/:slug/tickets', async (c) => {
 
   // Match-or-create customer.
   let customerId: string;
-  const { data: existing, error: lookupErr } = await supabaseAdmin
-    .from('customers')
-    .select('id')
-    .eq('workspace_id', ws.id)
-    .eq('email', email)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (lookupErr) return c.json({ error: lookupErr.message }, 500);
+  const [existing] = await sql<{ id: string }[]>`
+    select id from customers
+    where workspace_id = ${ws.id} and email = ${email} and deleted_at is null
+  `;
 
   if (existing) {
     customerId = existing.id;
   } else {
     const [first, ...rest] = input.name.trim().split(/\s+/);
     const last = rest.join(' ') || null;
-    const { data: created, error: createErr } = await supabaseAdmin
-      .from('customers')
-      .insert({
-        workspace_id: ws.id,
-        display_id:   nextCustomerDisplayId(),
-        first_name:   first,
-        last_name:    last,
-        email,
-      })
-      .select('id')
-      .single();
-    if (createErr) {
+    try {
+      const [created] = await sql<{ id: string }[]>`
+        insert into customers (workspace_id, display_id, first_name, last_name, email)
+        values (${ws.id}, ${nextCustomerDisplayId()}, ${first}, ${last}, ${email})
+        returning id
+      `;
+      customerId = created.id;
+    } catch (err: any) {
       // Race recovery — same shape as the Postmark inbound handler.
-      if (createErr.code === '23505') {
-        const { data: winner } = await supabaseAdmin
-          .from('customers')
-          .select('id')
-          .eq('workspace_id', ws.id)
-          .eq('email', email)
-          .maybeSingle();
+      if (err?.code === '23505') {
+        const [winner] = await sql<{ id: string }[]>`
+          select id from customers where workspace_id = ${ws.id} and email = ${email}
+        `;
         if (!winner) return c.json({ error: 'Customer race recovery failed' }, 500);
         customerId = winner.id;
       } else {
-        return c.json({ error: createErr.message }, 500);
+        throw err;
       }
-    } else {
-      customerId = created.id;
     }
   }
 
   // Create the ticket.
-  const { data: ticket, error: tErr } = await supabaseAdmin
-    .from('tickets')
-    .insert({
-      workspace_id: ws.id,
-      display_id:   nextTicketDisplayId(),
-      subject:      input.subject,
-      customer_id:  customerId,
-      status_key:   'open',
-      priority_key: 'normal',
-      sla_state:    'ok',
-    })
-    .select('id, display_id')
-    .single();
-  if (tErr) return c.json({ error: tErr.message }, 500);
+  const [ticket] = await sql<{ id: string; display_id: string }[]>`
+    insert into tickets (workspace_id, display_id, subject, customer_id, status_key, priority_key, sla_state)
+    values (${ws.id}, ${nextTicketDisplayId()}, ${input.subject}, ${customerId}, 'open', 'normal', 'ok')
+    returning id, display_id
+  `;
 
   // First message — author_label uses the customer's submitted name.
-  const { error: mErr } = await supabaseAdmin.from('ticket_messages').insert({
-    workspace_id: ws.id,
-    ticket_id:    ticket.id,
-    role:         'customer',
-    author_label: input.name,
-    body:         input.body,
-  });
-  if (mErr) return c.json({ error: mErr.message, ticket }, 500);
+  await sql`
+    insert into ticket_messages (workspace_id, ticket_id, role, author_label, body)
+    values (${ws.id}, ${ticket.id}, 'customer', ${input.name}, ${input.body})
+  `;
 
   // Audit row so the agent UI can show "submitted via portal" if it
   // ever cares about the channel.
-  await supabaseAdmin.from('audit_events').insert({
-    workspace_id: ws.id,
-    action:       'portal.ticket_submitted',
-    target_type:  'ticket',
-    target_id:    ticket.id,
-    metadata:     { customer_id: customerId, from_email: email, from_name: input.name },
-  });
+  await sql`
+    insert into audit_events (workspace_id, action, target_type, target_id, metadata)
+    values (${ws.id}, 'portal.ticket_submitted', 'ticket', ${ticket.id},
+            ${sql.json({ customer_id: customerId, from_email: email, from_name: input.name })})
+  `;
 
   return c.json({
     ticket: { id: ticket.id, display_id: ticket.display_id },
@@ -234,7 +216,7 @@ publicRoutes.post('/:slug/kb-suggest', async (c) => {
 
   try {
     const res = await suggestKbForQuestion({
-      sb:          supabaseAdmin,
+      sb:          null,
       workspaceId: ws.id,
       question:    parsed.data.question,
     });
@@ -260,6 +242,7 @@ const PostAuthRequest = z.object({
 
 publicRoutes.post('/:slug/auth/request', async (c) => {
   const ws = await resolveWorkspace(c.req.param('slug'));
+  const sql = getDb();
 
   const reqBody = await c.req.json().catch(() => null);
   const parsed = PostAuthRequest.safeParse(reqBody);
@@ -268,20 +251,17 @@ publicRoutes.post('/:slug/auth/request', async (c) => {
   }
   const email = parsed.data.email.toLowerCase();
 
-  const { data: customer } = await supabaseAdmin
-    .from('customers')
-    .select('id, first_name')
-    .eq('workspace_id', ws.id)
-    .eq('email', email)
-    .is('deleted_at', null)
-    .maybeSingle();
+  const [customer] = await sql<{ id: string; first_name: string | null }[]>`
+    select id, first_name from customers
+    where workspace_id = ${ws.id} and email = ${email} and deleted_at is null
+  `;
 
   const genericOk = { ok: true, message: 'If that email is on file, a sign-in link is on the way.' };
   if (!customer) return c.json(genericOk);
 
   let token: string;
   try {
-    const link = await createMagicLink({ sb: supabaseAdmin, workspaceId: ws.id, customerId: customer.id });
+    const link = await createMagicLink({ sb: null, workspaceId: ws.id, customerId: customer.id });
     token = link.token;
   } catch (err) {
     console.error('[portal-auth] createMagicLink failed:', err);
@@ -309,7 +289,7 @@ publicRoutes.post('/:slug/auth/request', async (c) => {
   // workspace has no verified domain, the call throws — we log + swallow
   // so the customer-facing response stays consistent.
   try {
-    const from = await getOutboundFrom(supabaseAdmin, ws.id);
+    const from = await getOutboundFrom(null, ws.id);
     if (from) {
       await sendEmail({
         to:        email,
@@ -343,6 +323,7 @@ const PostAuthVerify = z.object({
 
 publicRoutes.post('/:slug/auth/verify', async (c) => {
   const ws = await resolveWorkspace(c.req.param('slug'));
+  const sql = getDb();
 
   const reqBody = await c.req.json().catch(() => null);
   const parsed = PostAuthVerify.safeParse(reqBody);
@@ -351,7 +332,7 @@ publicRoutes.post('/:slug/auth/verify', async (c) => {
   }
 
   const result = await verifyMagicLink({
-    sb:          supabaseAdmin,
+    sb:          null,
     workspaceId: ws.id,
     token:       parsed.data.token,
   });
@@ -359,11 +340,9 @@ publicRoutes.post('/:slug/auth/verify', async (c) => {
 
   // Return the customer's basic info alongside the session so the portal
   // can greet them by name without a second round-trip.
-  const { data: customer } = await supabaseAdmin
-    .from('customers')
-    .select('id, display_id, first_name, last_name, email')
-    .eq('id', result.customerId)
-    .maybeSingle();
+  const [customer] = await sql<{ id: string; display_id: string; first_name: string | null; last_name: string | null; email: string | null }[]>`
+    select id, display_id, first_name, last_name, email from customers where id = ${result.customerId}
+  `;
 
   return c.json({
     session_token: result.sessionToken,
@@ -387,7 +366,7 @@ async function withCustomer(c: any, workspaceId: string) {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return null;
   const sessionToken = authHeader.slice('Bearer '.length);
-  return customerForSession({ sb: supabaseAdmin, workspaceId, sessionToken });
+  return customerForSession({ sb: null, workspaceId, sessionToken });
 }
 
 // ─── GET /:slug/customer/tickets — list this customer's tickets ────────
@@ -396,15 +375,14 @@ publicRoutes.get('/:slug/customer/tickets', async (c) => {
   const sess = await withCustomer(c, ws.id);
   if (!sess) return c.json({ error: 'Sign in to view your tickets' }, 401);
 
-  const { data, error } = await supabaseAdmin
-    .from('tickets')
-    .select('id, display_id, subject, status_key, priority_key, created_at, updated_at')
-    .eq('workspace_id', ws.id)
-    .eq('customer_id', sess.customerId)
-    .is('deleted_at', null)
-    .order('updated_at', { ascending: false });
-  if (error) return c.json({ error: error.message }, 500);
-  return c.json({ tickets: data || [] });
+  const sql = getDb();
+  const tickets = await sql`
+    select id, display_id, subject, status_key, priority_key, created_at, updated_at
+    from tickets
+    where workspace_id = ${ws.id} and customer_id = ${sess.customerId} and deleted_at is null
+    order by updated_at desc
+  `;
+  return c.json({ tickets });
 });
 
 // ─── GET /:slug/customer/tickets/:displayId — single ticket + messages ─
@@ -413,29 +391,26 @@ publicRoutes.get('/:slug/customer/tickets/:displayId', async (c) => {
   const sess = await withCustomer(c, ws.id);
   if (!sess) return c.json({ error: 'Sign in to view your tickets' }, 401);
 
+  const sql = getDb();
   const displayId = c.req.param('displayId');
-  const { data: ticket, error: tErr } = await supabaseAdmin
-    .from('tickets')
-    .select('id, display_id, subject, status_key, priority_key, created_at, updated_at')
-    .eq('workspace_id', ws.id)
-    .eq('display_id', displayId)
-    .eq('customer_id', sess.customerId)  // scope: must be their ticket
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (tErr) return c.json({ error: tErr.message }, 500);
+  const [ticket] = await sql<{ id: string; display_id: string; subject: string; status_key: string; priority_key: string | null; created_at: string; updated_at: string }[]>`
+    select id, display_id, subject, status_key, priority_key, created_at, updated_at
+    from tickets
+    where workspace_id = ${ws.id} and display_id = ${displayId}
+      and customer_id = ${sess.customerId}  -- scope: must be their ticket
+      and deleted_at is null
+  `;
   if (!ticket) return c.json({ error: 'Ticket not found' }, 404);
 
   // Strip internal notes — those are agent-private.
-  const { data: messages, error: mErr } = await supabaseAdmin
-    .from('ticket_messages')
-    .select('id, role, author_label, body, created_at')
-    .eq('ticket_id', ticket.id)
-    .in('role', ['customer', 'agent', 'ai'])
-    .is('deleted_at', null)
-    .order('created_at', { ascending: true });
-  if (mErr) return c.json({ error: mErr.message }, 500);
+  const messages = await sql`
+    select id, role, author_label, body, created_at
+    from ticket_messages
+    where ticket_id = ${ticket.id} and role in ('customer', 'agent', 'ai') and deleted_at is null
+    order by created_at asc
+  `;
 
-  return c.json({ ticket: { ...ticket, messages: messages || [] } });
+  return c.json({ ticket: { ...ticket, messages } });
 });
 
 // ─── POST /:slug/customer/tickets/:displayId/messages — customer reply ─
@@ -448,6 +423,7 @@ publicRoutes.post('/:slug/customer/tickets/:displayId/messages', async (c) => {
   const sess = await withCustomer(c, ws.id);
   if (!sess) return c.json({ error: 'Sign in to reply' }, 401);
 
+  const sql = getDb();
   const reqBody = await c.req.json().catch(() => null);
   const parsed = PostCustomerReply.safeParse(reqBody);
   if (!parsed.success) {
@@ -455,48 +431,32 @@ publicRoutes.post('/:slug/customer/tickets/:displayId/messages', async (c) => {
   }
 
   const displayId = c.req.param('displayId');
-  const { data: ticket, error: tErr } = await supabaseAdmin
-    .from('tickets')
-    .select('id, status_key')
-    .eq('workspace_id', ws.id)
-    .eq('display_id', displayId)
-    .eq('customer_id', sess.customerId)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (tErr) return c.json({ error: tErr.message }, 500);
+  const [ticket] = await sql<{ id: string; status_key: string }[]>`
+    select id, status_key from tickets
+    where workspace_id = ${ws.id} and display_id = ${displayId}
+      and customer_id = ${sess.customerId} and deleted_at is null
+  `;
   if (!ticket) return c.json({ error: 'Ticket not found' }, 404);
 
   // Fetch the customer's name for the author_label so the thread renders
   // identically to messages that came in via Postmark inbound.
-  const { data: customer } = await supabaseAdmin
-    .from('customers')
-    .select('first_name, last_name, email')
-    .eq('id', sess.customerId)
-    .maybeSingle();
+  const [customer] = await sql<{ first_name: string | null; last_name: string | null; email: string | null }[]>`
+    select first_name, last_name, email from customers where id = ${sess.customerId}
+  `;
   const authorLabel = customer
     ? `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || customer.email || 'Customer'
     : 'Customer';
 
-  const { data: message, error: mErr } = await supabaseAdmin
-    .from('ticket_messages')
-    .insert({
-      workspace_id: ws.id,
-      ticket_id:    ticket.id,
-      role:         'customer',
-      author_label: authorLabel,
-      body:         parsed.data.body,
-    })
-    .select('id, role, author_label, body, created_at')
-    .single();
-  if (mErr) return c.json({ error: mErr.message }, 500);
+  const [message] = await sql`
+    insert into ticket_messages (workspace_id, ticket_id, role, author_label, body)
+    values (${ws.id}, ${ticket.id}, 'customer', ${authorLabel}, ${parsed.data.body})
+    returning id, role, author_label, body, created_at
+  `;
 
   // Customer reply un-resolves the ticket so agents see it back in the
   // open queue. Mirrors the normal inbound-email behaviour.
   if (ticket.status_key === 'resolved') {
-    await supabaseAdmin.from('tickets')
-      .update({ status_key: 'open' })
-      .eq('id', ticket.id)
-      .eq('workspace_id', ws.id);
+    await sql`update tickets set status_key = 'open' where id = ${ticket.id} and workspace_id = ${ws.id}`;
   }
 
   return c.json({ message }, 201);
@@ -513,25 +473,22 @@ publicRoutes.post('/:slug/customer/tickets/:displayId/messages', async (c) => {
 
 publicRoutes.get('/:slug/csat/:token', async (c) => {
   const ws = await resolveWorkspace(c.req.param('slug'));
+  const sql = getDb();
   const token = c.req.param('token');
-  const { data: ticket, error } = await supabaseAdmin
-    .from('tickets')
-    .select('id, display_id, subject, csat_score, csat_submitted_at, customers(first_name)')
-    .eq('workspace_id', ws.id)
-    .eq('csat_token', token)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (error) throw new HTTPException(500, { message: error.message });
+  const [ticket] = await sql<{ display_id: string; subject: string; csat_score: number | null; csat_submitted_at: string | null; customer_first_name: string | null }[]>`
+    select t.display_id, t.subject, t.csat_score, t.csat_submitted_at, c.first_name as customer_first_name
+    from tickets t left join customers c on c.id = t.customer_id
+    where t.workspace_id = ${ws.id} and t.csat_token = ${token} and t.deleted_at is null
+  `;
   if (!ticket) throw new HTTPException(404, { message: 'Survey not found' });
-  const t = ticket as any;
   return c.json({
     workspace: { name: ws.name, slug: ws.slug, primary_color: ws.primary_color, logo_url: ws.logo_url },
     ticket: {
-      display_id:    t.display_id,
-      subject:       t.subject,
-      customer_name: t.customers?.first_name || null,
-      submitted_at:  t.csat_submitted_at,
-      score:         t.csat_score,
+      display_id:    ticket.display_id,
+      subject:       ticket.subject,
+      customer_name: ticket.customer_first_name || null,
+      submitted_at:  ticket.csat_submitted_at,
+      score:         ticket.csat_score,
     },
   });
 });
@@ -543,6 +500,7 @@ const CsatSubmit = z.object({
 
 publicRoutes.post('/:slug/csat/:token', async (c) => {
   const ws = await resolveWorkspace(c.req.param('slug'));
+  const sql = getDb();
   const token = c.req.param('token');
   const reqBody = await c.req.json().catch(() => null);
   const parsed = CsatSubmit.safeParse(reqBody);
@@ -552,30 +510,23 @@ publicRoutes.post('/:slug/csat/:token', async (c) => {
 
   // Refuse to overwrite a submitted rating — the survey is one-shot,
   // matches what the SPA's manual rating flow does.
-  const { data: ticket, error: lookupErr } = await supabaseAdmin
-    .from('tickets')
-    .select('id, csat_submitted_at')
-    .eq('workspace_id', ws.id)
-    .eq('csat_token', token)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (lookupErr) throw new HTTPException(500, { message: lookupErr.message });
+  const [ticket] = await sql<{ id: string; csat_submitted_at: string | null }[]>`
+    select id, csat_submitted_at from tickets
+    where workspace_id = ${ws.id} and csat_token = ${token} and deleted_at is null
+  `;
   if (!ticket) throw new HTTPException(404, { message: 'Survey not found' });
   if (ticket.csat_submitted_at) {
     return c.json({ error: 'Survey already submitted' }, 409);
   }
 
-  const { error: upErr } = await supabaseAdmin
-    .from('tickets')
-    .update({
-      csat_score:        parsed.data.score,
-      csat_stars:        parsed.data.score, // legacy mirror — both columns exist
-      csat_comment:      parsed.data.comment || null,
-      csat_submitted_at: new Date().toISOString(),
-    })
-    .eq('id', ticket.id)
-    .eq('workspace_id', ws.id);
-  if (upErr) throw new HTTPException(500, { message: upErr.message });
+  await sql`
+    update tickets set
+      csat_score        = ${parsed.data.score},
+      csat_stars        = ${parsed.data.score},
+      csat_comment      = ${parsed.data.comment || null},
+      csat_submitted_at = now()
+    where id = ${ticket.id} and workspace_id = ${ws.id}
+  `;
 
   return c.json({ ok: true });
 });

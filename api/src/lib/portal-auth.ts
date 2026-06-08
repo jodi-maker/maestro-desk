@@ -1,5 +1,9 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { randomBytes } from 'node:crypto';
+import { getDb } from './db.ts';
+
+// Migration to Neon — Step 3 (portal batch). DB via getDb(); the `sb` param is
+// kept (accepted-but-ignored) for caller compatibility and will be dropped in
+// the post-migration cleanup pass.
 
 // Token TTLs. Magic link is short so a stolen email can't be used much
 // later; session is week-long so customers don't have to re-auth every
@@ -12,82 +16,72 @@ function generateToken(): string {
 }
 
 export async function createMagicLink(args: {
-  sb:          SupabaseClient;
+  sb:          unknown;
   workspaceId: string;
   customerId:  string;
 }): Promise<{ token: string; expiresAt: string }> {
-  const { sb, workspaceId, customerId } = args;
+  const { workspaceId, customerId } = args;
+  const sql = getDb();
   const token = generateToken();
   const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS).toISOString();
-  const { error } = await sb.from('portal_magic_links').insert({
-    token,
-    workspace_id: workspaceId,
-    customer_id:  customerId,
-    expires_at:   expiresAt,
-  });
-  if (error) throw new Error(`magic link insert failed: ${error.message}`);
+  await sql`
+    insert into portal_magic_links (token, workspace_id, customer_id, expires_at)
+    values (${token}, ${workspaceId}, ${customerId}, ${expiresAt})
+  `;
   return { token, expiresAt };
 }
 
 // Atomic exchange: confirm the magic link is unused + unexpired, mark it
 // used, mint a session. Returns the session token + customer info.
 export async function verifyMagicLink(args: {
-  sb:          SupabaseClient;
+  sb:          unknown;
   workspaceId: string;
   token:       string;
 }): Promise<{ sessionToken: string; customerId: string } | null> {
-  const { sb, workspaceId, token } = args;
+  const { workspaceId, token } = args;
+  const sql = getDb();
 
-  const { data: link, error: lookupErr } = await sb
-    .from('portal_magic_links')
-    .select('token, workspace_id, customer_id, expires_at, used_at')
-    .eq('token', token)
-    .eq('workspace_id', workspaceId)
-    .maybeSingle();
-  if (lookupErr) throw new Error(`magic link lookup failed: ${lookupErr.message}`);
+  const [link] = await sql<{ customer_id: string; expires_at: string; used_at: string | null }[]>`
+    select customer_id, expires_at, used_at
+    from portal_magic_links
+    where token = ${token} and workspace_id = ${workspaceId}
+  `;
   if (!link) return null;
   if (link.used_at) return null;
   if (new Date(link.expires_at).getTime() < Date.now()) return null;
 
   // Mark used. Defense against double-consume races: include the
   // is-null check in the update predicate so the second writer no-ops.
-  const { data: marked, error: markErr } = await sb
-    .from('portal_magic_links')
-    .update({ used_at: new Date().toISOString() })
-    .eq('token', token)
-    .is('used_at', null)
-    .select('token')
-    .maybeSingle();
-  if (markErr)  throw new Error(`magic link mark-used failed: ${markErr.message}`);
+  const [marked] = await sql`
+    update portal_magic_links set used_at = now()
+    where token = ${token} and used_at is null
+    returning token
+  `;
   if (!marked) return null;  // someone else consumed it first
 
   const sessionToken = generateToken();
   const sessionExpires = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-  const { error: sessErr } = await sb.from('portal_sessions').insert({
-    token:        sessionToken,
-    workspace_id: workspaceId,
-    customer_id:  link.customer_id,
-    expires_at:   sessionExpires,
-  });
-  if (sessErr) throw new Error(`session insert failed: ${sessErr.message}`);
+  await sql`
+    insert into portal_sessions (token, workspace_id, customer_id, expires_at)
+    values (${sessionToken}, ${workspaceId}, ${link.customer_id}, ${sessionExpires})
+  `;
 
   return { sessionToken, customerId: link.customer_id };
 }
 
 export async function customerForSession(args: {
-  sb:          SupabaseClient;
+  sb:          unknown;
   workspaceId: string;
   sessionToken: string;
 }): Promise<{ customerId: string } | null> {
-  const { sb, workspaceId, sessionToken } = args;
-  const { data, error } = await sb
-    .from('portal_sessions')
-    .select('customer_id, expires_at')
-    .eq('token', sessionToken)
-    .eq('workspace_id', workspaceId)
-    .maybeSingle();
-  if (error) throw new Error(`session lookup failed: ${error.message}`);
-  if (!data) return null;
-  if (new Date(data.expires_at).getTime() < Date.now()) return null;
-  return { customerId: data.customer_id };
+  const { workspaceId, sessionToken } = args;
+  const sql = getDb();
+  const [row] = await sql<{ customer_id: string; expires_at: string }[]>`
+    select customer_id, expires_at
+    from portal_sessions
+    where token = ${sessionToken} and workspace_id = ${workspaceId}
+  `;
+  if (!row) return null;
+  if (new Date(row.expires_at).getTime() < Date.now()) return null;
+  return { customerId: row.customer_id };
 }

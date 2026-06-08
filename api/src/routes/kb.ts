@@ -150,47 +150,52 @@ kb.post('/:id/vote', async (c) => {
   }
   const direction = parsed.data.direction;
 
-  // Current counts + this user's existing vote, in one join query.
-  const [art] = await sql`
-    select a.helpful_count, a.unhelpful_count, coalesce(v.vote, 0) as prev
-    from kb_articles a
-    left join kb_votes v on v.article_id = a.id and v.user_key = ${userId} and v.workspace_id = ${workspaceId}
-    where a.id = ${id} and a.workspace_id = ${workspaceId}
-  `;
-  if (!art) return c.json({ error: 'Article not found' }, 404);
-
-  const prev = art.prev as number;
-  let helpful   = art.helpful_count   || 0;
-  let unhelpful = art.unhelpful_count || 0;
-
   const nextVote = direction === 'up' ? 1 : direction === 'down' ? -1 : 0;
 
-  // Roll back previous contribution, apply the new one.
-  if (prev ===  1) helpful--;
-  if (prev === -1) unhelpful--;
-  if (nextVote ===  1) helpful++;
-  if (nextVote === -1) unhelpful++;
-
-  // Persist the vote row.
-  if (nextVote === 0) {
-    if (prev !== 0) {
-      await sql`delete from kb_votes where workspace_id = ${workspaceId} and article_id = ${id} and user_key = ${userId}`;
-    }
-  } else {
-    await sql`
-      insert into kb_votes (workspace_id, article_id, user_key, vote)
-      values (${workspaceId}, ${id}, ${userId}, ${nextVote})
-      on conflict (article_id, user_key) do update set vote = excluded.vote
+  // Run the read-modify-write inside a transaction that locks the article row
+  // (SELECT … FOR UPDATE), so concurrent votes on the same article serialize
+  // and the helpful/unhelpful counters can't race. Returns null if the
+  // article isn't in this workspace.
+  const result = await sql.begin(async (tx) => {
+    const [art] = await tx`
+      select helpful_count, unhelpful_count from kb_articles
+      where id = ${id} and workspace_id = ${workspaceId}
+      for update
     `;
-  }
+    if (!art) return null;
 
-  // Persist counter shifts (floored at 0 — defends against pre-existing drift).
-  helpful = Math.max(0, helpful);
-  unhelpful = Math.max(0, unhelpful);
-  await sql`
-    update kb_articles set helpful_count = ${helpful}, unhelpful_count = ${unhelpful}
-    where id = ${id} and workspace_id = ${workspaceId}
-  `;
+    const [vrow] = await tx`
+      select vote from kb_votes
+      where article_id = ${id} and user_key = ${userId} and workspace_id = ${workspaceId}
+    `;
+    const prev = (vrow?.vote ?? 0) as number;
+    let helpful   = art.helpful_count   || 0;
+    let unhelpful = art.unhelpful_count || 0;
+    if (prev ===  1) helpful--;
+    if (prev === -1) unhelpful--;
+    if (nextVote ===  1) helpful++;
+    if (nextVote === -1) unhelpful++;
+    helpful = Math.max(0, helpful);     // floor at 0 — defends against drift
+    unhelpful = Math.max(0, unhelpful);
 
-  return c.json({ my_vote: nextVote, helpful_count: helpful, unhelpful_count: unhelpful });
+    if (nextVote === 0) {
+      if (prev !== 0) {
+        await tx`delete from kb_votes where workspace_id = ${workspaceId} and article_id = ${id} and user_key = ${userId}`;
+      }
+    } else {
+      await tx`
+        insert into kb_votes (workspace_id, article_id, user_key, vote)
+        values (${workspaceId}, ${id}, ${userId}, ${nextVote})
+        on conflict (article_id, user_key) do update set vote = excluded.vote
+      `;
+    }
+    await tx`
+      update kb_articles set helpful_count = ${helpful}, unhelpful_count = ${unhelpful}
+      where id = ${id} and workspace_id = ${workspaceId}
+    `;
+    return { my_vote: nextVote, helpful_count: helpful, unhelpful_count: unhelpful };
+  });
+
+  if (!result) return c.json({ error: 'Article not found' }, 404);
+  return c.json(result);
 });

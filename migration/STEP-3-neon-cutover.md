@@ -20,17 +20,18 @@ A route rewritten to query Neon uses its existing `.eq('workspace_id', workspace
 
 ### PR 3.0 — Full data copy + access/authz foundation
 - [x] **Data copy DONE.** `api/scripts/copy-from-supabase.ts` — copies all 52 data tables Supabase→Neon. `pg_dump` isn't available locally, so it's a programmatic copy: FK-topological order on NOT-NULL edges; nullable FK columns deferred (nulled on insert, patched after all loads) to break self-refs (`tickets`) and cross-table cycles (`tickets`↔`inbox_messages`); copies only columns common to both DBs; truncates seed first. Verified: all 52 tables match row counts; deferred FKs round-trip (customer_id 20/20, assigned_user_id 6/6, ai_usage_log.ticket_id 19). Reusable for the final resync.
-- [ ] Establish the **data-access pattern**: raw tagged-template SQL via `getDb()` (from Step 1's `lib/db.ts`). Inline `sql\`…\`` in routes; add small shared helpers only for repeated shapes. *(Lands with PR 3.1, where it's first exercised.)*
-- [ ] Establish **authz helpers** (replacing RLS policies):
-  - `requireWorkspaceMember` — already in `middleware/auth.ts` (membership verified). Keep.
-  - `requireWorkspaceAdmin(workspaceId)` — new: checks the caller's role `is_admin` in Neon. Replaces the admin-only RLS policies (`workspace_members` writes, `categories` writes).
-  - platform-admin escape hatch — already in middleware (`is_platform_admin`). Keep.
-- [ ] Prove: a read path through `getDb()` returns copied data for the demo workspace.
+- [x] **Data-access pattern established** (PR 3.1): raw tagged-template SQL via `getDb()`, inline in the route. Shared helpers to emerge as repetition shows up.
+- [x] **Authz helper established** (PR 3.1): `api/src/lib/authz.ts` → `requireWorkspaceAdmin(c)` checks the caller's role `is_admin` in Neon, with the platform-admin escape hatch. Replaces the `is_workspace_admin` RPC + admin-write RLS policies. (`requireWorkspaceMember` stays in `middleware/auth.ts`.)
+- [x] Proven: reads through `getDb()` return copied demo data.
 
-### PR 3.1 — First route family (tickets) → Neon  *(establishes the template)*
-- [ ] Rewrite `routes/tickets.ts` + its lib deps (`triage.ts`, `auto-reply.ts`, sentiment, etc. as needed) from `sbUser`/`supabaseAdmin` to raw SQL on Neon.
-- [ ] Apply authz helpers where the ticket RLS policies enforced rules.
-- [ ] Verify against copied data (list, detail, create, update, assignment).
+### PR 3.1 — Template route: **categories** → Neon  ✅ DONE
+*(Switched from tickets: tickets is entangled with 7 Supabase-backed lib modules, a poor first template. categories is self-contained AND exercises member-read + admin-write — ideal for establishing the pattern. tickets moves later, with its libs, as its own PR.)*
+- [x] Rewrote `routes/categories.ts` from `sbUser` + `is_workspace_admin` RPC → raw SQL on Neon + `requireWorkspaceAdmin`.
+- [x] Verified end-to-end vs Neon: GET (member list), POST (admin create + 409 duplicate), PATCH (admin enable/disable); authz allows admin, denies read-only.
+
+### PR 3.x — tickets → Neon (its own PR, with lib deps)
+- [ ] Rewrite `routes/tickets.ts` **and its 7 lib deps** (`workflow-engine`, `assign-rules-engine`, `slack-notify`, `outgoing-webhooks`, `sentiment`, `csat-survey`, `mention-notify`) together, so the ticket feature moves to Neon as one coherent unit (no split-brain).
+- [ ] Verify list/detail/create/update/merge/snooze/time against copied data.
 
 ### PR 3.2 … 3.n — Remaining families → Neon (one PR each, or grouped)
 Route families to migrate (each still authenticates via Supabase JWT until the final flip):

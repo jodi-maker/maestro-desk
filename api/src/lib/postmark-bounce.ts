@@ -90,38 +90,46 @@ export async function processBounceEvent(args: {
   // bucket) for non-configured sending domains — that bucket is for inbound
   // misses, not outbound bookkeeping.
   if (!fromDomain) return { ok: false, error: 'Missing From domain' };
-  const [domainRow] = await sql<{ workspace_id: string }[]>`
-    select workspace_id from workspace_email_domains
-    where domain = ${fromDomain} and deleted_at is null
-  `;
-  if (!domainRow) return { ok: false, error: `Unknown From domain: ${fromDomain}` };
-  const workspaceId = domainRow.workspace_id;
 
-  // Find the customer in this workspace by email (citext → case-insensitive).
-  const [customer] = await sql<{ id: string; email_bounce_count: number; email_bounce_state: string | null }[]>`
-    select id, email_bounce_count, email_bounce_state from customers
-    where workspace_id = ${workspaceId} and email = ${recipient} and deleted_at is null
-  `;
-  if (!customer) {
-    return { ok: true, matched: false, workspaceId, customerId: null, state };
+  // DB errors are caught and returned as { ok: false } (not thrown): this
+  // webhook must always 200 so Postmark doesn't retry-storm on a transient DB
+  // failure. The route logs the { ok: false } error and acks 200.
+  try {
+    const [domainRow] = await sql<{ workspace_id: string }[]>`
+      select workspace_id from workspace_email_domains
+      where domain = ${fromDomain} and deleted_at is null
+    `;
+    if (!domainRow) return { ok: false, error: `Unknown From domain: ${fromDomain}` };
+    const workspaceId = domainRow.workspace_id;
+
+    // Find the customer in this workspace by email (citext → case-insensitive).
+    const [customer] = await sql<{ id: string; email_bounce_count: number; email_bounce_state: string | null }[]>`
+      select id, email_bounce_count, email_bounce_state from customers
+      where workspace_id = ${workspaceId} and email = ${recipient} and deleted_at is null
+    `;
+    if (!customer) {
+      return { ok: true, matched: false, workspaceId, customerId: null, state };
+    }
+
+    // Update the bounce summary. Only escalate state, never downgrade — once
+    // undeliverable, stay undeliverable (Postmark replay order isn't guaranteed).
+    const rank = (s: string) => ({ none: 0, soft: 1, hard: 2, spam: 2 }[s] ?? 0);
+    const nextState = rank(state) >= rank(customer.email_bounce_state || 'none')
+      ? state
+      : customer.email_bounce_state;
+    await sql`
+      update customers set
+        email_last_bounce_type = ${payload.Type},
+        email_last_bounce_at   = ${payload.BouncedAt || new Date().toISOString()},
+        email_bounce_count     = ${(customer.email_bounce_count || 0) + 1},
+        email_bounce_state     = ${nextState}
+      where id = ${customer.id}
+    `;
+
+    return { ok: true, matched: true, workspaceId, customerId: customer.id, state };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
-
-  // Update the bounce summary. Only escalate state, never downgrade — once
-  // undeliverable, stay undeliverable (Postmark replay order isn't guaranteed).
-  const rank = (s: string) => ({ none: 0, soft: 1, hard: 2, spam: 2 }[s] ?? 0);
-  const nextState = rank(state) >= rank(customer.email_bounce_state || 'none')
-    ? state
-    : customer.email_bounce_state;
-  await sql`
-    update customers set
-      email_last_bounce_type = ${payload.Type},
-      email_last_bounce_at   = ${payload.BouncedAt || new Date().toISOString()},
-      email_bounce_count     = ${(customer.email_bounce_count || 0) + 1},
-      email_bounce_state     = ${nextState}
-    where id = ${customer.id}
-  `;
-
-  return { ok: true, matched: true, workspaceId, customerId: customer.id, state };
 }
 
 /**

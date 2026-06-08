@@ -85,6 +85,11 @@ agents.delete('/:userId', async (c) => {
   const workspaceId = c.get('workspaceId');
   const targetUserId = c.req.param('userId');
 
-  await sql`delete from workspace_members where workspace_id = ${workspaceId} and user_id = ${targetUserId}`;
+  const [deleted] = await sql`
+    delete from workspace_members
+    where workspace_id = ${workspaceId} and user_id = ${targetUserId}
+    returning user_id
+  `;
+  if (!deleted) return c.json({ error: 'Membership not found' }, 404);
   return new Response(null, { status: 204 });
 });

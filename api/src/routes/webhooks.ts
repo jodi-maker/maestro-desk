@@ -193,8 +193,8 @@ webhooks.post('/postmark/bounce', async (c) => {
     return c.json({ ok: false, error: 'Invalid payload' }, 200);
   }
 
+  // processBounceEvent reads/writes Neon via getDb() internally (Step 3).
   const result = await processBounceEvent({
-    sb:         supabaseAdmin,
     payload:    parsed.data,
     fromDomain: fromDomain(parsed.data),
   });

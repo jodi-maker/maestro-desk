@@ -1,5 +1,8 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { getDb } from './db.ts';
 
+// Migration to Neon — Step 3 (tickets megabatch). DB via getDb(); `sb` kept
+// (accepted-but-ignored) for caller compat.
+//
 // Server-side assignment-rules engine. Evaluates active rules against
 // a ticket + its customer's VIP tier, picks an eligible agent based on
 // the rule's mode (specific-agent / round-robin / least-busy), skips
@@ -56,22 +59,21 @@ function ruleMatches(rule: Rule, ticket: any, customerVip: string | null): boole
 // updated rr_index for round-robin rules (so the caller can persist it).
 // Returns null if no eligible agent exists (e.g. whole team is OOO).
 async function pickAssignee(args: {
-  sb:           SupabaseClient;
+  sb:           unknown;
   workspaceId:  string;
   rule:         Rule;
 }): Promise<{ userId: string; rrIndexNext?: number } | null> {
-  const { sb, workspaceId, rule } = args;
+  const { workspaceId, rule } = args;
+  const sql = getDb();
   const a = rule.assignment || {};
 
   if (a.mode === 'specific-agent') {
     if (!a.agent_user_id) return null;
     // Verify membership + active + not OOO.
-    const { data: m } = await sb
-      .from('workspace_members')
-      .select('user_id, active, ooo_from, ooo_to')
-      .eq('workspace_id', workspaceId)
-      .eq('user_id', a.agent_user_id)
-      .maybeSingle();
+    const [m] = await sql<{ user_id: string; active: boolean; ooo_from: string | null; ooo_to: string | null }[]>`
+      select user_id, active, ooo_from, ooo_to from workspace_members
+      where workspace_id = ${workspaceId} and user_id = ${a.agent_user_id}
+    `;
     if (!m || !m.active || isOOO(m)) return null;
     return { userId: m.user_id };
   }
@@ -80,13 +82,12 @@ async function pickAssignee(args: {
   const teamIds: string[] = Array.isArray(a.team_user_ids) ? a.team_user_ids : [];
   if (teamIds.length === 0) return null;
 
-  const { data: members } = await sb
-    .from('workspace_members')
-    .select('user_id, active, ooo_from, ooo_to')
-    .eq('workspace_id', workspaceId)
-    .in('user_id', teamIds);
+  const members = await sql<{ user_id: string; active: boolean; ooo_from: string | null; ooo_to: string | null }[]>`
+    select user_id, active, ooo_from, ooo_to from workspace_members
+    where workspace_id = ${workspaceId} and user_id = any(${teamIds})
+  `;
 
-  const eligible = (members || []).filter((m) => m.active && !isOOO(m));
+  const eligible = [...members].filter((m) => m.active && !isOOO(m));
   if (eligible.length === 0) return null;
   const eligibleSet = new Set(eligible.map((m) => m.user_id));
 
@@ -108,16 +109,14 @@ async function pickAssignee(args: {
     // Count open + escalated tickets per eligible user. Tie-break by
     // the team's configured order (stable for the same input set).
     const eligibleIds = eligible.map((m) => m.user_id);
-    const { data: tickets } = await sb
-      .from('tickets')
-      .select('assigned_user_id, status_key')
-      .eq('workspace_id', workspaceId)
-      .in('assigned_user_id', eligibleIds)
-      .in('status_key', ['open', 'escalated'])
-      .is('deleted_at', null);
+    const tickets = await sql<{ assigned_user_id: string | null }[]>`
+      select assigned_user_id from tickets
+      where workspace_id = ${workspaceId} and assigned_user_id = any(${eligibleIds})
+        and status_key in ('open', 'escalated') and deleted_at is null
+    `;
     const counts: Record<string, number> = {};
     for (const id of eligibleIds) counts[id] = 0;
-    for (const t of tickets || []) {
+    for (const t of tickets) {
       if (t.assigned_user_id) counts[t.assigned_user_id] = (counts[t.assigned_user_id] || 0) + 1;
     }
     // Pick min, with the team's declared order as the tie-breaker.
@@ -146,65 +145,51 @@ async function pickAssignee(args: {
 // Returns the matched rule + assignee, or null if nothing applied.
 
 export async function applyAssignmentRules(args: {
-  sb:           SupabaseClient;
+  sb:           unknown;
   workspaceId:  string;
   ticketId:     string;
 }): Promise<AssignResult | null> {
-  const { sb, workspaceId, ticketId } = args;
+  const { workspaceId, ticketId } = args;
+  const sql = getDb();
 
-  const { data: ticket, error: tErr } = await sb
-    .from('tickets')
-    .select('id, status_key, priority_key, category_key, customer_id, assigned_user_id')
-    .eq('id', ticketId)
-    .eq('workspace_id', workspaceId)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (tErr || !ticket) return null;
+  const [ticket] = await sql<{ status_key: string; priority_key: string | null; category_key: string | null; customer_id: string | null; assigned_user_id: string | null }[]>`
+    select status_key, priority_key, category_key, customer_id, assigned_user_id from tickets
+    where id = ${ticketId} and workspace_id = ${workspaceId} and deleted_at is null
+  `;
+  if (!ticket) return null;
 
   // VIP tier is a per-customer attribute used by some rules.
   let customerVip: string | null = null;
   if (ticket.customer_id) {
-    const { data: c } = await sb
-      .from('customers')
-      .select('vip_tier')
-      .eq('id', ticket.customer_id)
-      .maybeSingle();
+    const [c] = await sql<{ vip_tier: string | null }[]>`select vip_tier from customers where id = ${ticket.customer_id}`;
     customerVip = c?.vip_tier || null;
   }
 
-  const { data: rules } = await sb
-    .from('assign_rules')
-    .select('id, display_id, name, priority, status, conditions, assignment, match_count')
-    .eq('workspace_id', workspaceId)
-    .eq('status', 'active')
-    .order('priority', { ascending: true });
+  const rules = await sql<Rule[]>`
+    select id, display_id, name, priority, status, conditions, assignment, match_count from assign_rules
+    where workspace_id = ${workspaceId} and status = 'active'
+    order by priority asc
+  `;
 
-  for (const rule of (rules || []) as Rule[]) {
+  for (const rule of rules) {
     if (!ruleMatches(rule, ticket, customerVip)) continue;
-    const pick = await pickAssignee({ sb, workspaceId, rule });
+    const pick = await pickAssignee({ sb: null, workspaceId, rule });
     if (!pick) continue;
 
-    // 1. Update the ticket assignee. Skip the write if it already
-    // matches — keeps the activity log clean for re-runs.
+    // 1. Update the ticket assignee. Skip the write if it already matches.
     if (ticket.assigned_user_id !== pick.userId) {
-      await sb.from('tickets')
-        .update({ assigned_user_id: pick.userId })
-        .eq('id', ticketId)
-        .eq('workspace_id', workspaceId);
+      await sql`update tickets set assigned_user_id = ${pick.userId} where id = ${ticketId} and workspace_id = ${workspaceId}`;
     }
 
-    // 2. Bump rule bookkeeping. rr_index update is merged into the
-    // existing assignment JSON so the structured shape is preserved.
+    // 2. Bump rule bookkeeping. rr_index merges into the assignment jsonb.
     const nextAssignment = pick.rrIndexNext !== undefined
       ? { ...rule.assignment, rr_index: pick.rrIndexNext }
       : rule.assignment;
-    await sb.from('assign_rules')
-      .update({
-        match_count:   (rule.match_count || 0) + 1,
-        last_match_at: new Date().toISOString(),
-        assignment:    nextAssignment,
-      })
-      .eq('id', rule.id);
+    await sql`
+      update assign_rules
+      set match_count = ${(rule.match_count || 0) + 1}, last_match_at = now(), assignment = ${sql.json(nextAssignment)}
+      where id = ${rule.id}
+    `;
 
     return {
       rule_id:          rule.id,

@@ -66,7 +66,10 @@ workspace.post('/branding/logo', async (c) => {
   try {
     await putObject(key, bytes, file.type);
   } catch (err) {
-    return c.json({ error: `Upload failed: ${err instanceof Error ? err.message : 'R2 error'}` }, 500);
+    // Log the detail server-side (it can include the R2/S3 error body, which
+    // may echo signing internals); return a generic message to the client.
+    console.error('[workspace-branding] R2 upload failed:', err instanceof Error ? err.message : err);
+    return c.json({ error: 'Upload failed' }, 500);
   }
 
   // Best-effort cleanup of older files under this workspace's prefix.

@@ -44,12 +44,16 @@ function requireR2(): { client: AwsClient; endpoint: string; bucket: string; pub
   };
 }
 
-// Build the S3 object URL. Each path segment is URI-encoded (the "/" between
-// segments is preserved, as S3 expects); aws4fetch canonicalises the same URL
-// for signing, so the signature matches what we send.
+// URI-encode an object key for use in a URL path: each "/"-delimited segment is
+// encoded, but the slashes between segments are preserved (S3 treats the key as
+// a path). aws4fetch canonicalises the same URL for signing, so the signature
+// matches what we send. Exported for unit testing.
+export function encodeKey(key: string): string {
+  return key.split('/').map(encodeURIComponent).join('/');
+}
+
 function objectUrl(endpoint: string, bucket: string, key: string): string {
-  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
-  return `${endpoint}/${bucket}/${encodedKey}`;
+  return `${endpoint}/${bucket}/${encodeKey(key)}`;
 }
 
 // PUT an object. Throws on a non-2xx response (the caller maps that to a 500).
@@ -75,8 +79,14 @@ export async function listKeys(prefix: string): Promise<string[]> {
   if (!res.ok) {
     throw new Error(`R2 LIST ${prefix} failed: ${res.status} ${await res.text().catch(() => '')}`.trim());
   }
-  const xml = await res.text();
-  return [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => decodeXmlEntities(m[1]));
+  return parseListKeysXml(await res.text());
+}
+
+// Extract object keys from a ListObjectsV2 XML response. Our keys are safe
+// ASCII (uuid/logo-<ts>.<ext>), so a simple <Key> scan + entity decode is
+// sufficient — no XML parser needed. Exported for unit testing.
+export function parseListKeysXml(xml: string): string[] {
+  return [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map((m) => decodeXmlEntities(m[1]));
 }
 
 // Delete objects by key. Best-effort per-object DELETE (R2 treats DELETE on a
@@ -101,8 +111,7 @@ export async function deleteKeys(keys: string[]): Promise<void> {
 // access is granted at the bucket level in Cloudflare.
 export function publicUrl(key: string): string {
   const { publicBase } = requireR2();
-  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
-  return `${publicBase}/${encodedKey}`;
+  return `${publicBase}/${encodeKey(key)}`;
 }
 
 function decodeXmlEntities(s: string): string {

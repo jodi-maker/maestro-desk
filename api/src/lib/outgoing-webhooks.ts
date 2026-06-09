@@ -1,11 +1,13 @@
 // Outgoing webhook fan-out + retry pipeline.
 //
-// Architecture: dispatchTicketEvent ENQUEUES rows in webhook_deliveries
-// (one per subscribed webhook). A background worker (started in
-// api/src/index.ts) polls the table every ~5s and attempts pending
-// deliveries whose backoff timer has elapsed. On failure, the worker
-// schedules the next attempt with exponential backoff. After
-// MAX_ATTEMPTS the row is parked in state='exhausted' (the DLQ).
+// Architecture: dispatchTicketEvent ENQUEUES rows in webhook_deliveries (one
+// per subscribed webhook) and flushes the first attempt immediately — inline
+// via waitUntil on Vercel, or the in-process 5s worker (src/dev.ts) locally.
+// Retries are swept by a daily Vercel Cron (routes/cron.ts) / the local
+// worker, each attempt scheduled with exponential backoff. After MAX_ATTEMPTS
+// the row is parked in state='exhausted' (the DLQ). processPendingDeliveries
+// claims rows with FOR UPDATE SKIP LOCKED + a lease, so concurrent runners
+// never double-deliver.
 //
 // HTTP semantics:
 //   - 2xx                  → success, no further attempts
@@ -20,6 +22,7 @@
 //     === X-Maestro-Signature  (with the "v0=" prefix stripped)
 
 import { createHmac } from 'node:crypto';
+import { waitUntil } from '@vercel/functions';
 import { getDb } from './db.ts';
 
 // Migration to Neon — Step 3 (tickets megabatch). DB via getDb(); `sb` params
@@ -133,6 +136,22 @@ export async function dispatchTicketEvent(args: {
     console.error('[outgoing-webhooks] enqueue failed:', err instanceof Error ? err.message : err);
     return 0;
   }
+
+  // Deliver immediately. On Vercel there's no always-on worker, so flush the
+  // just-enqueued rows in the background via waitUntil — the first attempt
+  // fires now without blocking the mutation response, and the daily cron is
+  // only the retry sweep. Locally (Bun) the in-process worker (src/dev.ts)
+  // picks them up within ~5s, so we skip the inline flush there. waitUntil
+  // must run inside a request context (always true here — dispatchTicketEvent
+  // is called from route handlers), hence the VERCEL guard.
+  if (process.env.VERCEL) {
+    waitUntil(
+      processPendingDeliveries(null).then(
+        () => {},
+        (err) => console.error('[outgoing-webhooks] inline flush failed:', err instanceof Error ? err.message : err),
+      ),
+    );
+  }
   return subscribed.length;
 }
 
@@ -151,11 +170,27 @@ export async function processPendingDeliveries(_sb: unknown, limit = 50): Promis
   const sql = getDb();
   let deliveries: DeliveryRow[];
   try {
+    // Claim rows with a lease so concurrent runners (Vercel Cron + the inline
+    // waitUntil flush, or any overlap) never deliver the same row twice:
+    //   - FOR UPDATE SKIP LOCKED → concurrent claims get disjoint row sets.
+    //   - bump next_attempt_at 30s out → a concurrent run's `next_attempt_at
+    //     <= now()` filter skips these until this run finishes (attemptDelivery
+    //     then sets the real state / backoff). If this run dies mid-delivery,
+    //     the lease expires and the row is retried — at-least-once, which is
+    //     the webhook contract (receivers dedupe via the signature).
     deliveries = [...await sql<DeliveryRow[]>`
-      select id, webhook_id, attempts, payload from webhook_deliveries
-      where state = 'pending' and next_attempt_at <= now()
-      order by next_attempt_at asc
-      limit ${limit}
+      with claimed as (
+        select id from webhook_deliveries
+        where state = 'pending' and next_attempt_at <= now()
+        order by next_attempt_at asc
+        limit ${limit}
+        for update skip locked
+      )
+      update webhook_deliveries d
+      set next_attempt_at = now() + interval '30 seconds'
+      from claimed
+      where d.id = claimed.id
+      returning d.id, d.webhook_id, d.attempts, d.payload
     `];
   } catch (err) {
     console.error('[webhook-worker] poll failed:', err instanceof Error ? err.message : err);

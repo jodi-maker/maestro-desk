@@ -2,10 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { HTTPException } from 'hono/http-exception';
-import { env } from './lib/env.ts';
 import { auth } from './lib/auth.ts';
-import { startWebhookWorker } from './lib/outgoing-webhooks.ts';
-import { startCsatReminderWorker } from './lib/csat-survey.ts';
 import { health } from './routes/health.ts';
 import { me } from './routes/me.ts';
 import { workspace } from './routes/workspace.ts';
@@ -35,6 +32,7 @@ import { integrations } from './routes/integrations.ts';
 import { presence } from './routes/presence.ts';
 import { categories } from './routes/categories.ts';
 import { pubby } from './routes/pubby.ts';
+import { cron } from './routes/cron.ts';
 
 const app = new Hono();
 
@@ -77,6 +75,7 @@ app.route('/api/v1/public', publicRoutes);
 app.route('/api/v1/integrations', integrations);
 app.route('/api/v1/presence', presence);
 app.route('/api/v1/pubby', pubby);
+app.route('/api/v1/cron', cron);
 app.route('/api/v1/webhooks', webhooks);
 app.route('/api/v1/god', god);
 
@@ -93,25 +92,11 @@ app.onError((err, c) => {
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404));
 
-console.log(`maestro-desk API listening on http://localhost:${env.PORT}`);
-
-// Outgoing-webhook delivery worker. Polls webhook_deliveries for
-// pending rows whose backoff has elapsed and POSTs them. Single
-// process for now — if we ever scale to >1 instance, add a
-// SELECT ... FOR UPDATE SKIP LOCKED claim in
-// processPendingDeliveries.
-startWebhookWorker();
-
-// CSAT reminder worker. Hourly sweep that re-sends the survey email
-// to customers who haven't rated 3+ days after the initial request.
-// One reminder per ticket; subsequent ticks skip already-reminded
-// rows via the partial index on tickets_csat_pending_reminder_idx.
-startCsatReminderWorker();
-
-export default {
-  port: env.PORT,
-  // Triage and other AI calls can run ~12s; Bun's default idleTimeout is 10s,
-  // which closes the socket mid-response. Raise it so long requests complete.
-  idleTimeout: 30,
-  fetch: app.fetch,
-};
+// Hosting (Step 6): export the Hono app as the default. Vercel auto-detects
+// this (`src/index.ts` + `export default app`) and turns the routes into
+// serverless functions — no Bun.serve, no always-on process. The background
+// workers do NOT run here: on Vercel they're driven by Vercel Cron
+// (routes/cron.ts) + inline delivery (lib/outgoing-webhooks waitUntil); for
+// local Bun dev, src/dev.ts wraps this app in Bun.serve and starts the
+// in-process workers.
+export default app;

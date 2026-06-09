@@ -24,13 +24,17 @@ process.env.POSTMARK_INBOUND_SECRET ||= 'inbound-secret-0123456789';
 mock.module('./lib/outgoing-webhooks.ts', () => ({ ...webhooks, startWebhookWorker: () => {} }));
 mock.module('./lib/csat-survey.ts', () => ({ ...csat, startCsatReminderWorker: () => {} }));
 
-const serverConfig = (await import('./index.ts')).default as {
+// The Bun.serve config now lives in the local dev entry (src/dev.ts);
+// src/index.ts is the Vercel entry (`export default app`). dev.ts imports
+// index.ts + starts the (mocked) workers, so this still pins the local
+// long-request idleTimeout.
+const serverConfig = (await import('./dev.ts')).default as {
   port: number;
   idleTimeout: number;
   fetch: unknown;
 };
 
-describe('Bun.serve config', () => {
+describe('Bun.serve config (local dev entry)', () => {
   it('sets idleTimeout to 30s so ~12s AI requests are not dropped', () => {
     expect(serverConfig.idleTimeout).toBe(30);
   });

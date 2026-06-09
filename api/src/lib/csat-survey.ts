@@ -210,10 +210,9 @@ async function sendOneReminder(args: {
     where t.id = ${ticketId} and t.workspace_id = ${workspaceId} and t.deleted_at is null
   `;
   if (!t) return false;
-  // Belt-and-suspenders re-checks against races with rating submission /
-  // double-fire between scan and send.
-  if (t.csat_submitted_at)                     return false;
-  if ((t.csat_reminder_count ?? 0) >= attemptNumber) return false;
+  // Validity checks (can we even build/send the email?) run before the claim
+  // so we don't burn the attempt on a row we can't deliver. The submitted /
+  // already-reminded race guards move into the atomic claim below.
   if (!t.csat_token)                           return false;
   const customer = { first_name: t.first_name, last_name: t.last_name, email: t.email };
   if (!customer.email) return false;
@@ -225,6 +224,21 @@ async function sendOneReminder(args: {
   const fromEmail = workspaceFrom?.fromEmail || env.POSTMARK_OUTBOUND_FROM;
   const fromName  = workspaceFrom?.fromName  || workspaceName;
   if (!fromEmail) return false;
+
+  // Atomically CLAIM this reminder attempt before sending. The WHERE gates on
+  // the exact prior count + not-submitted, so two concurrent runners can't
+  // both send — only one UPDATE matches; the loser gets 0 rows and bails.
+  // Claiming BEFORE the send means a crash/send-failure costs at most a missed
+  // reminder (the attempt is consumed), never a duplicate email.
+  const claimed = await sql`
+    update tickets
+    set csat_reminder_count = ${attemptNumber}, csat_last_reminded_at = now()
+    where id = ${ticketId} and workspace_id = ${workspaceId}
+      and csat_submitted_at is null and deleted_at is null
+      and coalesce(csat_reminder_count, 0) = ${attemptNumber - 1}
+    returning id
+  `;
+  if (claimed.length === 0) return false;
 
   const portalBase = args.portalBase || env.PORTAL_BASE_URL || 'http://localhost:5173/portal.html';
   const surveyUrl  = `${portalBase}?ws=${encodeURIComponent(workspaceSlug)}&csat=${encodeURIComponent(t.csat_token)}`;
@@ -265,10 +279,7 @@ async function sendOneReminder(args: {
     return false;
   }
 
-  await sql`
-    update tickets set csat_last_reminded_at = now(), csat_reminder_count = ${attemptNumber}
-    where id = ${ticketId} and workspace_id = ${workspaceId}
-  `;
+  // The attempt was already claimed (count bumped) above — nothing more to do.
   return true;
 }
 

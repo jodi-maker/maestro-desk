@@ -298,10 +298,27 @@ god.post('/brands/:id/invite', async (c) => {
   if (existing) {
     authUserId = existing.id;
   } else {
-    const created = await auth.api.signUpEmail({
-      body: { email, name, password: randomPassword() },
-    });
-    authUserId = created.user.id;
+    // Better Auth's auth.api.* returns the parsed result and throws an
+    // APIError on failure (e.g. a duplicate email from a concurrent invite).
+    // Catch that race: re-read by email and continue if the row now exists;
+    // otherwise surface a clean 502 instead of letting an undefined id reach
+    // the INSERT below.
+    try {
+      const created = await auth.api.signUpEmail({
+        body: { email, name, password: randomPassword() },
+      });
+      if (!created?.user?.id) {
+        return c.json({ error: 'Failed to create the invited user' }, 502);
+      }
+      authUserId = created.user.id;
+    } catch (err) {
+      const [raced] = await sql<{ id: string }[]>`select id from users where email = ${email}`;
+      if (!raced) {
+        console.error('[god/invite] signUpEmail failed:', err instanceof Error ? err.message : err);
+        return c.json({ error: 'Could not create the invited user' }, 502);
+      }
+      authUserId = raced.id;
+    }
   }
 
   // 3. Upsert public.users — set name/initials (heuristic from the email

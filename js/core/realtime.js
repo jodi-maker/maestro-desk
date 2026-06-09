@@ -40,6 +40,10 @@ export async function startRealtime() {
     authEndpoint: `${API_BASE}/api/v1/pubby/auth`,
     // The SDK merges these headers into its auth POST so /pubby/auth can verify
     // the Better Auth session + workspace before signing the private channel.
+    // The bearer is snapshotted here, which is fine: our session tokens don't
+    // rotate mid-session, stopRealtime() runs on logout, and a stale token
+    // would just fail the auth endpoint (the channel stays unsubscribed and
+    // the fallback poll carries on) — no incorrect state.
     auth: { headers: { Authorization: `Bearer ${getJwt()}`, 'X-Workspace-Id': workspaceId } },
   });
   _pubby = pubby;

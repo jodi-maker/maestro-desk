@@ -26,6 +26,14 @@ tickets.use('*', requireAuth);
 // the path param); the create handler (POST /, no :id) publishes its new id
 // explicitly. Best-effort and post-response — never affects the handler result
 // (publishTicketChanged is a no-op when Pubby is unconfigured).
+//
+// Invariant: in THIS router `:id` is always a ticket id, and every non-GET
+// here genuinely mutates that ticket (status/message/tags/snooze/merge/time/
+// assign), so a `ticket.changed` for that id is always correct — including
+// POST /:id/messages, a primary case. The signal only triggers a re-sync,
+// which is idempotent and cheap, so an occasional list-invisible change (e.g.
+// a time entry) costs at most one extra delta fetch. (The /:id/triage app is
+// mounted separately and is unaffected by this hook.)
 tickets.use('*', async (c, next) => {
   await next();
   const method = c.req.method;

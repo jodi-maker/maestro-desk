@@ -16,10 +16,15 @@ const Env = z.object({
   // Both optional for now so the app still boots mid-migration; Better Auth
   // warns + uses a dev fallback when the secret is unset.
   // Min 32 chars — Better Auth's own recommended length (`openssl rand -base64
-  // 32`). Optional only because the app must still boot mid-migration while
-  // Better Auth is dormant; it becomes required at the Step 3 cutover.
-  BETTER_AUTH_SECRET: z.string().min(32).optional(),
+  // 32`). REQUIRED as of the Step 3 auth cutover: Better Auth is now the live
+  // auth system, so the app must not boot without a real secret.
+  BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.string().url().default('http://localhost:3001'),
+  // Public origin of the agent SPA (where index.html is served). Used as a
+  // Better Auth trusted origin and to build the password-reset link emailed to
+  // invited/reset users (`${APP_BASE_URL}/?reset_token=...`). Dev default is
+  // the local static server; set to https://desk.maestro-desk.com in prod.
+  APP_BASE_URL: z.string().url().default('http://localhost:5173'),
   ANTHROPIC_API_KEY: z.string().min(20),
   // Secret Postmark passes as a query string on the inbound webhook URL:
   // https://<tunnel-host>/api/v1/webhooks/postmark/inbound?secret=<value>

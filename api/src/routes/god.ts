@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { requirePlatformAdmin, writeAudit } from '../middleware/platform-admin.ts';
 import { getDb } from '../lib/db.ts';
+import { auth } from '../lib/auth.ts';
 import {
   createDomain as pmCreateDomain,
   deleteDomain as pmDeleteDomain,
@@ -232,18 +233,15 @@ god.patch('/brands/:id', async (c) => {
 
 // ─── Owner invite ──────────────────────────────────────────────────────────
 //
-// Invites a user as Admin of a brand. Uses Supabase's generateLink (not
-// inviteUserByEmail) so we get a copy-paste magic link back instead of
-// relying on SMTP being configured — the operator can paste it into Slack
-// / email / wherever rather than depending on Supabase's mail delivery.
+// Invites a user as Admin of a brand. Creates a Better Auth user (with a
+// throwaway password) if one doesn't exist for the email, then emails a
+// set-password link via requestPasswordReset (→ Postmark, see auth.ts
+// sendResetPassword). The invitee follows the link to set their own password.
 //
-// NOTE (Step 3.final, PR-A): the DB writes here are on Neon now; only the
-// generateLink call still uses Supabase Auth (c.get('sb')). That single call
-// moves to Better Auth (createUser + emailed reset link) in PR-B.
-//
-// On success: creates (or finds) the auth.users row, upserts public.users,
-// inserts workspace_members with the brand's Admin role. Idempotent — re-
-// calling generates a fresh link but leaves DB state stable.
+// On success: ensures the Better Auth user + credential exist, upserts
+// public.users (name/initials), inserts workspace_members with the brand's
+// Admin role. Idempotent — re-inviting an existing member re-sends the link
+// and leaves DB state stable.
 
 const InviteOwner = z.object({ email: z.string().email() });
 
@@ -258,9 +256,17 @@ function deriveNameFromEmail(email: string): { name: string; initials: string } 
   return { name, initials };
 }
 
+// A throwaway password for the freshly-created account — the invitee never
+// learns it; they set their own via the emailed reset link. Long + random so
+// it satisfies any password policy and can't be guessed in the meantime.
+function randomPassword(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return 'Aa1!' + Buffer.from(bytes).toString('base64url');
+}
+
 god.post('/brands/:id/invite', async (c) => {
   const sql = getDb();
-  const sb = c.get('sb');   // Supabase Auth generateLink — moves to Better Auth in PR-B
   const actorUserId = c.get('userId');
   const brandId = c.req.param('id');
 
@@ -283,23 +289,23 @@ god.post('/brands/:id/invite', async (c) => {
   `;
   if (!adminRole) return c.json({ error: 'Admin role missing on brand — provisioning corrupted' }, 500);
 
-  // 2. Generate an invite link. Supabase creates the auth.users row if it
-  // doesn't exist; if it does, the existing row is reused. Either way we
-  // get a usable user_id back.
-  const { data: linkData, error: lErr } = await sb.auth.admin.generateLink({
-    type: 'invite',
-    email,
-  });
-  if (lErr || !linkData?.user) {
-    return c.json({ error: lErr?.message ?? 'Invite-link generation failed' }, 502);
-  }
-  const authUserId = linkData.user.id;
-  const inviteLink = linkData.properties?.action_link ?? null;
-
-  // 3. Upsert public.users — the FK target for workspace_members. Name +
-  // initials are heuristic from the email local-part; the user can update
-  // them via the profile screen once they sign in.
+  // 2. Ensure a Better Auth user exists for this email. signUpEmail creates
+  // the users + credential-account rows (id from the table's uuid default);
+  // for an existing email we reuse the current user.
   const { name, initials } = deriveNameFromEmail(email);
+  const [existing] = await sql<{ id: string }[]>`select id from users where email = ${email}`;
+  let authUserId: string;
+  if (existing) {
+    authUserId = existing.id;
+  } else {
+    const created = await auth.api.signUpEmail({
+      body: { email, name, password: randomPassword() },
+    });
+    authUserId = created.user.id;
+  }
+
+  // 3. Upsert public.users — set name/initials (heuristic from the email
+  // local-part; the user can change them in their profile after signing in).
   await sql`
     insert into users (id, email, name, initials)
     values (${authUserId}, ${email}, ${name}, ${initials})
@@ -318,16 +324,27 @@ god.post('/brands/:id/invite', async (c) => {
       set role_id = excluded.role_id, active = true
   `;
 
+  // 5. Email the set-password link (best-effort — the membership is already
+  // created, so a transient mail failure shouldn't 500 the invite; the
+  // operator can re-invite to re-send).
+  let emailSent = true;
+  try {
+    await auth.api.requestPasswordReset({ body: { email } });
+  } catch (err) {
+    emailSent = false;
+    console.error('[god/invite] requestPasswordReset failed:', err instanceof Error ? err.message : err);
+  }
+
   await writeAudit({
     workspaceId: brandId,
     actorUserId,
     action: 'brand.owner_invited',
     targetType: 'workspace',
     targetId: brandId,
-    metadata: { email, invited_user_id: authUserId },
+    metadata: { email, invited_user_id: authUserId, email_sent: emailSent },
   });
 
-  return c.json({ user_id: authUserId, email, invite_link: inviteLink }, 201);
+  return c.json({ user_id: authUserId, email, email_sent: emailSent }, 201);
 });
 
 // ─── Domain provisioning ───────────────────────────────────────────────────

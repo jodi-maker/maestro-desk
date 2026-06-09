@@ -15,16 +15,25 @@
 // programmatically at the bottom (sparse event on a static element).
 
 import { registerActions, registerInputActions } from '../core/event-delegation.js';
+import { resetPassword } from '../core/auth-client.js';
 
 export function showAuthPanel(panel) {
-  ['login','forgot','create','platform-admin','agent'].forEach(p => {
+  ['login','forgot','create','platform-admin','agent','set-password'].forEach(p => {
     const el = document.getElementById('auth-'+p);
     if (el) el.style.display = p === panel ? 'block' : 'none';
   });
   // Clear stale error/confirmation messages
-  ['login-error','create-error','create-confirm','forgot-confirm','pa-error','ag-error'].forEach(id => {
+  ['login-error','create-error','create-confirm','forgot-confirm','pa-error','ag-error','sp-error','sp-confirm'].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = 'none';
   });
+}
+
+// Set-password landing — entered from the emailed reset/invite link. app.js
+// calls beginSetPassword(token) on startup when the URL carries ?reset_token.
+let _resetToken = null;
+export function beginSetPassword(token) {
+  _resetToken = token;
+  showAuthPanel('set-password');
 }
 
 function isValidEmail(e) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e); }
@@ -119,13 +128,43 @@ function submitCreate() {
   okEl.style.display = 'block';
 }
 
+async function submitSetPassword() {
+  const pw    = document.getElementById('sp-password')?.value || '';
+  const errEl = document.getElementById('sp-error');
+  const okEl  = document.getElementById('sp-confirm');
+  const btn   = document.getElementById('sp-submit');
+  if (errEl) errEl.style.display = 'none';
+  if (okEl)  okEl.style.display = 'none';
+  if (pwScore(pw) < 3) {
+    if (errEl) { errEl.textContent = 'Password is too weak — aim for "Good" or higher.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (!_resetToken) {
+    if (errEl) { errEl.textContent = 'Missing or expired reset link — request a new one.'; errEl.style.display = 'block'; }
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    await resetPassword(_resetToken, pw);
+    _resetToken = null;
+    if (okEl) okEl.style.display = 'block';
+    // Send them to the sign-in panel after a beat to enter the new password.
+    setTimeout(() => showAuthPanel('agent'), 1500);
+  } catch (err) {
+    if (errEl) { errEl.textContent = err?.message || 'Could not set password.'; errEl.style.display = 'block'; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 registerActions({
-  'auth.ssoLogin':     (ds) => ssoLogin(ds.provider),
-  'auth.togglePw':     (ds) => togglePassword(ds.target),
-  'auth.showPanel':    (ds) => showAuthPanel(ds.panel),
-  'auth.submitLogin':  () => submitLogin(),
-  'auth.submitForgot': () => submitForgot(),
-  'auth.submitCreate': () => submitCreate(),
+  'auth.ssoLogin':         (ds) => ssoLogin(ds.provider),
+  'auth.togglePw':         (ds) => togglePassword(ds.target),
+  'auth.showPanel':        (ds) => showAuthPanel(ds.panel),
+  'auth.submitLogin':      () => submitLogin(),
+  'auth.submitForgot':     () => submitForgot(),
+  'auth.submitCreate':     () => submitCreate(),
+  'auth.submitSetPassword': () => submitSetPassword(),
 });
 
 registerInputActions({

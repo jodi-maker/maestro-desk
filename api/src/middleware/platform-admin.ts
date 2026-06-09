@@ -1,11 +1,11 @@
 import type { MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { supabaseAdmin } from '../lib/supabase.ts';
+import { auth } from '../lib/auth.ts';
 import { getDb } from '../lib/db.ts';
 
-// Gates the /api/v1/god/* routes. Verifies the caller's Supabase JWT, looks
-// up their public.users row, and refuses the request unless
-// is_platform_admin = true.
+// Gates the /api/v1/god/* routes. Verifies the caller's Better Auth session
+// (bearer token), looks up their users row in Neon, and refuses the request
+// unless is_platform_admin = true.
 //
 // Unlike requireAuth this middleware does NOT consume X-Workspace-Id — god
 // routes are inherently cross-workspace and operate on `:id` path params
@@ -21,30 +21,21 @@ import { getDb } from '../lib/db.ts';
 // Use the writeAudit helper below to keep the row shape consistent.
 
 export const requirePlatformAdmin: MiddlewareHandler = async (c, next) => {
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    throw new HTTPException(401, { message: 'Missing bearer token' });
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session?.user) {
+    throw new HTTPException(401, { message: 'Invalid or missing session' });
   }
-  const jwt = authHeader.slice('Bearer '.length);
+  const userId = session.user.id;
 
-  const { data, error } = await supabaseAdmin.auth.getUser(jwt);
-  if (error || !data.user) {
-    throw new HTTPException(401, { message: 'Invalid token' });
-  }
-  const userId = data.user.id;
-
-  const { data: userRow, error: uErr } = await supabaseAdmin
-    .from('users')
-    .select('is_platform_admin')
-    .eq('id', userId)
-    .maybeSingle();
-  if (uErr) throw new HTTPException(500, { message: uErr.message });
+  const sql = getDb();
+  const [userRow] = await sql<{ is_platform_admin: boolean | null }[]>`
+    select is_platform_admin from users where id = ${userId}
+  `;
   if (!userRow?.is_platform_admin) {
     throw new HTTPException(403, { message: 'Forbidden' });
   }
 
   c.set('userId', userId);
-  c.set('sb', supabaseAdmin);
   await next();
 };
 

@@ -15,7 +15,6 @@ import { triage } from './routes/triage.ts';
 import { webhooks } from './routes/webhooks.ts';
 import { god } from './routes/god.ts';
 import { whoami } from './routes/whoami.ts';
-import { config } from './routes/config.ts';
 import { customers } from './routes/customers.ts';
 import { agents } from './routes/agents.ts';
 import { inbox } from './routes/inbox.ts';
@@ -51,7 +50,6 @@ app.use('*', cors({
 app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
 
 app.route('/api/v1/health', health);
-app.route('/api/v1/config', config);
 app.route('/api/v1/me', me);
 app.route('/api/v1/workspace', workspace);
 app.route('/api/v1/saved-searches', savedSearches);

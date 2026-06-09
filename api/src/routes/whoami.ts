@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { requireAuthOnly } from '../middleware/auth.ts';
 import { getDb } from '../lib/db.ts';
 
-// Migration to Neon — Step 3. The identity reads (users + memberships) move to
-// getDb(); JWT verification stays in requireAuthOnly until the auth flip. The
-// /claims endpoint only decodes the bearer token (no DB) and is untouched.
+// Identity + workspace memberships, read from Neon. Auth is verified by
+// requireAuthOnly (Better Auth session). The old /claims diagnostic that
+// decoded the Supabase JWT was removed at the auth cutover — Better Auth
+// bearer tokens are opaque session ids, not JWTs with claims.
 export const whoami = new Hono();
 
 whoami.use('*', requireAuthOnly);
@@ -59,44 +59,4 @@ whoami.get('/', async (c) => {
   }));
 
   return c.json({ user, memberships: shaped });
-});
-
-// GET /whoami/claims — surface the custom claims actually present in
-// the caller's JWT, so we can verify the Custom Access Token Hook is
-// active end-to-end. The middleware has already verified the bearer
-// token upstream, so we just decode the payload here without
-// re-validating. Returns only the workspace-related claims (not the
-// full Supabase payload) — keeps the response shape stable as the
-// hook evolves.
-whoami.get('/claims', (c) => {
-  const auth = c.req.header('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
-  const parts = token.split('.');
-  if (parts.length !== 3) {
-    throw new HTTPException(400, { message: 'Malformed token' });
-  }
-  let payload: any;
-  try {
-    // base64url-decode the payload. Bun's Buffer handles standard
-    // base64; convert url-safe chars and pad before decoding.
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
-    payload = JSON.parse(Buffer.from(b64 + pad, 'base64').toString('utf-8'));
-  } catch {
-    throw new HTTPException(400, { message: 'Could not decode token payload' });
-  }
-  return c.json({
-    workspace_ids:     payload.workspace_ids     ?? null,
-    is_platform_admin: payload.is_platform_admin ?? null,
-    // Echo a small slice of standard claims so the caller can sanity-
-    // check which token they're holding.
-    sub:               payload.sub,
-    role:              payload.role,
-    iss:               payload.iss,
-    exp:               payload.exp,
-    // hook_active is the load-bearing field for ops: true means our
-    // custom claims are flowing, false means the hook isn't enabled
-    // in the dashboard yet.
-    hook_active:       payload.workspace_ids !== undefined,
-  });
 });

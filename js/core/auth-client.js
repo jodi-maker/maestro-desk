@@ -1,4 +1,4 @@
-// Real Supabase-backed auth for the SPA.
+// Better Auth–backed auth for the SPA.
 //
 // Two callers:
 //   - js/auth/platform-admin.js — platform admins (no workspace context)
@@ -9,25 +9,18 @@
 // memberships and shows the god panel; the agent path uses memberships to
 // auto-pick the workspace (1 → auto) or surface a picker (2+).
 //
-// We don't ship the supabase-js SDK — the auth flow is a single REST call,
-// so a direct fetch is enough and avoids a CDN dependency / build step.
+// Sign-in posts to Better Auth's /api/auth/sign-in/email; with the bearer
+// plugin the session token comes back in the `set-auth-token` response header
+// (exposed cross-origin), which we stash as the bearer for every API call.
 //
 // Storage:
 //   sessionStorage.maestro_jwt          — handled by api-client
 //   sessionStorage.maestro_workspace_id — handled by api-client
 //   sessionStorage.maestro_user         — JSON of the current user (here)
 
-import { apiGet, setJwt, setWorkspaceId, JWT_KEY } from './api-client.js';
+import { apiGet, setJwt, setWorkspaceId, getJwt, JWT_KEY, API_BASE } from './api-client.js';
 
 const USER_KEY = 'maestro_user';
-
-let _config = null;          // cached /config response
-
-export async function loadConfig() {
-  if (_config) return _config;
-  _config = await apiGet('/api/v1/config', { auth: false, workspace: false });
-  return _config;
-}
 
 export function getCurrentUser() {
   const raw = sessionStorage.getItem(USER_KEY);
@@ -51,26 +44,42 @@ function setCurrentUser(user) {
  * as god-only if empty).
  */
 export async function signIn(email, password) {
-  const cfg = await loadConfig();
-  const res = await fetch(`${cfg.supabase_url}/auth/v1/token?grant_type=password`, {
+  const res = await fetch(`${API_BASE}/api/auth/sign-in/email`, {
     method: 'POST',
-    headers: {
-      apikey: cfg.supabase_anon_key,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(body.error_description || body.msg || `Sign-in failed (HTTP ${res.status})`);
+    throw new Error(body.message || body.error?.message || `Sign-in failed (HTTP ${res.status})`);
   }
-  if (!body.access_token) {
-    throw new Error('Sign-in succeeded but no token returned');
+  // Bearer plugin returns the session token in this response header.
+  const token = res.headers.get('set-auth-token');
+  if (!token) {
+    throw new Error('Sign-in succeeded but no session token was returned');
   }
-  setJwt(body.access_token);
+  setJwt(token);
   const me = await apiGet('/api/v1/whoami', { workspace: false });
   setCurrentUser(me.user);
   return me;
+}
+
+/**
+ * Set a new password from an emailed reset link. `token` comes from the
+ * `reset_token` query param on the link Better Auth sent. On success the
+ * caller should send the user to sign in with their new password.
+ */
+export async function resetPassword(token, newPassword) {
+  const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, newPassword }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.status === false) {
+    throw new Error(body.message || body.error?.message || `Could not set password (HTTP ${res.status})`);
+  }
+  return true;
 }
 
 /**
@@ -100,6 +109,15 @@ export async function rehydrateUser() {
 }
 
 export function signOut() {
+  // Best-effort server-side session revocation — fire-and-forget so the local
+  // state is cleared immediately regardless of the network call.
+  const jwt = getJwt();
+  if (jwt) {
+    fetch(`${API_BASE}/api/auth/sign-out`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${jwt}` },
+    }).catch(() => {});
+  }
   setJwt(null);
   setWorkspaceId(null);
   setCurrentUser(null);

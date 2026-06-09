@@ -11,6 +11,7 @@ import './core/dismiss.js';
 import { initGlobalSearchInput } from './global-search/index.js';
 import './profile-menu/index.js';  // side-effect: registers profmenu.* actions for the static top-bar dropdown
 import './auth/index.js';  // side-effect: registers auth.* actions for the static auth screen
+import { beginSetPassword } from './auth/index.js';
 import { refreshNotifBadge } from './notifications/index.js';
 import { autoResumePlatformAdmin } from './auth/platform-admin.js';
 import { autoResumeAgent } from './auth/agent-login.js';
@@ -228,6 +229,17 @@ initGlobalSearchInput();
 // clicks one.
 (async () => {
   try {
+    // Landing from an emailed set-password / invite link? Show the
+    // set-password panel and strip the token from the URL so a refresh
+    // doesn't reuse or leak it. Skip auto-resume in that case.
+    const resetToken = new URLSearchParams(location.search).get('reset_token');
+    if (resetToken) {
+      beginSetPassword(resetToken);
+      const clean = new URL(location.href);
+      clean.searchParams.delete('reset_token');
+      history.replaceState({}, '', clean.toString());
+      return;
+    }
     if (await autoResumeAgent()) return;
     await autoResumePlatformAdmin();
   } catch (err) {

@@ -83,6 +83,12 @@ const Env = z.object({
   PUBBY_SECRET: z.string().default(''),
   PUBBY_WS_HOST: z.string().default(''),
   PUBBY_API_HOST: z.string().default(''),
+  // Vercel Cron auth (Step 6). Vercel sends `Authorization: Bearer
+  // ${CRON_SECRET}` when invoking the /api/v1/cron/* endpoints; they reject
+  // anything else. Required on Vercel (generate with `openssl rand -base64
+  // 32`); optional locally, where the in-process worker (src/dev.ts) does the
+  // sweeping and the cron endpoints stay closed.
+  CRON_SECRET: z.string().default(''),
   PORT: z.coerce.number().int().positive().default(3001),
 });
 

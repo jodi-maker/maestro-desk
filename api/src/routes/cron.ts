@@ -13,6 +13,17 @@ import { processCsatReminders } from '../lib/csat-survey.ts';
 // safe.
 export const cron = new Hono();
 
+// Ops guard: on Vercel an unset CRON_SECRET silently 401s every cron request,
+// so the scheduled jobs (webhook retry, CSAT reminders) would never run with
+// no obvious signal. Warn loudly at boot. (Locally it's expected — the
+// in-process worker does the sweeping and the endpoints stay closed.)
+if (process.env.VERCEL && !env.CRON_SECRET) {
+  console.warn(
+    '[cron] CRON_SECRET is not set on Vercel — all /api/v1/cron/* requests will 401 and the ' +
+      'scheduled webhook-retry + CSAT-reminder jobs will NOT run. Set CRON_SECRET in the project env.',
+  );
+}
+
 cron.use('*', async (c, next) => {
   const secret = env.CRON_SECRET;
   // No secret configured → endpoint is closed (local dev uses the in-process

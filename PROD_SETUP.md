@@ -23,7 +23,7 @@ Stack (post Supabase→Neon migration): **Neon** (Postgres, source of truth) · 
 - [ ] 🤖 Do **not** load the demo seed (TK-001 etc.) into prod.
 
 ## 3. Hosting — API + SPA
-> **Decision pending (Step 6).** The approved target is **Vercel** for the API (Hono via the Vercel adapter) — Fly.io is being retired. Until the Step-6 hosting migration lands, write the deploy commands against whatever host you actually cut over on, but do **not** add new Fly config. Two caveats that gate going live on Vercel:
+> **Decided (Step 6).** The API runs on **Vercel** (Hono via the Vercel adapter) at **`https://api.maestro-desk.com`** — the SPA/portal point prod there (`index.html`/`portal.html`), and the Fly config (`fly.toml`, `Dockerfile`, `.dockerignore`) has been removed from the repo. Do **not** add new Fly config. Two caveats still gate going live on Vercel:
 > - The API runs **background workers** (`startWebhookWorker`, `startCsatReminderWorker`) that assume a single always-on process. Vercel serverless has no such process — these must move to **Vercel Cron** (+ `FOR UPDATE SKIP LOCKED`) as part of Step 6 before relying on webhook delivery / CSAT reminders in prod.
 > - `BETTER_AUTH_URL` must equal the API's **public** origin so session tokens sign/verify correctly.
 
@@ -31,7 +31,7 @@ Prod secrets to set on the API host (no `SUPABASE_*`):
 ```sh
 DATABASE_URL=postgresql://…@…neon.tech/…?sslmode=require
 BETTER_AUTH_SECRET=<openssl rand -base64 32>      # REQUIRED — app won't boot without it
-BETTER_AUTH_URL=https://<api-public-origin>        # the API's own public URL
+BETTER_AUTH_URL=https://api.maestro-desk.com       # the API's own public origin
 APP_BASE_URL=https://desk.maestro-desk.com         # SPA origin: trusted origin + reset-link base
 ANTHROPIC_API_KEY=…
 POSTMARK_INBOUND_SECRET=<random 16+ chars>
@@ -60,7 +60,7 @@ This is atomic: the API verifies Better Auth sessions and the SPA signs in via B
   - **MX** on the support domain → `inbound.postmarkapp.com` so inbound mail hits the webhook
   - **CNAMEs** for `desk` / `help` → Cloudflare Pages
 - [ ] 👤 Verify the domain in Postmark (DKIM + Return-Path) — DNS can take minutes–hours.
-- [ ] 👤 Configure the Postmark inbound webhook → `https://<api>/api/v1/webhooks/postmark/inbound?secret=<POSTMARK_INBOUND_SECRET>`.
+- [ ] 👤 Configure the Postmark inbound webhook → `https://api.maestro-desk.com/api/v1/webhooks/postmark/inbound?secret=<POSTMARK_INBOUND_SECRET>`.
 - [ ] 🤖 Add the support domain to `workspace_email_domains` so inbound routes to your workspace (not the unrouted bucket).
 
 ## 6. Smoke + pilot

@@ -110,7 +110,7 @@ Two independently-running pieces:
 - **Scheduled jobs: Vercel Cron** — declared in **`api/vercel.json`**: `0 3 * * *` → `/api/v1/cron/webhook-retry`, and `0 4 * * *` → `/api/v1/cron/csat-reminders`. These call the cron endpoints (guarded by `CRON_SECRET`) that, in production, do the sweeping the in-process dev workers do locally.
 - **DB deploy:** apply `db/migrations/` SQL to Neon (validate on Docker PG 17 first, per `CLAUDE.md`).
 
-⚠️ **Cannot verify / flag — production cutover:** `index.html` and `portal.html` now map the prod hostnames to the Vercel API (`https://api.maestro-desk.com`), and the Fly config has been removed. The remaining (out-of-repo) steps are: point `api.maestro-desk.com` DNS at the Vercel deployment, set `BETTER_AUTH_URL=https://api.maestro-desk.com` so session tokens verify, and move the background workers to Vercel Cron before relying on webhook delivery / CSAT reminders (see `PROD_SETUP.md` §3).
+⚠️ **Cannot verify / flag — production cutover:** `index.html` and `portal.html` now map the prod hostnames to the Vercel API (`https://api.maestro-desk.com`), and the Fly config has been removed. The remaining (out-of-repo) steps are: point `api.maestro-desk.com` DNS at the Vercel deployment, set `BETTER_AUTH_URL=https://api.maestro-desk.com` so session tokens verify, and set `CRON_SECRET` in the Vercel env so the cron jobs run. (The cron-driven background work is already wired in code — see §4/§6 — so no code change is needed; an unset `CRON_SECRET` just means the sweeps 401 and never run.)
 
 ---
 
@@ -180,7 +180,7 @@ bun test
 
 ### Summary of everything flagged as unverifiable / in-flight from files
 1. **No enforced local Bun version pin** (CI `1.3.13`; local devs unpinned; Vercel sets its own runtime).
-2. **Vercel cutover not yet live:** the code points prod at `https://api.maestro-desk.com` and Fly is retired, but going live still needs `api.maestro-desk.com` DNS → Vercel, `BETTER_AUTH_URL` set to that origin, and the background workers moved to Vercel Cron (see `PROD_SETUP.md` §3).
+2. **Vercel cutover not yet live:** the code points prod at `https://api.maestro-desk.com` and Fly is retired, but going live still needs `api.maestro-desk.com` DNS → Vercel, `BETTER_AUTH_URL` set to that origin, and `CRON_SECRET` set in Vercel (the cron jobs are already wired — unset just means no sweeps run). See `PROD_SETUP.md` §3.
 3. **`supabase/` is legacy:** `supabase/config.toml` and `supabase/migrations/` (74 files) are retained for reference only — the live migration set is `db/migrations/` (53 files) applied to Neon.
 4. **Secret values and prod connection details** are not in committed config (by design); some stale docs still mention `SUPABASE_*` / `fly secrets` — the live required set is `DATABASE_URL`, `BETTER_AUTH_SECRET`, `ANTHROPIC_API_KEY`, `POSTMARK_INBOUND_SECRET`.
 5. **Background-worker model differs by environment:** in-process workers run only via `api/src/dev.ts` locally; production relies on **Vercel Cron** (`api/vercel.json`) hitting `/api/v1/cron/*`.

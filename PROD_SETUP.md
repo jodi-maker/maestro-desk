@@ -23,8 +23,8 @@ Stack (post Supabase→Neon migration): **Neon** (Postgres, source of truth) · 
 - [ ] 🤖 Do **not** load the demo seed (TK-001 etc.) into prod.
 
 ## 3. Hosting — API + SPA
-> **Decided (Step 6).** The API runs on **Vercel** (Hono via the Vercel adapter) at **`https://api.maestro-desk.com`** — the SPA/portal point prod there (`index.html`/`portal.html`), and the Fly config (`fly.toml`, `Dockerfile`, `.dockerignore`) has been removed from the repo. Do **not** add new Fly config. Two caveats still gate going live on Vercel:
-> - The API runs **background workers** (`startWebhookWorker`, `startCsatReminderWorker`) that assume a single always-on process. Vercel serverless has no such process — these must move to **Vercel Cron** (+ `FOR UPDATE SKIP LOCKED`) as part of Step 6 before relying on webhook delivery / CSAT reminders in prod.
+> **Decided (Step 6).** The API runs on **Vercel** (Hono via the Vercel adapter) at **`https://api.maestro-desk.com`** — the SPA/portal point prod there (`index.html`/`portal.html`), and the Fly config (`fly.toml`, `Dockerfile`, `.dockerignore`) has been removed from the repo. Do **not** add new Fly config. Two things to get right on the Vercel deploy:
+> - **Background work is already serverless-ready (no code change needed).** The in-process workers (`startWebhookWorker`/`startCsatReminderWorker`) run **only** in local dev (`src/dev.ts`, never imported on Vercel). On Vercel, webhook first-attempts fire inline via `waitUntil`, and the retry sweep + daily CSAT reminders run as **Vercel Cron** jobs (`vercel.json` → `/api/v1/cron/*`, handled by `routes/cron.ts`); both sweeps claim work with `FOR UPDATE SKIP LOCKED` / a conditional `UPDATE`, so concurrent or duplicate invocations are safe. **The only gate: set `CRON_SECRET` in the Vercel env** — without it the cron endpoints 401 and nothing sweeps (the API logs a warning at boot). Retries currently sweep once daily (Hobby-plan cadence); raise the `vercel.json` frequency on Pro if you want the backoff schedule honored.
 > - `BETTER_AUTH_URL` must equal the API's **public** origin so session tokens sign/verify correctly.
 
 Prod secrets to set on the API host (no `SUPABASE_*`):
@@ -38,6 +38,7 @@ POSTMARK_INBOUND_SECRET=<random 16+ chars>
 POSTMARK_SERVER_TOKEN=…  POSTMARK_OUTBOUND_FROM=support@maestro-desk.com
 POSTMARK_ACCOUNT_TOKEN=…  POSTMARK_INBOUND_REPLY_ADDRESS=…@inbound.postmarkapp.com
 PORTAL_BASE_URL=https://help.maestro-desk.com/portal.html
+CRON_SECRET=<openssl rand -base64 32>              # REQUIRED on Vercel — signs cron invocations; unset = /api/v1/cron/* 401s and no sweeps run
 # Cloudflare R2 (brand-asset/logo uploads):
 R2_ACCOUNT_ID=…  R2_ACCESS_KEY_ID=…  R2_SECRET_ACCESS_KEY=…
 R2_BUCKET=brand-assets  R2_PUBLIC_BASE_URL=https://<pub-…r2.dev or custom domain>
@@ -72,7 +73,7 @@ This is atomic: the API verifies Better Auth sessions and the SPA signs in via B
 - [ ] 👤 **Cutover:** change where `support@…` mail is delivered from Zoho to Postmark; leave Zoho read-only until open tickets there close.
 
 ## Notes
-- **Background workers + Vercel:** the single-process worker assumption (webhook delivery + CSAT reminders) is incompatible with serverless — moving these to Vercel Cron is part of Step 6 and gates a Vercel go-live.
+- **Background workers + Vercel:** already handled — the in-process workers are local-dev-only; on Vercel the same work runs via inline `waitUntil` (first webhook attempt) + Vercel Cron (`/api/v1/cron/*`, concurrency-safe). Going live just needs `CRON_SECRET` set in the Vercel env (see §3).
 - The emailed reset/set-password token lands at `${APP_BASE_URL}/?reset_token=…`; the SPA strips it from the URL on load.
 - Migrations are plain SQL in `db/migrations/`, applied with `bun run migrate`; validate on Docker PG 17 before pushing (see `CLAUDE.md`).
-- Remaining migration steps after auth: **Step 5 (Pubby realtime)**, **Step 6 (Vercel + retire Fly)**, **Step 7 (cleanup)**.
+- Remaining migration steps after auth: **Step 5 (Pubby realtime)** and **Step 7 (cleanup)**. **Step 6 (Vercel + retire Fly)** is done in code — Fly artefacts removed, SPA/portal repointed, and the cron-driven background work is wired; the only Step-6 leftover is the operational `CRON_SECRET` + deploy.

@@ -1,7 +1,8 @@
 // Tests for the CORS policy in index.ts. The authenticated agent API + auth
-// routes are locked to APP_BASE_URL + localhost dev + *.vercel.app previews;
-// the public/portal API (/api/v1/public/*) stays open so white-label portals
-// on arbitrary verified custom domains can call it.
+// routes are locked to APP_BASE_URL + localhost dev (no Vercel previews — they
+// target localhost, not the deployed API); the public/portal API
+// (/api/v1/public/*) stays open so white-label portals on arbitrary verified
+// custom domains can call it.
 //
 // We drive the policy through OPTIONS preflights (handled by the cors
 // middleware directly, so no route handler / DB is touched) plus one real GET
@@ -48,10 +49,9 @@ describe('CORS — authenticated agent API', () => {
     expect(acao(res)).toBe(APP_ORIGIN);
   });
 
-  it('allows a *.vercel.app preview origin', async () => {
-    const origin = 'https://maestro-desk-git-feature.vercel.app';
-    const res = await preflight('/api/v1/tickets', origin);
-    expect(acao(res)).toBe(origin);
+  it('denies a *.vercel.app preview origin (previews target localhost, not the deployed API)', async () => {
+    const res = await preflight('/api/v1/tickets', 'https://maestro-desk-git-feature.vercel.app');
+    expect(acao(res)).toBeNull();
   });
 
   it('denies an unknown origin (no Allow-Origin header)', async () => {

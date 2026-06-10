@@ -39,21 +39,14 @@ const app = new Hono();
 
 // Browser origins allowed to call the AUTHENTICATED agent API + /api/auth/*.
 // The agent SPA is served from APP_BASE_URL (https://desk.maestro-desk.com in
-// prod, http://localhost:5173 in dev); Vercel PR previews are *.vercel.app.
+// prod, http://localhost:5173 in dev). Vercel PR previews are deliberately NOT
+// allowed: index.html only points desk./help. at the deployed API, so a preview
+// SPA targets localhost:3001 and never calls the deployed API cross-origin.
 // Note this is defense-in-depth, not the auth boundary — the SPA authenticates
 // with bearer tokens in sessionStorage, not ambient cookies, so a cross-origin
 // page can't replay credentials regardless. Better Auth's own trustedOrigins
 // (lib/auth.ts) separately guards /api/auth/*.
 const AGENT_ORIGINS = [env.APP_BASE_URL, 'http://localhost:5173'];
-
-function isAllowedAgentOrigin(origin: string): boolean {
-  if (AGENT_ORIGINS.includes(origin)) return true;
-  try {
-    return new URL(origin).hostname.endsWith('.vercel.app');
-  } catch {
-    return false;  // malformed Origin header
-  }
-}
 
 app.use('*', logger());
 app.use('*', cors({
@@ -64,7 +57,7 @@ app.use('*', cors({
     if (c.req.path.startsWith('/api/v1/public/')) return origin || '*';
     // Authenticated agent API + auth: reflect only allowlisted origins; an
     // empty return omits Access-Control-Allow-Origin so the browser blocks it.
-    return isAllowedAgentOrigin(origin) ? origin : '';
+    return AGENT_ORIGINS.includes(origin) ? origin : '';
   },
   allowHeaders: ['Authorization', 'Content-Type', 'X-Workspace-Id'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

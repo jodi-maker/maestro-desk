@@ -2,7 +2,7 @@
 
 Standing up Maestro Desk for **internal use** (your team replaces Zoho Desk). Clean-slate: new tickets start here; old Zoho tickets stay in Zoho until they close out. No data migration.
 
-Stack (post Supabase→Neon migration): **Neon** (Postgres, source of truth) · **Better Auth** (sign-in/sessions, owns its tables in Neon) · **Cloudflare R2** (brand-asset uploads) · **Cloudflare Pages** (SPA) · **Postmark** (email) · API host **→ Vercel** (Step 6; see §3). Domain: **maestro-desk.com** — `desk.maestro-desk.com` (agent app) · `help.maestro-desk.com` (portal) · `support@maestro-desk.com` (email).
+Stack (post Supabase→Neon migration): **Neon** (Postgres, source of truth) · **Better Auth** (sign-in/sessions, owns its tables in Neon) · **Cloudflare R2** (brand-asset uploads) · **Vercel** (SPA static files **and** the Hono API as serverless functions; see §3) · **Postmark** (email). Domain: **maestro-desk.com** — `desk.maestro-desk.com` (agent app) · `help.maestro-desk.com` (portal) · `api.maestro-desk.com` (API) · `support@maestro-desk.com` (email).
 
 > Legend: 🤖 = Claude can do it (repo / Neon SQL via Management or psql) · 👤 = you (billing, DNS, account auth, deploy).
 
@@ -43,7 +43,7 @@ R2_ACCOUNT_ID=…  R2_ACCESS_KEY_ID=…  R2_SECRET_ACCESS_KEY=…
 R2_BUCKET=brand-assets  R2_PUBLIC_BASE_URL=https://<pub-…r2.dev or custom domain>
 ```
 - [ ] 👤 Deploy the API; verify `GET /api/v1/health` = 200 and `GET /api/v1/health/ready/neon` proves Neon connectivity.
-- [ ] 👤 **Cloudflare Pages (SPA):** bind `desk.maestro-desk.com` (app) + serve `portal.html` at `help.maestro-desk.com`. The SPA picks its API base by hostname (inline script in `index.html`) — confirm the known prod hosts point at the deployed API. There is **no** `/api/v1/config` fetch anymore.
+- [ ] 👤 **Vercel (SPA):** deploy the static frontend (repo root — `index.html`, `portal.html`, `js/`, `styles/`) and bind `desk.maestro-desk.com` (app) + serve `portal.html` at `help.maestro-desk.com`. The SPA picks its API base by hostname (inline script in `index.html`) — confirm the prod hosts resolve to the deployed API at `https://api.maestro-desk.com`. There is **no** `/api/v1/config` fetch anymore.
 
 ## 4. Auth cutover (the flip goes live here)
 This is atomic: the API verifies Better Auth sessions and the SPA signs in via Better Auth — **deploy them together**.
@@ -58,7 +58,7 @@ This is atomic: the API verifies Better Auth sessions and the SPA signs in via B
   - **SPF (TXT @):** `v=spf1 a mx include:spf.mtasv.net ~all`
   - **DMARC (TXT _dmarc):** `v=DMARC1; p=none; pct=100; rua=mailto:rua@dmarc.postmarkapp.com` (monitoring; tighten after ~2 weeks)
   - **MX** on the support domain → `inbound.postmarkapp.com` so inbound mail hits the webhook
-  - **CNAMEs** for `desk` / `help` → Cloudflare Pages
+  - **CNAMEs** for `desk` / `help` → the Vercel SPA deployment, and `api` → the Vercel API deployment
 - [ ] 👤 Verify the domain in Postmark (DKIM + Return-Path) — DNS can take minutes–hours.
 - [ ] 👤 Configure the Postmark inbound webhook → `https://api.maestro-desk.com/api/v1/webhooks/postmark/inbound?secret=<POSTMARK_INBOUND_SECRET>`.
 - [ ] 🤖 Add the support domain to `workspace_email_domains` so inbound routes to your workspace (not the unrouted bucket).

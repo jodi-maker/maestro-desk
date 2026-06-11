@@ -6,7 +6,7 @@
 // every route. renderPage left the window bridge (callers import it directly
 // from core/router.js now), so the smoke reaches it through this explicit
 // re-export rather than window.renderPage.
-import '../js/app.js';
-import { renderPage } from '../js/core/router.js';
+import '../web/js/app.js';
+import { renderPage } from '../web/js/core/router.js';
 
 globalThis.__renderPage = renderPage;

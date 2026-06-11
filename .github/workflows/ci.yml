@@ -33,7 +33,7 @@ jobs:
           bun-version: "1.3.13"
 
       - name: Bundle build (app.js)
-        run: bun build js/app.js > scripts/app.bundled.js
+        run: bun build web/js/app.js > scripts/app.bundled.js
 
       - name: Bridge collision check
         run: bun scripts/bridge-collision-check.mjs

@@ -38,8 +38,8 @@ globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, removeEv
 // first so any module that references e.g. `TICKETS` at top level (none of
 // these should — module init shouldn't touch shared state — but just in case)
 // finds the globals.
-await import('../js/core/state.js');
-await import('../js/core/data.js');
+await import('../web/js/core/state.js');
+await import('../web/js/core/data.js');
 
 const exportsByName = new Map(); // name -> [modules that export it]
 

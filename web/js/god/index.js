@@ -357,10 +357,10 @@ async function setSuspended(brandId, suspend) {
 
 // Step into a brand as if signing in as an agent — set the workspace_id
 // header, load that workspace's data from the API, and navigate to the
-// dashboard. The platform admin keeps access to the god nav so they can
-// return; refresh from inside the agent shell will auto-resume via the
-// stored workspace_id (autoResumeAgent wins over autoResumePlatformAdmin
-// when workspace_id is set, per app.js startup).
+// dashboard. The platform admin keeps the god nav (always shown for platform
+// admins, via app.js login), so they can return any time. On refresh, a
+// platform admin resumes into the God view by default — autoResumeAgent skips
+// platform admins (app.js startup) — and re-enters the brand from there.
 async function enterBrand(brandId) {
   if (STATE.enterPending) return;
   STATE.enterPending = true;

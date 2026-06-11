@@ -1,5 +1,5 @@
 import postgres from 'postgres';
-import { env } from './env.ts';
+import { env } from './env.js';
 
 // Neon Postgres connection (migration to Neon — Step 1).
 //

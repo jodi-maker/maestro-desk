@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { requireAuthOnly } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
+import { requireAuthOnly } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
 
 // Identity + workspace memberships, read from Neon. Auth is verified by
 // requireAuthOnly (Better Auth session). The old /claims diagnostic that

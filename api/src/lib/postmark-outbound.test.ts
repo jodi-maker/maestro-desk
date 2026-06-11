@@ -18,7 +18,7 @@ process.env.POSTMARK_INBOUND_SECRET ||= 'inbound-secret-0123456789';
 process.env.POSTMARK_SERVER_TOKEN = 'test-server-token';
 process.env.POSTMARK_OUTBOUND_FROM = 'support@maestro.test';
 
-const { sendEmail } = await import('./postmark-outbound.ts');
+const { sendEmail } = await import('./postmark-outbound.js');
 
 type CapturedRequest = { url: string; body: Record<string, unknown> };
 

@@ -14,7 +14,7 @@
 // event log in the dashboard.
 
 import { z } from 'zod';
-import { getDb } from './db.ts';
+import { getDb } from './db.js';
 
 export const PostmarkBounce = z
   .object({

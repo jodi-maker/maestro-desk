@@ -1,5 +1,5 @@
 import { PubbyServer } from '@getpubby/sdk/server';
-import { env } from './env.ts';
+import { env } from './env.js';
 
 // Pubby realtime (migration — Step 5). Pusher-compatible push so the SPA gets
 // live ticket/message updates instead of (only) polling. The server triggers a

@@ -1,6 +1,6 @@
-import type { TriageOutput } from './triage.ts';
-import { env } from './env.ts';
-import { getDb } from './db.ts';
+import type { TriageOutput } from './triage.js';
+import { env } from './env.js';
+import { getDb } from './db.js';
 
 // Migration to Neon — Step 3 (tickets megabatch). DB via getDb().
 // postmark-outbound is external HTTP.
@@ -9,8 +9,8 @@ import {
   PostmarkSendError,
   replySubject,
   sendEmail,
-} from './postmark-outbound.ts';
-import { getOutboundFrom } from './outbound-from.ts';
+} from './postmark-outbound.js';
+import { getOutboundFrom } from './outbound-from.js';
 
 // ─── Config ──────────────────────────────────────────────────────────────
 

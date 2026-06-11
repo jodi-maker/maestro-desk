@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { encodeKey, parseListKeysXml } from './r2.ts';
+import { encodeKey, parseListKeysXml } from './r2.js';
 
 describe('encodeKey', () => {
   test('preserves slashes between segments but encodes within them', () => {

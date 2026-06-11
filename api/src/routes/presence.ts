@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
 
 // Migration to Neon — Step 3. Generic presence (ticket / customer / kb_article
 // today). One round-trip per heartbeat: upsert the caller's row, return the

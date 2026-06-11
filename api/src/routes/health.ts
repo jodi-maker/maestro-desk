@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { Hono } from 'hono';
-import { getDb } from '../lib/db.ts';
+import { getDb } from '../lib/db.js';
 
 export const health = new Hono();
 

@@ -1,4 +1,4 @@
-import { getDb } from './db.ts';
+import { getDb } from './db.js';
 import {
   extractInReplyTo,
   extractMessageId,
@@ -6,11 +6,11 @@ import {
   parseTo,
   pickBody,
   type PostmarkInbound,
-} from './postmark.ts';
-import { triageTicket } from './triage.ts';
-import { BudgetExceededError } from './budget.ts';
-import { scoreMessageSentiment } from './sentiment.ts';
-import { publishTicketChanged } from './pubby.ts';
+} from './postmark.js';
+import { triageTicket } from './triage.js';
+import { BudgetExceededError } from './budget.js';
+import { scoreMessageSentiment } from './sentiment.js';
+import { publishTicketChanged } from './pubby.js';
 
 // Fire-and-forget wrapper around scoreMessageSentiment used by the
 // inbound-email and reply paths. We never want sentiment to break the

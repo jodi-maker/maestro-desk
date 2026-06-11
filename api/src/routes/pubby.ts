@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { requireAuth, requireAuthOnly } from '../middleware/auth.ts';
-import { authorizeChannel, ticketsChannel } from '../lib/pubby.ts';
-import { env } from '../lib/env.ts';
+import { requireAuth, requireAuthOnly } from '../middleware/auth.js';
+import { authorizeChannel, ticketsChannel } from '../lib/pubby.js';
+import { env } from '../lib/env.js';
 
 // Pubby realtime (Step 5). Two endpoints the SPA needs to connect:
 //   GET  /config — non-secret client bootstrap (public app key + ws host)

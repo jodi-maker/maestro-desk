@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
 
 export const savedSearches = new Hono();
 

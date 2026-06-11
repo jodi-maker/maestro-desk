@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
-import { fetchStripeContext } from '../lib/stripe-client.ts';
-import { fetchShopifyContext } from '../lib/shopify-client.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
+import { fetchStripeContext } from '../lib/stripe-client.js';
+import { fetchShopifyContext } from '../lib/shopify-client.js';
 
 // Migration to Neon — Step 3. Member-level, workspace-scoped via getDb().
 // The Stripe/Shopify clients are external HTTP (no DB) and are unchanged.

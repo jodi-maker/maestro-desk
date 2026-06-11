@@ -20,10 +20,10 @@ process.env.POSTMARK_INBOUND_SECRET ||= 'inbound-secret-0123456789';
 // Spread the real parsed env so the stub is complete (env may already be cached
 // from another test file), then override. Mock before importing index.ts.
 const APP_ORIGIN = 'https://desk.maestro-desk.com';
-const { env: realEnv } = await import('./lib/env.ts');
-mock.module('./lib/env.ts', () => ({ env: { ...realEnv, APP_BASE_URL: APP_ORIGIN } }));
+const { env: realEnv } = await import('./lib/env.js');
+mock.module('./lib/env.js', () => ({ env: { ...realEnv, APP_BASE_URL: APP_ORIGIN } }));
 
-const app = (await import('./index.ts')).default;
+const app = (await import('./index.js')).default;
 
 afterAll(() => mock.restore());
 

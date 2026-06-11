@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { anthropic, computeCostMicro } from './anthropic.ts';
-import { assertHasBudget, BudgetExceededError, deductBudget } from './budget.ts';
-import { getDb } from './db.ts';
+import { anthropic, computeCostMicro } from './anthropic.js';
+import { assertHasBudget, BudgetExceededError, deductBudget } from './budget.js';
+import { getDb } from './db.js';
 
 // Migration to Neon — Step 3 (portal batch). DB via getDb().
 

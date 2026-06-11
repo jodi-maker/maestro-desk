@@ -23,7 +23,7 @@
 
 import { createHmac } from 'node:crypto';
 import { waitUntil } from '@vercel/functions';
-import { getDb } from './db.ts';
+import { getDb } from './db.js';
 
 // Migration to Neon — Step 3 (tickets megabatch). DB via getDb().
 // Outbound HTTP unchanged.

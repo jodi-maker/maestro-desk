@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { env } from './env.ts';
+import { env } from './env.js';
 
 // ─── Postmark inbound webhook payload ────────────────────────────────────
 //

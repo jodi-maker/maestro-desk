@@ -1,8 +1,8 @@
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins';
 import { Pool } from 'pg';
-import { env } from './env.ts';
-import { sendEmail, isPostmarkConfigured } from './postmark-outbound.ts';
+import { env } from './env.js';
+import { sendEmail, isPostmarkConfigured } from './postmark-outbound.js';
 
 // Better Auth (migration to Neon — Step 2). Owns sign-in, sessions, and the
 // users/account/session/verification tables in Neon. Replaces Supabase Auth.

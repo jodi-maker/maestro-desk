@@ -1,5 +1,5 @@
 import { AwsClient } from 'aws4fetch';
-import { env } from './env.ts';
+import { env } from './env.js';
 
 // Cloudflare R2 storage (migration to Neon — Step 4).
 //

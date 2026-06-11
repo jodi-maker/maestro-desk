@@ -2,4 +2,4 @@
 # Directory = repo root). Exclude the API source tree so Vercel doesn't try to
 # build api/ as serverless functions for the frontend deploy. The API has its
 # own Vercel project (Root Directory = api/) which is unaffected by this file.
-api
+# api  ← TEMP-DISABLED to diagnose the API git build (#3)

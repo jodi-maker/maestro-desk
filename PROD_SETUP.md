@@ -44,7 +44,7 @@ R2_ACCOUNT_ID=…  R2_ACCESS_KEY_ID=…  R2_SECRET_ACCESS_KEY=…
 R2_BUCKET=brand-assets  R2_PUBLIC_BASE_URL=https://<pub-…r2.dev or custom domain>
 ```
 - [ ] 👤 Deploy the API; verify `GET /api/v1/health` = 200 and `GET /api/v1/health/ready/neon` proves Neon connectivity.
-- [ ] 👤 **Vercel (SPA):** deploy the static frontend (repo root — `index.html`, `portal.html`, `js/`, `styles/`) and bind `desk.maestro-desk.com` (app) + serve `portal.html` at `help.maestro-desk.com`. The SPA picks its API base by hostname (inline script in `index.html`) — confirm the prod hosts resolve to the deployed API at `https://api.maestro-desk.com`. There is **no** `/api/v1/config` fetch anymore.
+- [ ] 👤 **Vercel (SPA):** deploy the static frontend (the **`web/`** directory — `index.html`, `portal.html`, `js/`, `styles/`; the SPA project's **Root Directory must be `web`**, so it builds as pure static with zero functions and never picks up `api/`) and bind `desk.maestro-desk.com` (app) + serve `portal.html` at `help.maestro-desk.com`. The SPA picks its API base by hostname (inline script in `index.html`) — confirm the prod hosts resolve to the deployed API at `https://api.maestro-desk.com`. There is **no** `/api/v1/config` fetch anymore.
 
 ## 4. Auth cutover (the flip goes live here)
 This is atomic: the API verifies Better Auth sessions and the SPA signs in via Better Auth — **deploy them together**.

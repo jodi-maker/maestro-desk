@@ -86,10 +86,10 @@ Two independently-running pieces:
 - Port: **3001** locally (`api/src/lib/env.ts` → `PORT` default 3001).
 - Tests: `api/src/index.test.ts`, run with `bun test`.
 
-**Frontend SPA** (repo root):
+**Frontend SPA** (the `web/` directory — its Vercel project's Root Directory):
 - Entry: **`index.html`** → `<script type="module" src="js/app.js">` (single module entry). An inline `<script>` at the top of `index.html` sets `window.MAESTRO_API_BASE` by hostname — the prod hosts (`desk`/`help.maestro-desk.com`) map to `https://api.maestro-desk.com`; everything else falls back to `http://localhost:3001`.
 - Customer portal: **`portal.html`** (self-contained, separate page).
-- Local static server: **`scripts/serve-spa.js`** (`Bun.serve` on **port 5173**, serves the repo root so ES modules load).
+- Local static server: **`scripts/serve-spa.js`** (`Bun.serve` on **port 5173**, serves the `web/` frontend root so ES modules load).
 - **There is no `GET /api/v1/config` route.** (The pre-migration doc claimed one returning a Supabase URL + anon key — that no longer exists.) The SPA learns its API base from the inline script in `index.html`; Pubby's client config is served separately at `GET /api/v1/pubby/config`.
 
 ---
@@ -104,8 +104,8 @@ Two independently-running pieces:
 
 ## 6. Build & deploy
 
-- **CI:** GitHub Actions — **`.github/workflows/ci.yml`** (`name: CI`), runs on every PR and on push to `main`. One job: sets up Bun 1.3.13, then `bun build js/app.js`, a bridge-collision check, and two "smoke" scripts (every route renders; open every demo ticket). **There is no deploy step in CI** — deploys are external.
-- **Production build:** the frontend has **no production build** — `bun build` is used **only** to bundle for the CI smokes (`CLAUDE.md`: "no framework and no bundler in production"). `index.html` + `js/` ship as-is.
+- **CI:** GitHub Actions — **`.github/workflows/ci.yml`** (`name: CI`), runs on every PR and on push to `main`. One job: sets up Bun 1.3.13, then `bun build web/js/app.js`, a bridge-collision check, and two "smoke" scripts (every route renders; open every demo ticket). **There is no deploy step in CI** — deploys are external.
+- **Production build:** the frontend has **no production build** — `bun build` is used **only** to bundle for the CI smokes (`CLAUDE.md`: "no framework and no bundler in production"). `web/index.html` + `web/js/` ship as-is.
 - **Hosting target: Vercel** (per project guardrails). The frontend deploys as static files; the **Hono API deploys as a serverless function** via the Vercel adapter (the routes themselves are unchanged). A Vercel integration is active on the GitHub repo (it posts PR preview deployments).
 - **Scheduled jobs: Vercel Cron** — declared in **`api/vercel.json`**: `0 3 * * *` → `/api/v1/cron/webhook-retry`, and `0 4 * * *` → `/api/v1/cron/csat-reminders`. These call the cron endpoints (guarded by `CRON_SECRET`) that, in production, do the sweeping the in-process dev workers do locally.
 - **DB deploy:** apply `db/migrations/` SQL to Neon (validate on Docker PG 17 first, per `CLAUDE.md`).
@@ -147,7 +147,7 @@ curl http://localhost:3001/api/v1/health        # -> {"ok":true}
 
 **B. Frontend SPA** (separate terminal)
 ```sh
-bun scripts/serve-spa.js    # -> http://localhost:5173  (serves repo root)
+bun scripts/serve-spa.js    # -> http://localhost:5173  (serves web/)
 ```
 Open `http://localhost:5173`. On `localhost` the SPA calls the API at `http://localhost:3001` automatically.
 

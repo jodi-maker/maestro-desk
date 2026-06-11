@@ -1,9 +1,9 @@
-// Static file server for the SPA. Serves repo root over HTTP so ES modules load.
+// Static file server for the SPA. Serves the web/ frontend root over HTTP so ES modules load.
 import { file } from 'bun';
 import { existsSync, statSync } from 'node:fs';
 import { join, normalize, resolve } from 'node:path';
 
-const ROOT = resolve(import.meta.dir, '..');
+const ROOT = resolve(import.meta.dir, '..', 'web');
 const PORT = 5173;
 
 Bun.serve({

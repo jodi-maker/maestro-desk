@@ -16,9 +16,9 @@
 // path no longer depends on renderPage being on the window bridge. TICKETS now
 // lives in the data.js ES module (bundled, not a concatenated global), so it is
 // re-exposed here for the suffix. Build + concat recipe is in detail-smoke-suffix.js.
-import '../js/app.js';
-import { openTicket } from '../js/tickets/detail.js';
-import { TICKETS } from '../js/core/data.js';
+import '../web/js/app.js';
+import { openTicket } from '../web/js/tickets/detail.js';
+import { TICKETS } from '../web/js/core/data.js';
 
 globalThis.__openTicket = openTicket;
 globalThis.__TICKETS = TICKETS;

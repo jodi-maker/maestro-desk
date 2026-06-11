@@ -1,4 +1,4 @@
-import { getDb } from './db.ts';
+import { getDb } from './db.js';
 
 // Migration to Neon — Step 3 (tickets megabatch). Reads/writes via getDb().
 

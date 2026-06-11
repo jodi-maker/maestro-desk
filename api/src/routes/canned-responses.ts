@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
 
 // Migration to Neon — Step 3. Member-level, workspace-scoped CRUD via getDb()
 // raw SQL. Membership is verified by the auth middleware; every query scopes

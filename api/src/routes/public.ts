@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { HTTPException } from 'hono/http-exception';
-import { getDb } from '../lib/db.ts';
-import { suggestKbForQuestion } from '../lib/kb-suggest.ts';
-import { createMagicLink, verifyMagicLink, customerForSession } from '../lib/portal-auth.ts';
-import { sendEmail, PostmarkSendError } from '../lib/postmark-outbound.ts';
-import { getOutboundFrom } from '../lib/outbound-from.ts';
-import { env } from '../lib/env.ts';
+import { getDb } from '../lib/db.js';
+import { suggestKbForQuestion } from '../lib/kb-suggest.js';
+import { createMagicLink, verifyMagicLink, customerForSession } from '../lib/portal-auth.js';
+import { sendEmail, PostmarkSendError } from '../lib/postmark-outbound.js';
+import { getOutboundFrom } from '../lib/outbound-from.js';
+import { env } from '../lib/env.js';
 
 export const publicRoutes = new Hono();
 

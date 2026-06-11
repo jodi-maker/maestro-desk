@@ -1,15 +1,15 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.ts';
-import { runWorkflowsForTicket } from '../lib/workflow-engine.ts';
-import { applyAssignmentRules } from '../lib/assign-rules-engine.ts';
-import { notifySlack } from '../lib/slack-notify.ts';
-import { dispatchTicketEvent } from '../lib/outgoing-webhooks.ts';
-import { scoreMessageSentiment } from '../lib/sentiment.ts';
-import { sendCsatSurvey } from '../lib/csat-survey.ts';
-import { notifyMentionedAgents } from '../lib/mention-notify.ts';
-import { publishTicketChanged } from '../lib/pubby.ts';
-import { getDb } from '../lib/db.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { runWorkflowsForTicket } from '../lib/workflow-engine.js';
+import { applyAssignmentRules } from '../lib/assign-rules-engine.js';
+import { notifySlack } from '../lib/slack-notify.js';
+import { dispatchTicketEvent } from '../lib/outgoing-webhooks.js';
+import { scoreMessageSentiment } from '../lib/sentiment.js';
+import { sendCsatSurvey } from '../lib/csat-survey.js';
+import { notifyMentionedAgents } from '../lib/mention-notify.js';
+import { publishTicketChanged } from '../lib/pubby.js';
+import { getDb } from '../lib/db.js';
 
 // Migration to Neon — Step 3 (tickets megabatch). All direct queries use
 // getDb() raw SQL, scoped by workspace_id (the auth middleware verifies

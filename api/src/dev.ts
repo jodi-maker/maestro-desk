@@ -4,10 +4,10 @@
 // load: it wraps the same Hono app in Bun.serve and starts the in-process
 // workers, so local dev keeps the always-on polling behavior. Vercel never
 // imports this file.
-import app from './index.ts';
-import { env } from './lib/env.ts';
-import { startWebhookWorker } from './lib/outgoing-webhooks.ts';
-import { startCsatReminderWorker } from './lib/csat-survey.ts';
+import app from './index.js';
+import { env } from './lib/env.js';
+import { startWebhookWorker } from './lib/outgoing-webhooks.js';
+import { startCsatReminderWorker } from './lib/csat-survey.js';
 
 console.log(`maestro-desk API listening on http://localhost:${env.PORT}`);
 

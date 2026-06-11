@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
-import { anthropic, computeCostMicro } from './anthropic.ts';
-import { getDb } from './db.ts';
-import { assertHasBudget, BudgetExceededError, deductBudget } from './budget.ts';
+import { anthropic, computeCostMicro } from './anthropic.js';
+import { getDb } from './db.js';
+import { assertHasBudget, BudgetExceededError, deductBudget } from './budget.js';
 import {
   evaluateAutoReply,
   postAutoReply,
   type AutoReplyDecision,
   type WorkspaceAutoReplyConfig,
-} from './auto-reply.ts';
+} from './auto-reply.js';
 
 const MODEL = 'claude-sonnet-4-6';
 

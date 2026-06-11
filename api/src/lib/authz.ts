@@ -1,5 +1,5 @@
 import type { Context } from 'hono';
-import { getDb } from './db.ts';
+import { getDb } from './db.js';
 
 // Per-route authorization helpers (migration to Neon — Step 3).
 //

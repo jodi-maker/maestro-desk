@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { env } from '../lib/env.ts';
-import { processPendingDeliveries } from '../lib/outgoing-webhooks.ts';
-import { processCsatReminders } from '../lib/csat-survey.ts';
+import { env } from '../lib/env.js';
+import { processPendingDeliveries } from '../lib/outgoing-webhooks.js';
+import { processCsatReminders } from '../lib/csat-survey.js';
 
 // Vercel Cron endpoints (Step 6). Vercel invokes these with a GET on the
 // schedule in vercel.json and sends `Authorization: Bearer ${CRON_SECRET}`;

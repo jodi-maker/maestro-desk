@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { getDb } from './db.ts';
+import { getDb } from './db.js';
 
 // Migration to Neon — Step 3 (portal batch). DB via getDb().
 

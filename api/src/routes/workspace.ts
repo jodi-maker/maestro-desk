@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
-import { requireWorkspaceAdmin } from '../lib/authz.ts';
-import { putObject, listKeys, deleteKeys, publicUrl } from '../lib/r2.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
+import { requireWorkspaceAdmin } from '../lib/authz.js';
+import { putObject, listKeys, deleteKeys, publicUrl } from '../lib/r2.js';
 
 // Migration to Neon — Step 3 (DB access on getDb(), admin gate via
 // requireWorkspaceAdmin) + Step 4 (POST /branding/logo now stores the file in

@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { auth } from '../lib/auth.ts';
-import { getDb } from '../lib/db.ts';
+import { auth } from '../lib/auth.js';
+import { getDb } from '../lib/db.js';
 
 // Gates the /api/v1/god/* routes. Verifies the caller's Better Auth session
 // (bearer token), looks up their users row in Neon, and refuses the request

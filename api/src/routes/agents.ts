@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
-import { requireWorkspaceAdmin } from '../lib/authz.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
+import { requireWorkspaceAdmin } from '../lib/authz.js';
 
 // Migration to Neon — Step 3. workspace_members management.
 //   GET    — list (any member; mirrors workspace_members_visible RLS)

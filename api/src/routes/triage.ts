@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { requireAuth } from '../middleware/auth.ts';
-import { triageTicket, TriageError } from '../lib/triage.ts';
-import { BudgetExceededError } from '../lib/budget.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { triageTicket, TriageError } from '../lib/triage.js';
+import { BudgetExceededError } from '../lib/budget.js';
 
 export const triage = new Hono();
 

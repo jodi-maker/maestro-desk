@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { requireAuth } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
 
 // Migration to Neon — Step 3. Member-level, workspace-scoped via getDb().
 export const channels = new Hono();

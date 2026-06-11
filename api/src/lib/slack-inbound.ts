@@ -12,7 +12,7 @@
 //      ships). No match → role=note (internal-only, attributed as
 //      "via Slack: $name").
 
-import { getDb } from './db.ts';
+import { getDb } from './db.js';
 
 // Migration to Neon — Step 3 (tickets megabatch). DB via getDb().
 // Slack users.info HTTP unchanged.

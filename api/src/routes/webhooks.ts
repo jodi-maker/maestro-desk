@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { getDb } from '../lib/db.ts';
-import { PostmarkInbound, assertPostmarkAuth, parseTo } from '../lib/postmark.ts';
-import { processInboundEmail, resolveInboundWorkspace } from '../lib/inbound-email.ts';
-import { verifySlackSignature } from '../lib/slack-verify.ts';
-import { handleSlackEvent } from '../lib/slack-inbound.ts';
-import { PostmarkBounce, processBounceEvent, fromDomain } from '../lib/postmark-bounce.ts';
+import { getDb } from '../lib/db.js';
+import { PostmarkInbound, assertPostmarkAuth, parseTo } from '../lib/postmark.js';
+import { processInboundEmail, resolveInboundWorkspace } from '../lib/inbound-email.js';
+import { verifySlackSignature } from '../lib/slack-verify.js';
+import { handleSlackEvent } from '../lib/slack-inbound.js';
+import { PostmarkBounce, processBounceEvent, fromDomain } from '../lib/postmark-bounce.js';
 
 export const webhooks = new Hono();
 

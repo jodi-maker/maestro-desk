@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.ts';
-import { getDb } from '../lib/db.ts';
+import { requireAuth } from '../middleware/auth.js';
+import { getDb } from '../lib/db.js';
 
 // Migration to Neon — Step 3. The caller's own profile + active-workspace
 // membership. Scoped to userId/workspaceId from the auth middleware (the

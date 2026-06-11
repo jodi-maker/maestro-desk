@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { requirePlatformAdmin, writeAudit } from '../middleware/platform-admin.ts';
-import { getDb } from '../lib/db.ts';
-import { auth } from '../lib/auth.ts';
+import { requirePlatformAdmin, writeAudit } from '../middleware/platform-admin.js';
+import { getDb } from '../lib/db.js';
+import { auth } from '../lib/auth.js';
 import {
   createDomain as pmCreateDomain,
   deleteDomain as pmDeleteDomain,
@@ -13,7 +13,7 @@ import {
   PostmarkAccountError,
   PostmarkAccountNotConfiguredError,
   type PostmarkDomain,
-} from '../lib/postmark-domains.ts';
+} from '../lib/postmark-domains.js';
 
 // Migration to Neon — Step 3.final. All brand/domain data access runs on
 // getDb() raw SQL, and the owner-invite mints its user through Better Auth

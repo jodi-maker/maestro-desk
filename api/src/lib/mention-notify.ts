@@ -8,10 +8,10 @@
 //   - the only mentioned user IS the author (self-mention)
 //   - a mentioned user has no email on file
 
-import { env } from './env.ts';
-import { sendEmail, isPostmarkConfigured, PostmarkSendError } from './postmark-outbound.ts';
-import { getOutboundFrom } from './outbound-from.ts';
-import { getDb } from './db.ts';
+import { env } from './env.js';
+import { sendEmail, isPostmarkConfigured, PostmarkSendError } from './postmark-outbound.js';
+import { getOutboundFrom } from './outbound-from.js';
+import { getDb } from './db.js';
 
 // Migration to Neon — Step 3 (tickets megabatch). DB via getDb().
 // Postmark send unchanged.

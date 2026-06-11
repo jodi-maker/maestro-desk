@@ -21,18 +21,18 @@ const CRON_SECRET = 'test-cron-secret';
 // Mocking env.ts before importing cron.ts makes the guard independent of how
 // env was first parsed. A complete stub also means the override is harmless if
 // it leaks to a later file.
-const { env: realEnv } = await import('../lib/env.ts');
-mock.module('../lib/env.ts', () => ({ env: { ...realEnv, CRON_SECRET } }));
+const { env: realEnv } = await import('../lib/env.js');
+mock.module('../lib/env.js', () => ({ env: { ...realEnv, CRON_SECRET } }));
 
 // Stub the sweeps so the handlers return without hitting the DB.
-mock.module('../lib/outgoing-webhooks.ts', () => ({
+mock.module('../lib/outgoing-webhooks.js', () => ({
   processPendingDeliveries: async () => ({ processed: 3 }),
 }));
-mock.module('../lib/csat-survey.ts', () => ({
+mock.module('../lib/csat-survey.js', () => ({
   processCsatReminders: async () => 2,
 }));
 
-const { cron } = await import('./cron.ts');
+const { cron } = await import('./cron.js');
 
 afterAll(() => mock.restore());
 

@@ -4,6 +4,8 @@ import { requireAuth } from '../middleware/auth.js';
 import { getDb } from '../lib/db.js';
 import { requireWorkspaceAdmin } from '../lib/authz.js';
 import { auth } from '../lib/auth.js';
+import { writeAudit } from '../middleware/platform-admin.js';
+import { deriveNameFromEmail, initialsFromName, randomPassword } from '../lib/invite.js';
 
 // Migration to Neon — Step 3. workspace_members management.
 //   GET    — list (any member; mirrors workspace_members_visible RLS)
@@ -46,31 +48,6 @@ const InviteAgent = z.object({
   name:    z.string().trim().min(1).max(120).optional(),
   role_id: z.string().uuid(),
 }).strict();
-
-function deriveNameFromEmail(email: string): { name: string; initials: string } {
-  const local = email.split('@')[0] || 'user';
-  const parts = local.split(/[._-]+/).filter(Boolean);
-  const cap = (w: string) => (w ? w[0].toUpperCase() + w.slice(1) : '');
-  const first = cap(parts[0]) || 'User';
-  const last = cap(parts[1] ?? '');
-  return {
-    name: [first, last].filter(Boolean).join(' '),
-    initials: ((first[0] ?? '') + (last[0] ?? '')).toUpperCase() || first.slice(0, 2).toUpperCase(),
-  };
-}
-
-function initialsFromName(name: string): string {
-  const ini = name.trim().split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
-  return ini || name.slice(0, 2).toUpperCase();
-}
-
-// Throwaway password for a freshly-created account — the invitee never learns
-// it and sets their own via the emailed link. Long + random to satisfy policy.
-function randomPassword(): string {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  return 'Aa1!' + Buffer.from(bytes).toString('base64url');
-}
 
 agents.post('/invite', async (c) => {
   const denied = await requireWorkspaceAdmin(c);
@@ -122,7 +99,8 @@ agents.post('/invite', async (c) => {
     insert into users (id, email, name, initials)
     values (${authUserId}, ${email}, ${name}, ${initials})
     on conflict (id) do update
-      set initials = coalesce(nullif(users.initials, ''), excluded.initials)
+      set email = excluded.email,
+          initials = coalesce(nullif(users.initials, ''), excluded.initials)
   `;
 
   // Upsert membership at the chosen role (composite PK → idempotent).
@@ -142,6 +120,15 @@ agents.post('/invite', async (c) => {
     emailSent = false;
     console.error('[agents/invite] requestPasswordReset failed:', err instanceof Error ? err.message : err);
   }
+
+  await writeAudit({
+    workspaceId,
+    actorUserId: c.get('userId'),
+    action: 'agent.invited',
+    targetType: 'user',
+    targetId: authUserId,
+    metadata: { email, role_id: role.id, email_sent: emailSent },
+  });
 
   const [agent] = await AGENT_SELECT(sql, workspaceId, authUserId);
   return c.json({ user_id: authUserId, email, email_sent: emailSent, agent }, 201);

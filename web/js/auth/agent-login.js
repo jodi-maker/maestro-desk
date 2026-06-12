@@ -148,6 +148,10 @@ export async function autoResumeAgent() {
   if (!workspaceId) return false;
   const me = await rehydrateUser();
   if (!me) return false;
+  // Platform admins (God) land in the platform view by default — even on reload
+  // — so don't resume a stored workspace for them; app.js startup falls through
+  // to autoResumePlatformAdmin, which shows the God view.
+  if (me.user?.is_platform_admin) return false;
   const m = (me.memberships || []).find(x => x.workspace_id === workspaceId);
   if (!m || m.suspended) { setWorkspaceId(null); return false; }
   try {

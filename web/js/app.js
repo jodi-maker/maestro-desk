@@ -13,9 +13,9 @@ import './profile-menu/index.js';  // side-effect: registers profmenu.* actions 
 import './auth/index.js';  // side-effect: registers auth.* actions for the static auth screen
 import { beginSetPassword } from './auth/index.js';
 import { refreshNotifBadge } from './notifications/index.js';
-import { autoResumePlatformAdmin } from './auth/platform-admin.js';
+import { autoResumePlatformAdmin, revealGodNav } from './auth/platform-admin.js';
 import { autoResumeAgent } from './auth/agent-login.js';
-import { signOut as authSignOut } from './core/auth-client.js';
+import { signOut as authSignOut, isPlatformAdmin } from './core/auth-client.js';
 import {
   // setSettingsTab stays window-reachable: notifications reaches it via
   // window.setSettingsTab to dodge the settings↔notifications import cycle.
@@ -48,6 +48,9 @@ function login(role, name, initials, userId = null) {
   document.getElementById('pf-name-lg').textContent = name;
   document.getElementById('pf-role-lg').textContent = role;
   if (role === 'Read Only') document.getElementById('nav-roles').style.opacity = '.3';
+  // Platform admins (God) always get the god nav — so they can switch between
+  // the platform view and any workspace they've entered without signing out.
+  if (isPlatformAdmin()) revealGodNav();
   applyTheme(THEME);
   refreshAllSLA();
   checkSnoozeWakeups();

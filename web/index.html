@@ -57,8 +57,19 @@
         </div>
         <button class="btn btn-solid" id="login-submit" data-action="auth.submitLogin" style="width:100%;justify-content:center;margin-top:12px;padding:10px 16px">Sign in</button>
         <div id="login-error" class="auth-error" style="display:none;margin-top:12px"></div>
+
+        <!-- "Sign in with Maestro" — revealed by js/auth/maestro-login.js only
+             when the API reports the provider is configured (GET /maestro/status). -->
+        <div id="maestro-signin" style="display:none;margin-top:18px">
+          <div style="display:flex;align-items:center;gap:10px;color:var(--muted,#8a8f98);font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase">
+            <span style="flex:1;height:1px;background:currentColor;opacity:.25"></span>or<span style="flex:1;height:1px;background:currentColor;opacity:.25"></span>
+          </div>
+          <button class="btn" id="maestro-login-btn" data-action="maestro.login" style="width:100%;justify-content:center;margin-top:14px;padding:10px 16px">Continue with Maestro</button>
+        </div>
       </div>
       <div id="login-picker" style="display:none"></div>
+      <!-- Brand auto-detect / picker shown after a successful Maestro sign-in. -->
+      <div id="maestro-brand-picker" style="display:none"></div>
     </div>
 
     <!-- Forgot password panel -->

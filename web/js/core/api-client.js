@@ -15,6 +15,10 @@
 export const API_BASE          = (typeof window !== 'undefined' && window.MAESTRO_API_BASE) || 'http://localhost:3001';
 export const JWT_KEY           = 'maestro_jwt';
 export const WORKSPACE_ID_KEY  = 'maestro_workspace_id';
+// Maestro brand context (X-Brand-Id) — the brand the agent picked after a
+// Maestro sign-in. Sent only on calls that opt in with { brand: true } (the
+// player-lookup endpoints); the platform enforces the agent's brand perms.
+export const BRAND_ID_KEY      = 'maestro_brand_id';
 
 export class ApiError extends Error {
   constructor(message, status, body) {
@@ -42,6 +46,15 @@ export function setWorkspaceId(id) {
   else    sessionStorage.removeItem(WORKSPACE_ID_KEY);
 }
 
+export function getBrandId() {
+  return sessionStorage.getItem(BRAND_ID_KEY);
+}
+
+export function setBrandId(id) {
+  if (id) sessionStorage.setItem(BRAND_ID_KEY, id);
+  else    sessionStorage.removeItem(BRAND_ID_KEY);
+}
+
 /**
  * Low-level call. path is "/api/v1/..."; method defaults to GET; body is
  * JSON-encoded automatically. Throws ApiError on non-2xx.
@@ -49,8 +62,9 @@ export function setWorkspaceId(id) {
  * Options:
  *   { auth: false }      — skip the Authorization header (for /config + /health)
  *   { workspace: false } — skip the X-Workspace-Id header (for /whoami + god routes)
+ *   { brand: true }      — add the X-Brand-Id header (for Maestro player lookups)
  */
-export async function apiCall(path, { method = 'GET', body, auth = true, workspace = true } = {}) {
+export async function apiCall(path, { method = 'GET', body, auth = true, workspace = true, brand = false } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (auth) {
     const jwt = getJwt();
@@ -59,6 +73,10 @@ export async function apiCall(path, { method = 'GET', body, auth = true, workspa
   if (workspace) {
     const wsId = getWorkspaceId();
     if (wsId) headers['X-Workspace-Id'] = wsId;
+  }
+  if (brand) {
+    const brandId = getBrandId();
+    if (brandId) headers['X-Brand-Id'] = brandId;
   }
   let res;
   try {

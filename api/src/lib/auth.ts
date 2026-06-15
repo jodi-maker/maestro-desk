@@ -1,8 +1,33 @@
 import { betterAuth } from 'better-auth';
-import { bearer } from 'better-auth/plugins';
+import { bearer, genericOAuth } from 'better-auth/plugins';
 import { Pool } from 'pg';
 import { env } from './env.js';
 import { sendEmail, isPostmarkConfigured } from './postmark-outbound.js';
+
+// "Sign in with Maestro" (Maestro Connect OIDC). Only mounted when the app's
+// OAuth client credentials are configured — when they're absent (e.g. a dev
+// box that hasn't wired Maestro yet) the provider simply isn't registered and
+// the SPA hides the button. Compliant with the "Better Auth only" guardrail:
+// Maestro is an OIDC *provider* feeding Better Auth, not a separate auth system.
+export const MAESTRO_PROVIDER_ID = 'maestro';
+export const maestroSignInEnabled = Boolean(env.MAESTRO_CLIENT_ID && env.MAESTRO_CLIENT_SECRET);
+
+// The exact scope set the manifest's oauth.scopes declares. DRAFT apps are
+// capped at openid/profile/email at authorize time; the rest unlock once the
+// app is ACTIVE (see `maestro integrate` — "DRAFT apps have a scope ceiling").
+const MAESTRO_SCOPES = [
+  'openid',
+  'profile',
+  'email',
+  'offline_access',        // → refresh token, so getAccessToken can refresh
+  'organizations:read',
+  'brands:read',
+  'members:read',
+  'members:balance',
+  'transactions:read',
+  'bonuses:read',
+  'rg:read',
+];
 
 // Better Auth (migration to Neon — Step 2). Owns sign-in, sessions, and the
 // users/account/session/verification tables in Neon. Replaces Supabase Auth.
@@ -34,8 +59,10 @@ export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
   // The SPA is served from a different origin than the API (e.g. :5173 → :3001
   // in dev; desk.maestro-desk.com → the API host in prod). Trust it so sign-in
-  // and password-reset accept it.
-  trustedOrigins: [env.APP_BASE_URL],
+  // and password-reset accept it. BETTER_AUTH_URL (the API's own origin) is
+  // also trusted so the Maestro OAuth flow can land on the API-hosted
+  // oauth-complete bridge (routes/maestro.ts) as its callbackURL.
+  trustedOrigins: [env.APP_BASE_URL, env.BETTER_AUTH_URL],
   emailAndPassword: {
     enabled: true,
     // Emailed when a user requests (or is sent) a password reset — the only
@@ -61,7 +88,58 @@ export const auth = betterAuth({
       });
     },
   },
-  plugins: [bearer()],
+  plugins: [
+    bearer(),
+    // Maestro Connect as an OIDC provider. PKCE public-client flow; tokens are
+    // stored in the `account` table so the API can later call the gateway on
+    // the user's behalf (see lib/maestro.ts getUserAccessToken + getAccessToken).
+    ...(maestroSignInEnabled
+      ? [
+          genericOAuth({
+            config: [
+              {
+                providerId: MAESTRO_PROVIDER_ID,
+                // Discovery lives at the canonical path (verified to return
+                // issuer "https://auth.mert.md"); the `iss` claim is the bare
+                // host, which Better Auth derives from the discovery doc.
+                discoveryUrl: `${env.MAESTRO_ISSUER}/.well-known/openid-configuration`,
+                clientId: env.MAESTRO_CLIENT_ID,
+                clientSecret: env.MAESTRO_CLIENT_SECRET,
+                scopes: MAESTRO_SCOPES,
+                pkce: true,
+                // The users table requires a non-null `name`, but a Maestro
+                // profile may have name=null. Fall back to the email local-part
+                // so the insert for a first-time agent never fails.
+                mapProfileToUser: (profile: Record<string, unknown>) => {
+                  const email = typeof profile.email === 'string' ? profile.email : '';
+                  const rawName = typeof profile.name === 'string' ? profile.name.trim() : '';
+                  const name = rawName || (email ? email.split('@')[0] : 'Maestro User');
+                  return { email, name };
+                },
+              },
+            ],
+          }),
+        ]
+      : []),
+  ],
+  // Let a Maestro sign-in link to an existing Desk user with the same email —
+  // this is how invited agents (created email-first during the cutover) start
+  // signing in with Maestro without a duplicate account.
+  //
+  // SECURITY: listing Maestro in `trustedProviders` bypasses Better Auth's usual
+  // requirement that the provider assert a verified email before auto-linking.
+  // That is safe ONLY because Maestro Connect is the platform's identity source
+  // of truth and verifies email ownership before issuing an identity, so a
+  // Maestro token's email is already proven. If that invariant ever changes, a
+  // token minted for an unverified email would become an account-takeover vector
+  // (attacker claims a victim's email at Maestro → auto-links to the victim's
+  // Desk account) — remove Maestro from `trustedProviders` then.
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: [MAESTRO_PROVIDER_ID],
+    },
+  },
   user: {
     modelName: 'users',
     // Map Better Auth's camelCase fields onto our snake_case columns.

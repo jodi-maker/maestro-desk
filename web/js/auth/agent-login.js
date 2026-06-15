@@ -39,23 +39,35 @@ async function submitLogin() {
   if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
   try {
     const me = await signIn(email, pw);
-    _user = me.user;
-    _memberships = me.memberships || [];
-
-    // God accounts land in the platform/brand-management view by default.
-    if (_user?.is_platform_admin) { enterGod(_user); return; }
-
-    if (_memberships.length === 0) {
-      signOut();
-      return showError('No workspace access yet — ask your admin for an invite.');
-    }
-    if (_memberships.length === 1) { enterWorkspace(_memberships[0]); return; }
-    renderPicker(_memberships);
+    routeAfterAuth(me);
   } catch (err) {
     showError(err?.message || 'Sign-in failed.');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Sign in'; }
   }
+}
+
+/**
+ * Route a freshly-authenticated user (the /whoami payload) into the app. Shared
+ * by the email/password flow above and the "Sign in with Maestro" flow
+ * (js/auth/maestro-login.js), so both land in exactly the same place:
+ *   - platform admin (God)  → platform view
+ *   - 0 memberships         → "no access" (and sign back out)
+ *   - 1 membership          → auto-enter that workspace
+ *   - 2+ memberships        → workspace picker
+ */
+export function routeAfterAuth(me) {
+  _user = me.user;
+  _memberships = me.memberships || [];
+
+  if (_user?.is_platform_admin) { enterGod(_user); return; }
+
+  if (_memberships.length === 0) {
+    signOut();
+    return showError('No workspace access yet — ask your admin for an invite.');
+  }
+  if (_memberships.length === 1) { enterWorkspace(_memberships[0]); return; }
+  renderPicker(_memberships);
 }
 
 function renderPicker(memberships) {
@@ -103,6 +115,24 @@ async function enterWorkspace(m) {
     // Unwind so the user lands back on the form, not a half-booted shell.
     setWorkspaceId(null);
     showError(err?.message || 'Failed to load workspace data.');
+  }
+}
+
+/**
+ * Enter a workspace for an explicitly-supplied user (the Maestro flow, where
+ * the user comes from /whoami rather than module state). Same boot + unwind as
+ * enterWorkspace; returns true on success so the caller can stop on failure.
+ */
+export async function enterWorkspaceMembership(user, m) {
+  if (m.suspended) { showError(`${m.workspace_name} is suspended. Contact your platform admin.`); return false; }
+  setWorkspaceId(m.workspace_id);
+  try {
+    await bootShell(user, m);
+    return true;
+  } catch (err) {
+    setWorkspaceId(null);
+    showError(err?.message || 'Failed to load workspace data.');
+    return false;
   }
 }
 

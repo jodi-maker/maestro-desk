@@ -1,0 +1,41 @@
+# Maestro Connect app manifest for Service Desk (Maestro Desk).
+# App id: 6c3f3c30-8beb-4763-adfd-e1ccea2aa976 · clientId: app_edb811f36cd8f0fe1755541e342128bb
+# Lifecycle: maestro apps submit <appId> --file maestro.yml (first review),
+# then maestro apps diff / maestro apps revise for every change after approval.
+maestroVersion: '1'
+
+partner:
+  name: Service Desk
+  slug: service-desk
+  description: >-
+    AI-native helpdesk for iGaming brands. Support agents sign in with their
+    Maestro account (no separate Desk accounts) and look up player context
+    in-app; a headless email pipeline reads the same player data to AI-draft
+    support replies.
+  homepageUrl: https://desk.maestro-desk.com
+
+oauth:
+  # The OAuth flow is brokered by the Desk API (Better Auth genericOAuth, PKCE):
+  # the API exchanges the code, stores tokens, and bounces back to the SPA.
+  # Localhost URIs are registered from day one — ACTIVE apps lose the
+  # DRAFT/PENDING localhost auto-bypass.
+  redirectUris:
+    - https://api.maestro-desk.com/api/auth/oauth2/callback/maestro
+    - https://desk.maestro-desk.com/callback
+    - http://localhost:3001/api/auth/oauth2/callback/maestro
+    - http://localhost:3000/callback
+  scopes:
+    - openid
+    - profile
+    - email
+    - offline_access
+    - organizations:read
+    - brands:read
+    - members:read
+    - members:balance
+    - transactions:read
+    - bonuses:read
+    - rg:read
+  grantTypes:
+    - authorization_code
+    - refresh_token

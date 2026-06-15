@@ -89,6 +89,26 @@ const Env = z.object({
   // 32`); optional locally, where the in-process worker (src/dev.ts) does the
   // sweeping and the cron endpoints stay closed.
   CRON_SECRET: z.string().default(''),
+  // Maestro Connect — the iGaming platform's identity + data gateway.
+  // Two capabilities, one registered app ("Service Desk",
+  // app id 6c3f3c30-8beb-4763-adfd-e1ccea2aa976 in the developer portal):
+  //   1. "Sign in with Maestro" — agents authenticate with their Maestro
+  //      account via Better Auth's genericOAuth plugin (PKCE). CLIENT_ID +
+  //      CLIENT_SECRET come from `maestro apps create` / the developer portal.
+  //      Both empty → the provider isn't mounted and the SPA hides the button.
+  //   2. Headless worker (email pipeline / AI drafting) — API_TOKEN is an
+  //      mh_live_* token minted post-approval (portal → Apps → Tokens) and
+  //      BRAND_ID the default X-Brand-Id (from `maestro apps installations`).
+  //      Both empty → player-context enrichment is skipped.
+  MAESTRO_CLIENT_ID: z.string().default(''),
+  MAESTRO_CLIENT_SECRET: z.string().default(''),
+  // OIDC discovery lives at a NON-STANDARD path on the issuer host — see the
+  // integration guide (`maestro integrate`): issuer is the bare host, the
+  // discovery document is under /api/auth/.
+  MAESTRO_ISSUER: z.string().url().default('https://auth.mert.md'),
+  MAESTRO_GATEWAY_URL: z.string().url().default('https://api.mert.md'),
+  MAESTRO_API_TOKEN: z.string().default(''),
+  MAESTRO_BRAND_ID: z.string().default(''),
   PORT: z.coerce.number().int().positive().default(3001),
 });
 

@@ -12,6 +12,7 @@ import { tickets } from './routes/tickets.js';
 import { triage } from './routes/triage.js';
 import { webhooks } from './routes/webhooks.js';
 import { god } from './routes/god.js';
+import { maestro } from './routes/maestro.js';
 import { whoami } from './routes/whoami.js';
 import { customers } from './routes/customers.js';
 import { agents } from './routes/agents.js';
@@ -76,7 +77,7 @@ app.use('*', cors({
     // empty return omits Access-Control-Allow-Origin so the browser blocks it.
     return AGENT_ORIGINS.includes(origin) ? origin : '';
   },
-  allowHeaders: ['Authorization', 'Content-Type', 'X-Workspace-Id'],
+  allowHeaders: ['Authorization', 'Content-Type', 'X-Workspace-Id', 'X-Brand-Id'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
 
@@ -115,6 +116,7 @@ app.route('/api/v1/pubby', pubby);
 app.route('/api/v1/cron', cron);
 app.route('/api/v1/webhooks', webhooks);
 app.route('/api/v1/god', god);
+app.route('/api/v1/maestro', maestro);
 
 app.onError((err, c) => {
   if (err instanceof HTTPException) {

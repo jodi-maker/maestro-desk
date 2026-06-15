@@ -39,23 +39,35 @@ async function submitLogin() {
   if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
   try {
     const me = await signIn(email, pw);
-    _user = me.user;
-    _memberships = me.memberships || [];
-
-    // God accounts land in the platform/brand-management view by default.
-    if (_user?.is_platform_admin) { enterGod(_user); return; }
-
-    if (_memberships.length === 0) {
-      signOut();
-      return showError('No workspace access yet — ask your admin for an invite.');
-    }
-    if (_memberships.length === 1) { enterWorkspace(_memberships[0]); return; }
-    renderPicker(_memberships);
+    routeAfterAuth(me);
   } catch (err) {
     showError(err?.message || 'Sign-in failed.');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Sign in'; }
   }
+}
+
+/**
+ * Route a freshly-authenticated user (the /whoami payload) into the app. Shared
+ * by the email/password flow above and the "Sign in with Maestro" flow
+ * (js/auth/maestro-login.js), so both land in exactly the same place:
+ *   - platform admin (God)  → platform view
+ *   - 0 memberships         → "no access" (and sign back out)
+ *   - 1 membership          → auto-enter that workspace
+ *   - 2+ memberships        → workspace picker
+ */
+export function routeAfterAuth(me) {
+  _user = me.user;
+  _memberships = me.memberships || [];
+
+  if (_user?.is_platform_admin) { enterGod(_user); return; }
+
+  if (_memberships.length === 0) {
+    signOut();
+    return showError('No workspace access yet — ask your admin for an invite.');
+  }
+  if (_memberships.length === 1) { enterWorkspace(_memberships[0]); return; }
+  renderPicker(_memberships);
 }
 
 function renderPicker(memberships) {

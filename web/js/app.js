@@ -15,6 +15,7 @@ import { beginSetPassword } from './auth/index.js';
 import { refreshNotifBadge } from './notifications/index.js';
 import { autoResumePlatformAdmin, revealGodNav } from './auth/platform-admin.js';
 import { autoResumeAgent } from './auth/agent-login.js';
+import { initMaestroButton, handleMaestroRedirect } from './auth/maestro-login.js';
 import { signOut as authSignOut, isPlatformAdmin } from './core/auth-client.js';
 import {
   // setSettingsTab stays window-reachable: notifications reaches it via
@@ -244,8 +245,13 @@ initGlobalSearchInput();
       history.replaceState({}, '', clean.toString());
       return;
     }
+    // Landing back from the Maestro OAuth bridge (#maestro_session=…)? Consume
+    // it and complete sign-in; this wins over the stored-session resumes.
+    if (await handleMaestroRedirect()) return;
     if (await autoResumeAgent()) return;
     await autoResumePlatformAdmin();
+    // Reveal "Continue with Maestro" on the login screen when configured.
+    initMaestroButton();
   } catch (err) {
     console.warn('[startup] auto-resume failed:', err);
   }

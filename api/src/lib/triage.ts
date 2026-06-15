@@ -9,6 +9,7 @@ import {
   type AutoReplyDecision,
   type WorkspaceAutoReplyConfig,
 } from './auto-reply.js';
+import { buildPlayerContext } from './player-context.js';
 
 const MODEL = 'claude-sonnet-4-6';
 
@@ -145,13 +146,18 @@ interface TicketSnapshot {
   current_priority_key: string | null;
   current_status_key: string;
   customer_label: string;
+  customer_email: string | null;
+  customer_username: string | null;
   customer_vip_tier: string | null;
   customer_brand: string | null;
   customer_jurisdiction: string | null;
   messages: { role: string; author_label: string; body: string; created_at: string }[];
 }
 
-function buildUserMessage(t: TicketSnapshot): string {
+// `playerContext` is the optional live Maestro player block (see
+// lib/player-context.ts) — null when Maestro isn't configured or the player
+// couldn't be resolved, in which case the prompt is unchanged.
+function buildUserMessage(t: TicketSnapshot, playerContext: string | null): string {
   const thread = t.messages
     .map((m) => `[${m.created_at} · ${m.role.toUpperCase()} · ${m.author_label}]\n${m.body}`)
     .join('\n\n---\n\n');
@@ -162,7 +168,7 @@ CURRENT STATUS: ${t.current_status_key}
 CURRENT CATEGORY: ${t.current_category_key ?? '(none)'}
 CURRENT PRIORITY: ${t.current_priority_key ?? '(none)'}
 SUBJECT: ${t.subject}
-
+${playerContext ? `\n${playerContext}\n` : ''}
 THREAD (oldest first):
 ${thread}
 
@@ -252,7 +258,13 @@ export async function triageTicket(input: TriageInput): Promise<TriageResult> {
     },
   ];
 
-  const userMessage = buildUserMessage(ticketRes);
+  // Enrich with live Maestro player data when configured (best-effort: any
+  // failure or missing config yields null and the prompt is unchanged).
+  const playerContext = await buildPlayerContext({
+    email: ticketRes.customer_email,
+    username: ticketRes.customer_username,
+  });
+  const userMessage = buildUserMessage(ticketRes, playerContext);
 
   // 3. Call Claude with tool_choice forcing the tool. We deliberately do NOT
   //    enable adaptive thinking here — the Anthropic API rejects the
@@ -422,10 +434,11 @@ async function loadTicketSnapshot(
     display_id: string; subject: string; status_key: string;
     priority_key: string | null; category_key: string | null;
     first_name: string | null; last_name: string | null;
+    email: string | null; username: string | null;
     vip_tier: string | null; brand: string | null; jurisdiction: string | null;
   }[]>`
     select t.display_id, t.subject, t.status_key, t.priority_key, t.category_key,
-           c.first_name, c.last_name, c.vip_tier, c.brand, c.jurisdiction
+           c.first_name, c.last_name, c.email, c.username, c.vip_tier, c.brand, c.jurisdiction
     from tickets t
     left join customers c on c.id = t.customer_id
     where t.id = ${ticketId} and t.workspace_id = ${workspaceId} and t.deleted_at is null
@@ -446,6 +459,8 @@ async function loadTicketSnapshot(
     current_priority_key: ticket.priority_key,
     current_status_key: ticket.status_key,
     customer_label: label,
+    customer_email: ticket.email ?? null,
+    customer_username: ticket.username ?? null,
     customer_vip_tier: ticket.vip_tier ?? null,
     customer_brand: ticket.brand ?? null,
     customer_jurisdiction: ticket.jurisdiction ?? null,

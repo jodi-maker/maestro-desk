@@ -8,7 +8,9 @@
     "start": "bun src/dev.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "migrate": "bun scripts/migrate.ts"
+    "migrate": "bun scripts/migrate.ts",
+    "migrate:deploy": "bun scripts/migrate-deploy.ts",
+    "vercel-build": "bun scripts/migrate-deploy.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.0",

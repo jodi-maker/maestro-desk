@@ -21,6 +21,8 @@ oauth:
   # DRAFT/PENDING localhost auto-bypass.
   redirectUris:
     - https://api.maestro-desk.com/api/auth/oauth2/callback/maestro
+    # Interim Vercel API host (used until maestro-desk.com is registered).
+    - https://maestro-desk-zjkl.vercel.app/api/auth/oauth2/callback/maestro
     - https://desk.maestro-desk.com/callback
     - http://localhost:3001/api/auth/oauth2/callback/maestro
     - http://localhost:3000/callback

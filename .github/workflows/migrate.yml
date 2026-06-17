@@ -40,6 +40,11 @@ jobs:
   migrate:
     name: apply pending migrations
     runs-on: ubuntu-latest
+    # Gate the prod DB secret behind a GitHub Environment. DATABASE_URL is an
+    # environment secret on `production`, which is restricted to the `main`
+    # branch — so a workflow_dispatch from any other branch cannot read it.
+    # No required-reviewer rule, so pushes to main still migrate automatically.
+    environment: production
     steps:
       - uses: actions/checkout@v4
         # Full repo checkout (default) so db/migrations/ at the repo root is

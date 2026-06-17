@@ -36,8 +36,10 @@ async function main() {
   const [{ count: wsCount }] =
     await sql`select count(*)::int as count from workspaces where deleted_at is null`;
   const [{ count: ticketCount }] = await sql`select count(*)::int as count from tickets`;
+  // Workspaces/users exclude soft-deleted rows; tickets are a raw total
+  // (the tickets table has no soft-delete column).
   console.log(
-    `Totals: ${wsCount} workspace(s), ${userCount} user(s), ${ticketCount} ticket(s) (active, not soft-deleted)\n`,
+    `Totals: ${wsCount} workspace(s) + ${userCount} user(s) (excl. soft-deleted), ${ticketCount} ticket(s) (all)\n`,
   );
 
   // Workspaces with member + ticket counts

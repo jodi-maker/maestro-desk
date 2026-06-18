@@ -22,6 +22,7 @@ import { renderDashboard } from '../dashboard/index.js';
 import { renderTickets, initTicketsPage } from '../tickets/list.js';
 import { renderInbox } from '../inbox/index.js';
 import { renderCustomers } from '../customers/index.js';
+import { resetPlayerLookup } from '../customers/player-lookup.js';
 import { renderReports } from '../reports/index.js';
 import { renderAgents } from '../agents/index.js';
 import { renderAI, initAI } from '../ai/page.js';
@@ -61,7 +62,7 @@ export function renderPage(page) {
   if (page !== 'roles')     setRolesViewAgents(null);
   if (page !== 'kb')        setKbSelected(null);
   if (page !== 'agents')    setAgentSelected(null);
-  if (page !== 'customers') { setCustomerSelected(null); CUSTOMER_SELECTED_IDS.clear(); }
+  if (page !== 'customers') { setCustomerSelected(null); CUSTOMER_SELECTED_IDS.clear(); resetPlayerLookup(); }
   if (page !== 'tickets')   TICKET_SELECTED_IDS.clear();
   if (page !== 'inbox')     setInboxSelectedId(null);
   if (page !== 'workflows') setWfSelected(null);

@@ -31,8 +31,9 @@ import { registerActions, registerChangeActions, registerInputActions, registerM
 import { openTicket } from '../tickets/detail.js';
 import { showManageFieldsModal } from '../custom-fields/index.js';
 import { showCSVModal, showNewCustomerModal } from './modals.js';
-import { apiGet, apiPut } from '../core/api-client.js';
+import { apiGet, apiPut, getBrandId } from '../core/api-client.js';
 import { startPresence } from '../core/presence.js';
+import { playerLookupActive, renderPlayerLookupView } from './player-lookup.js';
 
 // Lazy-loaded per-customer Stripe context. We only fetch once per
 // customer detail open (Map keyed by customer.id). Pending fetches
@@ -237,6 +238,10 @@ function custSetVIP(v)   { CUST_VIP_FILTER = v;   renderPage('customers'); }
 function custSetBrand(v) { CUST_BRAND_FILTER = v; renderPage('customers'); }
 
 export function renderCustomers() {
+  // Live player lookup (search the whole brand roster from Maestro) takes over
+  // the page when active — see ./player-lookup.js. Checked before the local
+  // detail branch; the two selections are mutually exclusive in practice.
+  if (playerLookupActive()) return renderPlayerLookupView();
   if (CUSTOMER_SELECTED) return renderCustomerDetail(CUSTOMER_SELECTED);
   getCustColumns();
   const filtered = applyCustFilters();
@@ -291,6 +296,10 @@ export function renderCustomers() {
     <div class="page">
       <div class="topbar">
         <div class="tb-title">Customers</div>
+        ${getBrandId() ? `<button class="btn btn-sm" data-action="players.lookup" title="Search every player in this brand, live from Maestro">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="5" cy="5" r="3.5" stroke="currentColor" stroke-width="1.2"/><path d="M7.7 7.7L11 11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          Look up player
+        </button>` : ''}
         <button class="btn btn-sm" data-action="cust.showColumnPanel">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="3" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="5" y="1" width="3" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="2" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
           Columns

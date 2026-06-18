@@ -105,7 +105,7 @@ async function main() {
         insert into audit_events (workspace_id, actor_user_id, action, target_type, target_id, metadata)
         values (
           ${ws.id}, ${user.id}, 'brand.admin_membership_granted', 'user', ${user.id},
-          ${sql.json({ email: TARGET_EMAIL, role_id: adminRole.id, via: 'grant-admin-memberships', dispatched_by: process.env.GITHUB_ACTOR ?? null, was_member: Boolean(existing) })}
+          ${tx.json({ email: TARGET_EMAIL, role_id: adminRole.id, via: 'grant-admin-memberships', dispatched_by: process.env.GITHUB_ACTOR ?? null, was_member: Boolean(existing) })}
         )
       `;
     }

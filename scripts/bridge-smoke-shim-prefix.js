@@ -10,6 +10,12 @@ globalThis.localStorage = {
   setItem(k, v) { this.store[k] = String(v); },
   removeItem(k) { delete this.store[k]; },
 };
+globalThis.sessionStorage = {
+  store: {},
+  getItem(k) { return this.store[k] ?? null; },
+  setItem(k, v) { this.store[k] = String(v); },
+  removeItem(k) { delete this.store[k]; },
+};
 
 function _node() {
   return {

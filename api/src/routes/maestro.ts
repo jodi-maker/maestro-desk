@@ -8,7 +8,8 @@ import {
   listUserOrganizations,
   listUserBrands,
   mapMaestroBrandRole,
-  maestroFetch,
+  workerFetch,
+  workerMaestroConfigured,
   MaestroError,
 } from '../lib/maestro.js';
 import { resolveBrandWorkspace } from '../lib/maestro-workspace.js';
@@ -163,32 +164,44 @@ maestro.post('/select-brand', requireAuthOnly, async (c) => {
 });
 
 // ─── Player lookup (agent-triggered, brand-scoped) ───────────────────────────
+// Lookup is by ONE exact key — email (which also matches username), numeric
+// member id, or Maestro user id — and returns a single member overview
+// (profile + balance). This is NOT a paginated browse/search by partial name;
+// the platform exposes that as a separate endpoint we haven't wired.
+//
 // The chosen brand rides in X-Brand-Id (set by the SPA after the brand pick).
-// We call the gateway with the agent's own Maestro token so the platform
-// enforces exactly the brands/players THEY may see.
+// We call the platform member-lookup with the APP token (mh_live_*, scope
+// members:read — see lib/maestro.ts workerFetch), NOT the agent's OAuth token:
+// that's the platform's documented contract for this endpoint, and it means an
+// agent who hasn't personally linked Maestro can still look a player up. Access
+// is gated by the agent's brand workspace, not per-user platform perms.
 maestro.get('/players', requireAuthOnly, async (c) => {
   ensureEnabled();
+  if (!workerMaestroConfigured()) {
+    throw new HTTPException(503, { message: 'Player lookup is not configured (no Maestro API token).' });
+  }
   const brandId = c.req.header('X-Brand-Id');
   if (!brandId) throw new HTTPException(400, { message: 'X-Brand-Id header required for player lookups.' });
 
-  const token = await getUserAccessToken(c.get('userId'), c.req.raw.headers);
-  if (!token) throw new HTTPException(409, { message: 'No linked Maestro account for this user.' });
+  // Exactly one key. `email` is forwarded as-is (the gateway accepts an email
+  // OR a username on that param); numeric member id and Maestro id are distinct.
+  const email = c.req.query('email');
+  const memberId = c.req.query('memberId');
+  const maestroUserId = c.req.query('maestroUserId');
+  const key = email ? { email } : memberId ? { memberId } : maestroUserId ? { maestroUserId } : null;
+  if (!key) throw new HTTPException(400, { message: 'Provide one of email, memberId or maestroUserId.' });
 
-  // Pass through the supported search params. The gateway resolves the player
-  // resource for the brand; the exact member path is the platform's
-  // members endpoint (scope members:read).
   try {
-    const data = await maestroFetch('/api/v1/proxy/members', {
-      token,
+    const member = await workerFetch<Record<string, unknown>>('/api/v1/proxy/member/lookup', {
       brandId,
-      query: {
-        email: c.req.query('email'),
-        username: c.req.query('username'),
-        q: c.req.query('q'),
-        limit: c.req.query('limit') ?? 20,
-      },
+      query: key,
     });
-    return c.json(data);
+    // The gateway answers HTTP 200 with { success:false, errorCode:101 } when no
+    // member matches — surface that as a clean 404 the SPA can show as "not found".
+    if (!member || member.success === false || member.errorCode === 101) {
+      return c.json({ found: false }, 404);
+    }
+    return c.json({ found: true, member });
   } catch (err) {
     throw toHttp(err);
   }

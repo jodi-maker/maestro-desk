@@ -13,7 +13,9 @@
 //   - Per-workspace it attaches the workspace's own Admin role (is_admin = true);
 //     a workspace with no admin role is reported and skipped, never guessed.
 //   - All changes run in ONE transaction — all or nothing.
-//   - Writes an audit_events row per grant (actor = the platform admin itself).
+//   - Writes an audit_events row per grant. actor_user_id is the platform
+//     admin being granted; the GitHub operator who dispatched the run is
+//     recorded separately in metadata.dispatched_by for traceability.
 //
 // Run from the `Grant platform-admin memberships (Neon)` workflow, which injects
 // the prod DATABASE_URL from the `production` environment secret. Self-contained
@@ -103,7 +105,7 @@ async function main() {
         insert into audit_events (workspace_id, actor_user_id, action, target_type, target_id, metadata)
         values (
           ${ws.id}, ${user.id}, 'brand.admin_membership_granted', 'user', ${user.id},
-          ${sql.json({ email: TARGET_EMAIL, role_id: adminRole.id, via: 'grant-admin-memberships', was_member: Boolean(existing) })}
+          ${sql.json({ email: TARGET_EMAIL, role_id: adminRole.id, via: 'grant-admin-memberships', dispatched_by: process.env.GITHUB_ACTOR ?? null, was_member: Boolean(existing) })}
         )
       `;
     }

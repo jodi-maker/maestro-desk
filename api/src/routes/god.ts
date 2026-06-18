@@ -30,7 +30,7 @@ god.use('*', requirePlatformAdmin);
 // below is injection-safe (same pattern as SETTINGS_COLS in workspace.ts).
 const BRAND_COLS = `id, slug, name, plan, logo_url, primary_color, support_email_display_name,
   ai_credits_micro, auto_reply_min_confidence, auto_reply_categories,
-  suspended_at, is_unrouted_bucket, created_at, updated_at`;
+  suspended_at, is_unrouted_bucket, maestro_brand_id, created_at, updated_at`;
 
 // ─── Schemas ───────────────────────────────────────────────────────────────
 
@@ -133,7 +133,7 @@ god.get('/brands', async (c) => {
   const sql = getDb();
   const brands = await sql`
     select id, slug, name, plan, logo_url, primary_color, ai_credits_micro,
-           suspended_at, created_at, updated_at
+           suspended_at, maestro_brand_id, created_at, updated_at
     from workspaces
     where is_unrouted_bucket = false and deleted_at is null
     order by created_at desc

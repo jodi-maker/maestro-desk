@@ -20,7 +20,7 @@
 // All actions wire through core/event-delegation (data-action="god.X").
 
 import { nav, updateNavBadges } from '../core/router.js';
-import { apiGet, apiPatch, apiPost, apiDelete, setWorkspaceId } from '../core/api-client.js';
+import { apiGet, apiPatch, apiPost, apiDelete, setWorkspaceId, setBrandId } from '../core/api-client.js';
 import { registerActions, registerInputActions } from '../core/event-delegation.js';
 import { loadWorkspaceData } from '../core/bootstrap.js';
 import { renderNewBrand, resetForm as resetNewBrandForm, setOnClose as setNewBrandOnClose } from './new-brand.js';
@@ -53,8 +53,10 @@ export function renderGod() {
   // Entering the god panel = leaving any in-progress workspace context.
   // Clear workspace_id so a refresh-from-god lands back on god (via the
   // platform-admin auto-resume) rather than slipping into the agent
-  // shell of whichever brand the user last entered.
+  // shell of whichever brand the user last entered. Also clear the Maestro
+  // brand context so it can't leak into the next brand the god enters.
   setWorkspaceId(null);
+  setBrandId(null);
   // First render → kick off the list fetch.
   if (!STATE.brandsLoading && STATE.brands.length === 0 && !STATE.brandsError && STATE.view === 'list') {
     refreshList();
@@ -367,6 +369,14 @@ async function enterBrand(brandId) {
   reRender();
   try {
     setWorkspaceId(brandId);
+    // Carry the Maestro brand context (X-Brand-Id) when the entered workspace
+    // is a Maestro brand, so brand-scoped features (e.g. player lookup) work
+    // the same as via the agent "Sign in with Maestro" flow. Non-Maestro
+    // workspaces (e.g. the internal maestro-desk) have no maestro_brand_id, so
+    // this clears it.
+    const entered = STATE.brands.find((b) => b.id === brandId)
+      || (STATE.detail?.brand?.id === brandId ? STATE.detail.brand : null);
+    setBrandId(entered?.maestro_brand_id || null);
     await loadWorkspaceData();
     if (typeof updateNavBadges === 'function') updateNavBadges();
     nav('dashboard', document.getElementById('nav-dashboard'));
@@ -374,6 +384,7 @@ async function enterBrand(brandId) {
     // Clear the workspace selection so a refresh doesn't leave the user
     // stuck trying to resume into a half-loaded workspace.
     setWorkspaceId(null);
+    setBrandId(null);
     alert(`Couldn't enter workspace: ${err?.message || err}`);
   } finally {
     STATE.enterPending = false;

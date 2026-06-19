@@ -18,8 +18,14 @@ export async function nextDisplayId(
   workspaceId: string,
   kind: DisplayIdKind,
 ): Promise<string> {
-  const [row] = await sql<{ n: string }[]>`
+  const [row] = await sql<{ n: string | null }[]>`
     select alloc_display_id(${workspaceId}, ${kind}) as n
   `;
+  // alloc_display_id always returns a non-null bigint on success (it throws a
+  // 23503 FK violation if the workspace no longer exists). Guard anyway so a
+  // surprising null/empty result fails loudly rather than minting "TK-undefined".
+  if (row?.n == null) {
+    throw new Error(`Failed to allocate ${kind} display id for workspace ${workspaceId}`);
+  }
   return `${PREFIX[kind]}${row.n}`;
 }

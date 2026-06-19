@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { ipAddress } from '@vercel/functions';
 import { getDb } from './db.js';
 
 // Postgres-backed fixed-window rate limiting for the public portal (see
@@ -8,10 +9,15 @@ import { getDb } from './db.js';
 //   const limited = await enforceRateLimit(c, { name: 'tickets', max: 10, windowSeconds: 600 });
 //   if (limited) return limited;
 
-// Best-effort client IP. On Vercel the real client is the left-most entry of
-// X-Forwarded-For; fall back to X-Real-IP, then a shared 'unknown' bucket so
-// requests we can't attribute are still collectively capped (fail-closed).
+// Trusted client IP. On Vercel, ipAddress() reads the platform's trusted
+// client-IP header, which a client CANNOT spoof — unlike the left-most entry
+// of a self-supplied X-Forwarded-For, which an attacker can rotate to dodge a
+// per-IP limit. We prefer it, then fall back to raw headers for local dev /
+// non-Vercel, then a shared 'unknown' bucket so unattributable requests are
+// still collectively capped (fail-closed on identity).
 export function clientIp(c: Context): string {
+  const trusted = ipAddress(c.req.raw);
+  if (trusted) return trusted;
   const xff = c.req.header('x-forwarded-for');
   if (xff) {
     const first = xff.split(',')[0]?.trim();

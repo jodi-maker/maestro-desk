@@ -46,13 +46,14 @@ bun scripts/detail-smoke.js
 - **Adding a state/data global:** export it; add a `setX` setter only if it's *reassigned* anywhere (in-place mutation needs none); every consuming module must import it.
 - Bundling regex/script tip: `git ls-files web/js` (not a `**` pathspec); use `String.raw` for regex in scripts (template literals eat `\w`/`\b`); files are CRLF — make literal-replacement scripts EOL-aware.
 
-## Database / Supabase
+## Database (Neon)
 
-- **Every new `public` table MUST enable RLS** (`alter table … enable row level security`). Without it the Supabase advisor fires `rls_disabled_in_public` (CRITICAL) — PostgREST grants anon/authenticated full CRUD on public tables.
-- For tables touched **only** by the API's service-role client (`supabaseAdmin`), enable RLS **with no policies** — service-role bypasses RLS, anon/authenticated get denied. Confirm there's no anon-key/frontend access first.
-- **Don't move `citext` out of `public`** to silence `extension_in_public` — under a `search_path` lacking `extensions`, citext comparisons silently degrade to case-sensitive text (it backs `users.email`/`customers.email`). Acknowledge that WARN instead.
-- Auth-config advisor items (HIBP/OTP/MFA) are **dashboard** settings — never `supabase config push` (the repo `config.toml` holds dev/localhost values that would clobber prod).
-- Apply migrations with `supabase db push --linked` (works non-interactively; `--dry-run` first). Validate on Docker PG 17 before pushing.
+The database is **Neon Postgres**, accessed directly via `postgres.js` (`getDb()` in `api/src/lib/db.js`) — no ORM. Supabase has been fully retired; ignore any lingering Supabase references in old code comments.
+
+- **Migrations are raw SQL** in `db/migrations/` (repo root), applied in filename order. Add changes as a **new timestamped file** (`YYYYMMDDHHMMSS_description.sql`) — never edit an already-applied one. `api/scripts/migrate.ts` (`bun run migrate`) tracks applied files in `schema_migrations` so re-runs skip them; the deploy-time GitHub Action runs it on push to `main`.
+- **Authorization is API middleware, not RLS.** There is no row-level security anymore: every route filters by `workspace_id` and uses `requireAuth` / `requireWorkspaceAdmin` (`api/src/lib/authz.ts`). A new route that touches workspace-scoped tables **must** include the `where workspace_id = …` predicate — there is no database backstop.
+- **`citext`** backs `users.email` / `customers.email`; keep it in `public` (a `search_path` lacking it silently degrades comparisons to case-sensitive).
+- **Validate new migrations on Docker PG 17** (`docker run postgres:17` + per-file `psql` apply) before pushing.
 
 ## Workflow
 

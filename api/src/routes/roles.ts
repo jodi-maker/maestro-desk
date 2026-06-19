@@ -68,9 +68,16 @@ roles.patch('/:id', async (c) => {
   if (!parsed.success) return c.json({ error: 'Invalid body', issues: parsed.error.issues }, 400);
   if (Object.keys(parsed.data).length === 0) return c.json({ error: 'No fields to update' }, 400);
 
+  // Build an explicit column whitelist rather than spreading parsed.data into
+  // sql(): .strict() above already rejects unknown keys, but this keeps the
+  // set of writable columns visible and pinned at the call site.
+  const updates: Record<string, unknown> = {};
+  if (parsed.data.name !== undefined)     updates.name     = parsed.data.name;
+  if (parsed.data.is_admin !== undefined) updates.is_admin = parsed.data.is_admin;
+
   try {
     const [role] = await sql`
-      update roles set ${sql(parsed.data)}
+      update roles set ${sql(updates)}
       where id = ${id} and workspace_id = ${workspaceId}
       returning id, name, is_admin
     `;

@@ -57,7 +57,7 @@ export async function requireCustomFieldManager(c: Context): Promise<Response | 
   const [row] = await sql<{ can_manage: boolean; platform_admin: boolean }[]>`
     select
       coalesce((
-        select bool_or(r.is_admin or r.can_manage_custom_fields)
+        select bool_or(coalesce(r.is_admin, false) or coalesce(r.can_manage_custom_fields, false))
         from workspace_members wm
         join roles r on r.id = wm.role_id
         where wm.user_id = ${userId}
@@ -70,5 +70,5 @@ export async function requireCustomFieldManager(c: Context): Promise<Response | 
   `;
 
   if (row?.can_manage || row?.platform_admin) return null;
-  return c.json({ error: 'Custom-field management requires a senior role' }, 403);
+  return c.json({ error: 'You do not have permission to manage custom fields' }, 403);
 }

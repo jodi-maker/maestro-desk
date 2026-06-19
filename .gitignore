@@ -6,6 +6,11 @@ api/.env
 api/.env.*
 !api/.env.example
 
+# Supabase CLI scratch — local-only project link metadata. The supabase/
+# directory is retired, but this guards against re-creation if the CLI is
+# ever run again (it writes a project ref + pooler URL here).
+supabase/.temp/
+
 # Dependencies
 node_modules/
 

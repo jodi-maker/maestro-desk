@@ -24,7 +24,7 @@ import { renderPage } from '../core/router.js';
 import { registerActions, registerChangeActions } from '../core/event-delegation.js';
 import { openAgentFromDash } from '../dashboard/index.js';
 import { apiPost, apiPatch, apiDelete } from '../core/api-client.js';
-import { getRoleUuid, setRoleUuid, clearRoleUuid, renameRoleUuid } from '../core/bootstrap.js';
+import { getRoleUuid, setRoleUuid, clearRoleUuid, renameRoleUuid, getRoleCanManageCF, setRoleCanManageCF } from '../core/bootstrap.js';
 import { showModal, closeModal } from '../core/modal.js';
 
 function rolesApiBacked() {
@@ -37,10 +37,20 @@ export function renderRoles() {
   const admin = window.isAdmin();
   const rows = ROLES.map(r => {
     const count = AGENTS.filter(a => a.role === r).length;
-    const actions = admin ? `<td style="text-align:right;white-space:nowrap">${r==='Admin' ? '<span style="font-size:11px;color:var(--ink3)">protected</span>' : `<button class="btn btn-sm btn-danger" data-action="roles.deleteRole" data-role="${window.escAttr(r)}">Delete</button>`}</td>` : '';
+    // Admins always manage custom fields (locked on); other roles carry the
+    // can_manage_custom_fields flag, which admins can toggle here.
+    const isAdminRole = r === 'Admin';
+    const cf = isAdminRole || getRoleCanManageCF(r);
+    const cfCell = admin
+      ? `<td style="text-align:center">${isAdminRole
+          ? '<span class="tag" style="font-size:10px;color:var(--green);background:transparent;border-color:var(--green)" title="Admins always manage custom fields">always</span>'
+          : `<label class="toggle"><input type="checkbox" ${cf?'checked':''} data-change-action="roles.toggleCustomFields" data-role="${window.escAttr(r)}"><span class="toggle-slider"></span></label>`}</td>`
+      : `<td style="text-align:center;color:${cf?'var(--green)':'var(--ink4)'};font-weight:500">${cf?'✓':'—'}</td>`;
+    const actions = admin ? `<td style="text-align:right;white-space:nowrap">${isAdminRole ? '<span style="font-size:11px;color:var(--ink3)">protected</span>' : `<button class="btn btn-sm btn-danger" data-action="roles.deleteRole" data-role="${window.escAttr(r)}">Delete</button>`}</td>` : '';
     return `<tr>
       <td class="bold"><span class="link" data-action="roles.openAgents" data-role="${window.escAttr(r)}">${r}</span></td>
       <td style="text-align:center"><span class="link" data-action="roles.openAgents" data-role="${window.escAttr(r)}">${count}</span></td>
+      ${cfCell}
       ${actions}
     </tr>`;
   }).join('');
@@ -55,11 +65,12 @@ export function renderRoles() {
       <div class="page-scroll">
         <div class="card">
           <div class="card-title">Roles</div>
-          <div style="font-size:12px;color:var(--ink3);margin-bottom:12px">Click a role name or agent count to see who's in that role. The Admin role has full access; every other role is non-admin.</div>
+          <div style="font-size:12px;color:var(--ink3);margin-bottom:12px">Click a role name or agent count to see who's in that role. The Admin role has full access; every other role is non-admin. "Manage custom fields" lets a role create and remove custom-field definitions (all agents can fill in values regardless).</div>
           <table class="tbl">
             <thead><tr>
               <th style="text-align:left">Role</th>
               <th style="text-align:center">Agents</th>
+              <th style="text-align:center">Manage custom fields</th>
               ${admin?'<th></th>':''}
             </tr></thead>
             <tbody>${rows}</tbody>
@@ -278,10 +289,28 @@ function addRolePrompt() {
       try { resp = await apiPost('/api/v1/roles', { name }); }
       catch (err) { alert(`Couldn't create role: ${err?.message || err}`); return; }
       setRoleUuid(resp.role.name, resp.role.id);
+      setRoleCanManageCF(resp.role.name, resp.role.can_manage_custom_fields);
     }
     ROLES.push(name);
     closeModal(); renderPage('roles');
   }, 'Create');
+}
+
+// Toggle a role's custom-field-management capability. Admin-only; the Admin
+// role itself is locked on (admins always manage). Optimistic with rollback.
+async function toggleRoleCustomFields(role, val) {
+  if (!window.isAdmin() || role === 'Admin') return;
+  const prev = getRoleCanManageCF(role);
+  setRoleCanManageCF(role, val);
+  const uuid = getRoleUuid(role);
+  if (uuid) {
+    try { await apiPatch(`/api/v1/roles/${uuid}`, { can_manage_custom_fields: val }); }
+    catch (err) {
+      setRoleCanManageCF(role, prev);
+      alert(`Couldn't update: ${err?.message || err}`);
+      renderPage('roles');
+    }
+  }
 }
 
 function deleteRolePrompt(role) {
@@ -317,5 +346,6 @@ registerActions({
 });
 
 registerChangeActions({
+  'roles.toggleCustomFields':  (ds, el) => toggleRoleCustomFields(ds.role, el.checked),
   'roles.reassign':            (ds, el) => reassignAgent(ds.name, el.value),
 });

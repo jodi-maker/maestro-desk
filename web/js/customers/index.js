@@ -598,14 +598,14 @@ function renderCustomerDetail(custId) {
   const customFields = CUSTOM_FIELDS.map(cf => {
     const val = c.custom?.[cf.id] ?? '';
     const inputType = cf.type === 'number' ? 'number' : cf.type === 'date' ? 'date' : 'text';
+    // Filling in / editing values is open to all agents — only creating and
+    // removing the field definitions is gated (see the Roles page).
     return `
       <div class="form-row">
         <label class="form-label">${cf.label}</label>
-        ${admin
-          ? `<input class="form-input" type="${inputType}" value="${String(val).replace(/"/g,'&quot;')}" data-input-action="cust.updateField" data-cust-id="${window.escAttr(c.id)}" data-field-id="${window.escAttr(cf.id)}"/>`
-          : `<div style="font-size:13px;color:var(--ink);padding:9px 12px;background:var(--off2);border:1px solid var(--rule);border-radius:var(--r);min-height:36px;display:flex;align-items:center">${val || '<span style="color:var(--ink3)">—</span>'}</div>`}
+        <input class="form-input" type="${inputType}" value="${String(val).replace(/"/g,'&quot;')}" data-input-action="cust.updateField" data-cust-id="${window.escAttr(c.id)}" data-field-id="${window.escAttr(cf.id)}"/>
       </div>`;
-  }).join('') || '<div style="color:var(--ink3);font-size:12px;padding:8px 0">No custom fields defined. Admins can add them via Manage Fields on the list view.</div>';
+  }).join('') || '<div style="color:var(--ink3);font-size:12px;padding:8px 0">No custom fields defined. They can be added from the Custom Fields page (Senior Agent and above).</div>';
 
   const riskPanel = risks.length ? `
     <div class="card" style="margin-bottom:16px;border-color:rgba(248,113,113,0.3);background:rgba(248,113,113,0.04)">

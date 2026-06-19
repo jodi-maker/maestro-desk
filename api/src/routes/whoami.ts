@@ -35,10 +35,10 @@ whoami.get('/', async (c) => {
   const rows = await sql<{
     role_id: string | null; ws_id: string; ws_name: string; slug: string;
     logo_url: string | null; primary_color: string | null; suspended_at: string | null;
-    role_name: string | null; is_admin: boolean | null;
+    role_name: string | null; is_admin: boolean | null; can_manage_custom_fields: boolean | null;
   }[]>`
     select wm.role_id, w.id as ws_id, w.name as ws_name, w.slug, w.logo_url, w.primary_color,
-           w.suspended_at, r.name as role_name, r.is_admin
+           w.suspended_at, r.name as role_name, r.is_admin, r.can_manage_custom_fields
     from workspace_members wm
     join workspaces w on w.id = wm.workspace_id
     left join roles r on r.id = wm.role_id
@@ -56,6 +56,9 @@ whoami.get('/', async (c) => {
     role_id:                 m.role_id,
     role_name:               m.role_name || null,
     is_admin:                Boolean(m.is_admin),
+    // Admins implicitly manage custom fields; the flag covers non-admin
+    // "senior" roles. The frontend gates the manage-fields UI on this.
+    can_manage_custom_fields: Boolean(m.is_admin) || Boolean(m.can_manage_custom_fields),
   }));
 
   return c.json({ user, memberships: shaped });

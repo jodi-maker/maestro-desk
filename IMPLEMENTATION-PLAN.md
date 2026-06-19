@@ -76,7 +76,7 @@ Effort: M–L total. Depends on: P0. Do before P2.*
 | Delete workflow engine + route + UI (`lib/workflow-engine.ts`, `routes/workflows.ts`, `web/js/workflows/`) | P3-rm | `chore/remove-workflow-engine` | M |
 | Collapse roles/permissions grid to the `is_admin` flag (drop `role_permissions` reads, `routes/permissions.ts`, `web/js/roles` matrix) | P3-rm | `chore/collapse-permissions` | M |
 | Defer/remove Stripe + Shopify *player* integrations (`lib/stripe-client.ts`, `lib/shopify-client.ts`, `routes/integrations.ts` paths) | P3-rm | `chore/remove-player-commerce-integrations` | M |
-| Defer custom-fields trio (feature-flag off, or remove) | P3-rm | `chore/defer-custom-fields` | M |
+| ~~Defer custom-fields trio~~ — **KEPT** (owner decision). Instead role-gated: create/remove field definitions = Senior Agent and above; value editing = all agents | — | `feat/custom-field-management-roles` | M |
 | Trim CSAT reminder cadence → single send; remove sentiment auto-priority-bump (keep scoring) | P3-rm | `chore/trim-csat-and-sentiment-bump` | S |
 | Housekeeping: strip stale Supabase section from `CLAUDE.md`; delete legacy `supabase/` dir once ported | P3-house | `chore/docs-supabase-cleanup` | S |
 

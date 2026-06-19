@@ -5,7 +5,7 @@
 // The "Manage custom fields" mini-modal is also owned here — it's invoked
 // from the customer table's column panel via showManageFieldsModal().
 //
-// External reaches (interim, via window): isAdmin, escAttr, escHtml — all
+// External reaches (interim, via window): canManageCustomFields, escAttr, escHtml — all
 // still in app.js.
 //
 // Inline on*= handlers were migrated to data-action delegation (see the
@@ -47,7 +47,7 @@ const CF_TYPES = [
 ];
 
 export function renderCustomFields() {
-  const admin = window.isAdmin();
+  const canManage = window.canManageCustomFields();
   let list = [...CUSTOM_FIELDS];
   if (CF_FILTER_ENTITY !== 'all') list = list.filter(f => (f.entity || 'customer') === CF_FILTER_ENTITY);
   const total = CUSTOM_FIELDS.length;
@@ -64,7 +64,7 @@ export function renderCustomFields() {
       <td><span class="tag tag-neutral" style="font-size:10px;text-transform:capitalize">${entity}</span></td>
       <td style="font-size:12px;color:var(--ink2);font-family:'DM Mono',monospace">${def !== '' ? window.escHtml(String(def)) : '—'}</td>
       <td style="text-align:center">${f.required ? '<span class="tag tag-gdpr" style="font-size:10px">required</span>' : '<span style="color:var(--ink4);font-size:11px">—</span>'}</td>
-      ${admin ? `<td style="text-align:right;white-space:nowrap">
+      ${canManage ? `<td style="text-align:right;white-space:nowrap">
         <button class="btn btn-sm" data-action="cf.edit" data-id="${window.escAttr(f.id)}">Edit</button>
         <button class="btn btn-sm btn-danger" data-action="cf.delete" data-id="${window.escAttr(f.id)}">Delete</button>
       </td>` : ''}
@@ -75,7 +75,7 @@ export function renderCustomFields() {
     <div class="page">
       <div class="topbar">
         <div class="tb-title">Custom Fields</div>
-        ${admin ? `<button class="btn btn-solid btn-sm" data-action="cf.new">+ New Field</button>` : `<span style="font-size:11px;color:var(--ink3);font-style:italic">Read-only</span>`}
+        ${canManage ? `<button class="btn btn-solid btn-sm" data-action="cf.new">+ New Field</button>` : `<span style="font-size:11px;color:var(--ink3);font-style:italic">Read-only</span>`}
       </div>
       <div class="kpi-bar">
         <div class="kpi"><div class="kpi-n">${total}</div><div class="kpi-l">Fields</div></div>
@@ -94,7 +94,7 @@ export function renderCustomFields() {
       </div>
       <div class="page-scroll">
         <table class="tbl">
-          <thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Entity</th><th>Default</th><th style="text-align:center">Required</th>${admin?'<th style="text-align:right">Actions</th>':''}</tr></thead>
+          <thead><tr><th>ID</th><th>Label</th><th>Type</th><th>Entity</th><th>Default</th><th style="text-align:center">Required</th>${canManage?'<th style="text-align:right">Actions</th>':''}</tr></thead>
           <tbody>${rows}</tbody>
         </table>
         ${list.length===0 ? `<div class="empty-state"><div class="empty-line"></div><div class="empty-txt">No custom fields defined</div><div class="empty-line"></div></div>` : ''}
@@ -157,7 +157,7 @@ function cfNextId() {
 }
 
 function cfNew() {
-  if (!window.isAdmin()) return;
+  if (!window.canManageCustomFields()) return;
   showModal('New custom field', cfFormBody(null), async () => {
     const data = cfReadForm();
     if (!data.label) return;
@@ -184,7 +184,7 @@ function cfNew() {
 }
 
 function cfEdit(id) {
-  if (!window.isAdmin()) return;
+  if (!window.canManageCustomFields()) return;
   const f = CUSTOM_FIELDS.find(x => x.id === id); if (!f) return;
   showModal(`Edit ${f.id}`, cfFormBody(f), async () => {
     const data = cfReadForm();
@@ -214,7 +214,7 @@ function cfEdit(id) {
 }
 
 function cfDelete(id) {
-  if (!window.isAdmin()) return;
+  if (!window.canManageCustomFields()) return;
   const f = CUSTOM_FIELDS.find(x => x.id === id); if (!f) return;
   showModal('Delete custom field', `<div style="font-size:13px;color:var(--ink2);line-height:1.6">Permanently delete <strong style="color:var(--ink)">${window.escHtml(f.label)}</strong>? Existing values stored on customer / ticket records will become orphaned (not deleted).</div>`, async () => {
     if (f._uuid) {

@@ -35,8 +35,8 @@ import { stopPresence } from './core/presence.js';
 import { startListSync, stopListSync } from './tickets/list-sync.js';
 import { startRealtime, stopRealtime } from './core/realtime.js';
 
-function login(role, name, initials, userId = null) {
-  setSession({ role, name, initials, userId });
+function login(role, name, initials, userId = null, canManageCustomFields = false) {
+  setSession({ role, name, initials, userId, canManageCustomFields });
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   document.getElementById('sb-av').textContent = initials;
@@ -194,6 +194,11 @@ function escHtml(s) {
 // (auth/platform-admin.js); without this branch the invite/edit controls hide
 // for platform admins even though the server would accept the call.
 function isAdmin() { return SESSION?.role === 'Admin' || SESSION?.role === 'Platform Admin'; }
+// "Senior Agent and above" — admins always qualify; other roles qualify when
+// their can_manage_custom_fields flag is set (carried in SESSION from whoami).
+// Gates create/remove of custom-field DEFINITIONS; editing field values is
+// open to all agents and is not gated by this.
+function canManageCustomFields() { return isAdmin() || SESSION?.canManageCustomFields === true; }
 function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
 
 // ─── Window bridge ─────────────────────────────────────────────────────────────
@@ -215,7 +220,7 @@ function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
 Object.assign(
   window,
   { login, logout, applyWorkspaceBrand, resetWorkspaceBrand,
-    fmtMinutes, escHtml, escAttr, isAdmin,
+    fmtMinutes, escHtml, escAttr, isAdmin, canManageCustomFields,
     // notifications reaches this via window to avoid a settings↔notifications cycle
     setSettingsTab },
 );

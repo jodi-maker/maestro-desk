@@ -1,9 +1,14 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
+import { requireCustomFieldManager } from '../lib/authz.js';
 import { getDb } from '../lib/db.js';
 
 // Migration to Neon — Step 3. Member-level, workspace-scoped CRUD via getDb().
+// Reading fields is open to any member; creating / editing / deleting field
+// DEFINITIONS requires can_manage_custom_fields ("Senior Agent and above" —
+// see requireCustomFieldManager). Editing field VALUES lives in custom-values
+// and stays open to all members.
 export const customFields = new Hono();
 
 customFields.use('*', requireAuth);
@@ -49,6 +54,8 @@ customFields.get('/', async (c) => {
 });
 
 customFields.post('/', async (c) => {
+  const denied = await requireCustomFieldManager(c);
+  if (denied) return denied;
   const sql = getDb();
   const workspaceId = c.get('workspaceId');
 
@@ -98,6 +105,8 @@ const PatchField = z.object({
 }).strict();
 
 customFields.patch('/:id', async (c) => {
+  const denied = await requireCustomFieldManager(c);
+  if (denied) return denied;
   const sql = getDb();
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');
@@ -121,6 +130,8 @@ customFields.patch('/:id', async (c) => {
 });
 
 customFields.delete('/:id', async (c) => {
+  const denied = await requireCustomFieldManager(c);
+  if (denied) return denied;
   const sql = getDb();
   const workspaceId = c.get('workspaceId');
   const id = c.req.param('id');

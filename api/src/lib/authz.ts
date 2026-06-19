@@ -43,3 +43,32 @@ export async function requireWorkspaceAdmin(c: Context): Promise<Response | null
   if (row?.ws_admin || row?.platform_admin) return null;
   return c.json({ error: 'Admin permission required' }, 403);
 }
+
+// Allows the request only if the caller may manage custom-field DEFINITIONS
+// (create / edit / delete fields) in the active workspace: a workspace admin,
+// a platform admin, OR a member whose role carries can_manage_custom_fields
+// ("Senior Agent and above"). Filling in / editing field VALUES is open to any
+// member and is NOT gated by this helper.
+export async function requireCustomFieldManager(c: Context): Promise<Response | null> {
+  const sql = getDb();
+  const userId = c.get('userId');
+  const workspaceId = c.get('workspaceId');
+
+  const [row] = await sql<{ can_manage: boolean; platform_admin: boolean }[]>`
+    select
+      coalesce((
+        select bool_or(coalesce(r.is_admin, false) or coalesce(r.can_manage_custom_fields, false))
+        from workspace_members wm
+        join roles r on r.id = wm.role_id
+        where wm.user_id = ${userId}
+          and wm.workspace_id = ${workspaceId}
+          and wm.active = true
+      ), false) as can_manage,
+      coalesce((
+        select u.is_platform_admin from users u where u.id = ${userId}
+      ), false) as platform_admin
+  `;
+
+  if (row?.can_manage || row?.platform_admin) return null;
+  return c.json({ error: 'You do not have permission to manage custom fields' }, 403);
+}

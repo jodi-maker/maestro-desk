@@ -417,12 +417,16 @@ export async function loadWorkspaceData() {
   replaceInPlace(CUSTOM_FIELDS, mappedCf);
 
   // ─── ROLES ─────────────────────────────────────────────────────────────
-  // ROLES is the set of role names. Authorization is the binary is_admin
-  // flag enforced server-side, so there's no per-permission grid to rebuild.
-  // The per-role UUID lookup goes into the module-scope _roleUuidByName map
-  // so the roles module can address rows by UUID on mutation.
+  // ROLES is the set of role names. Core authorization is the binary is_admin
+  // flag (server-enforced); the one finer capability is can_manage_custom_fields
+  // ("Senior Agent and above"). Both per-role lookups live in module-scope maps
+  // keyed by name so the roles module can address/mutate rows.
   _roleUuidByName = {};
-  for (const r of rolesRaw) _roleUuidByName[r.name] = r.id;
+  _roleCanManageCFByName = {};
+  for (const r of rolesRaw) {
+    _roleUuidByName[r.name] = r.id;
+    _roleCanManageCFByName[r.name] = Boolean(r.is_admin) || Boolean(r.can_manage_custom_fields);
+  }
   replaceInPlace(ROLES, rolesRaw.map((r) => r.name));
 
   // ─── ASSIGN_RULES ──────────────────────────────────────────────────────
@@ -456,13 +460,23 @@ export async function loadWorkspaceData() {
 let _roleUuidByName = {};
 export function getRoleUuid(name) { return _roleUuidByName[name] || null; }
 export function setRoleUuid(name, uuid) { _roleUuidByName[name] = uuid; }
-export function clearRoleUuid(name) { delete _roleUuidByName[name]; }
+export function clearRoleUuid(name) { delete _roleUuidByName[name]; delete _roleCanManageCFByName[name]; }
 export function renameRoleUuid(oldName, newName) {
   if (_roleUuidByName[oldName]) {
     _roleUuidByName[newName] = _roleUuidByName[oldName];
     delete _roleUuidByName[oldName];
   }
+  if (oldName in _roleCanManageCFByName) {
+    _roleCanManageCFByName[newName] = _roleCanManageCFByName[oldName];
+    delete _roleCanManageCFByName[oldName];
+  }
 }
+
+// Per-role can_manage_custom_fields, keyed by role name. Mirrors the uuid map
+// above so the roles UI can render + toggle the capability without a refetch.
+let _roleCanManageCFByName = {};
+export function getRoleCanManageCF(name) { return Boolean(_roleCanManageCFByName[name]); }
+export function setRoleCanManageCF(name, val) { _roleCanManageCFByName[name] = Boolean(val); }
 
 // Server → client: turn agent_user_id / team_user_ids back into names.
 function assignmentServerToClient(srv, userByUuid) {

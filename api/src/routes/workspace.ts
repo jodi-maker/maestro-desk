@@ -16,7 +16,7 @@ workspace.use('*', requireAuth);
 const SETTINGS_COLS = `id, name, slug, logo_url, primary_color,
   portal_tagline, portal_intro, portal_footer,
   portal_custom_domain, portal_custom_domain_token, portal_custom_domain_verified,
-  ai_player_enrichment`;
+  ai_player_enrichment, retention_days`;
 
 // ─── GET /settings ──────────────────────────────────────────────────────
 workspace.get('/settings', async (c) => {
@@ -37,6 +37,9 @@ const SettingsBody = z.object({
   // Opt-in to sending live player account data (balance/KYC/VIP/country) to the
   // LLM during triage. Default is false (data-minimising). AML is always excluded.
   ai_player_enrichment: z.boolean().optional(),
+  // Data-retention window in days: resolved tickets older than this are purged.
+  // Min 30 (foot-gun guard), max 100y; null disables automatic purge (legal hold).
+  retention_days: z.number().int().min(30).max(36500).nullable().optional(),
 }).strict();
 
 // ─── POST /branding/logo — admin; Cloudflare R2 upload (Step 4) ───────────

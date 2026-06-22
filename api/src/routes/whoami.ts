@@ -35,10 +35,11 @@ whoami.get('/', async (c) => {
   const rows = await sql<{
     role_id: string | null; ws_id: string; ws_name: string; slug: string;
     logo_url: string | null; primary_color: string | null; suspended_at: string | null;
+    maestro_brand_id: string | null;
     role_name: string | null; is_admin: boolean | null; can_manage_custom_fields: boolean | null;
   }[]>`
     select wm.role_id, w.id as ws_id, w.name as ws_name, w.slug, w.logo_url, w.primary_color,
-           w.suspended_at, r.name as role_name, r.is_admin, r.can_manage_custom_fields
+           w.suspended_at, w.maestro_brand_id, r.name as role_name, r.is_admin, r.can_manage_custom_fields
     from workspace_members wm
     join workspaces w on w.id = wm.workspace_id
     left join roles r on r.id = wm.role_id
@@ -53,6 +54,11 @@ whoami.get('/', async (c) => {
     workspace_logo_url:      m.logo_url || null,
     workspace_primary_color: m.primary_color || null,
     suspended:               Boolean(m.suspended_at),
+    // Maestro brand context (X-Brand-Id) for brand-scoped features like player
+    // lookup. Null for non-Maestro workspaces (e.g. the internal desk). The
+    // in-session workspace switcher stamps this exactly as the Maestro sign-in
+    // and god "enter brand" flows do.
+    maestro_brand_id:        m.maestro_brand_id || null,
     role_id:                 m.role_id,
     role_name:               m.role_name || null,
     is_admin:                Boolean(m.is_admin),

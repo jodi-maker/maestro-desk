@@ -5,6 +5,20 @@
 .sb-logo{padding:18px 18px 14px;border-bottom:1px solid var(--rule)}
 .sb-word{font-family:'Inter',sans-serif;font-size:18px;font-weight:600;letter-spacing:-.025em;color:var(--ink)}
 .sb-sub{font-family:'Inter',sans-serif;font-size:12px;font-weight:400;color:var(--ink3);margin-top:3px}
+/* In-session workspace switcher: the brand block becomes a trigger when the
+   agent has 2+ memberships (workspace-switcher/index.js wires this in). */
+.sb-logo.switchable{position:relative;cursor:pointer;transition:background .1s}
+.sb-logo.switchable:hover{background:rgba(139,92,246,0.06)}
+.sb-logo.switchable:focus-visible{outline:2px solid var(--purple);outline-offset:-2px}
+.sb-logo-caret{position:absolute;right:14px;top:18px;font-size:13px;line-height:1;color:var(--ink3);pointer-events:none}
+.ws-switch-backdrop{position:fixed;inset:0;z-index:200}
+.ws-switch-pop{position:fixed;width:248px;max-width:calc(100vw - 24px);background:var(--off);border:1px solid var(--rule2);border-radius:var(--r2);box-shadow:0 8px 24px rgba(0,0,0,.25);padding:8px;z-index:201}
+.ws-switch-head{font-family:'Inter',sans-serif;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:4px 8px 8px}
+.ws-switch-list{display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow-y:auto}
+.ws-switch-row.is-current{border-color:var(--rule3);background:rgba(139,92,246,0.06);cursor:default}
+.ws-switch-row.is-suspended{opacity:.5;cursor:not-allowed}
+.ws-switch-row.is-suspended:hover{border-color:var(--rule);background:var(--off);box-shadow:none}
+.ws-switch-check{color:var(--purple);font-weight:600;font-size:13px;flex-shrink:0}
 .sb-user{padding:10px 18px;border-bottom:1px solid var(--rule);display:flex;align-items:center;gap:8px}
 .sb-av{width:24px;height:24px;border-radius:50%;background:var(--ink);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--w);flex-shrink:0}
 .sb-uname{font-size:12px;font-weight:500;color:var(--ink)}

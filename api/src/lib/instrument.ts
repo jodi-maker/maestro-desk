@@ -53,5 +53,12 @@ export function captureException(err: unknown, context?: Record<string, unknown>
 // captureException must be sent first. Best-effort + bounded; no-op when off.
 export async function flushSentry(timeoutMs = 2000): Promise<void> {
   if (!sentryEnabled) return;
-  try { await Sentry.flush(timeoutMs); } catch { /* best-effort — never throw from logging */ }
+  try {
+    await Sentry.flush(timeoutMs);
+  } catch (err) {
+    // Best-effort — never throw from the logging path. But surface it: a
+    // persistent flush failure means events are being dropped (bad DSN /
+    // network), which is exactly the kind of misconfiguration worth seeing.
+    console.warn('[sentry] flush failed:', err instanceof Error ? err.message : err);
+  }
 }

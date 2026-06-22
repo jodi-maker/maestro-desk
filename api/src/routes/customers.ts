@@ -7,6 +7,7 @@ import { workerFetch, workerMaestroConfigured, MaestroError, str } from '../lib/
 import { agentCanAccessBrand } from '../lib/maestro-workspace.js';
 import { requireWorkspaceAdmin } from '../lib/authz.js';
 import { eraseCustomer } from '../lib/gdpr-erasure.js';
+import { exportCustomer } from '../lib/gdpr-export.js';
 import { writeAudit } from '../middleware/platform-admin.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -106,6 +107,44 @@ customers.get('/', async (c) => {
     order by display_id asc
   `;
   return c.json({ customers: rows });
+});
+
+// GET /:id/export — GDPR right-of-access / portability (Art. 15 / 20). Admin-only;
+// returns the customer's full personal-data bundle as a downloadable JSON file.
+customers.get('/:id/export', async (c) => {
+  const denied = await requireWorkspaceAdmin(c);
+  if (denied) return denied;
+
+  const workspaceId = c.get('workspaceId');
+  const userId = c.get('userId');
+  const customerId = c.req.param('id');
+  if (!UUID_RE.test(customerId)) return c.json({ error: 'Customer not found' }, 404);
+
+  const bundle = await exportCustomer({ workspaceId, customerId });
+  if (!bundle) return c.json({ error: 'Customer not found' }, 404);
+
+  // Already erased → there's no personal data left to hand out. Signal it
+  // distinctly instead of returning a mostly-null skeleton with 200.
+  if (bundle.erased) {
+    return c.json({ error: 'This customer\'s personal data has been erased', erased_at: bundle.customer.erased_at }, 410);
+  }
+
+  // Exporting everything we hold about a person is a sensitive read — log it.
+  await writeAudit({
+    workspaceId,
+    actorUserId: userId,
+    action: 'customer.exported',
+    targetType: 'customer',
+    targetId: customerId,
+    metadata: { tickets: bundle.tickets.length, notes: bundle.notes.length, inbox_messages: bundle.inbox_messages.length },
+  });
+
+  // Sanitise the filename — display_id is workspace-controlled, so strip
+  // anything outside a safe set before it lands in the header (no quote/CRLF
+  // breakout of the Content-Disposition value).
+  const safeId = String(bundle.customer.display_id ?? customerId).replace(/[^A-Za-z0-9._-]/g, '_');
+  c.header('Content-Disposition', `attachment; filename="customer-${safeId}-export.json"`);
+  return c.json(bundle);
 });
 
 // POST /:id/erase — GDPR right-to-erasure for a customer. Admin-only (the brand

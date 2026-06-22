@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { env } from '../lib/env.js';
 import { getDb } from '../lib/db.js';
 import { processPendingDeliveries } from '../lib/outgoing-webhooks.js';
+import { purgeExpiredTickets } from '../lib/retention.js';
 
 // Vercel Cron endpoints (Step 6). Vercel invokes these with a GET on the
 // schedule in vercel.json and sends `Authorization: Bearer ${CRON_SECRET}`;
@@ -39,4 +40,12 @@ cron.get('/webhook-retry', async (c) => {
   try { await getDb()`select prune_rate_limits()`; }
   catch (err) { console.warn('[cron] prune_rate_limits failed:', err instanceof Error ? err.message : err); }
   return c.json({ ok: true, processed });
+});
+
+// Data-retention purge — deletes resolved tickets (and cascaded children) past
+// each workspace's retention window. Idempotent: a re-run just deletes whatever
+// is now expired. Safe to run daily.
+cron.get('/retention', async (c) => {
+  const { purgedTickets } = await purgeExpiredTickets();
+  return c.json({ ok: true, purgedTickets });
 });

@@ -8,6 +8,12 @@ describe('summarizePlayerAccess', () => {
     expect(summarizePlayerAccess({ username: 'jane' }).playerId).toBeNull();
   });
 
+  it('uses the supplied fallback id when the record has no userId/memberId', () => {
+    expect(summarizePlayerAccess({ username: 'jane' }, 'jane@x.test').playerId).toBe('jane@x.test');
+    // a real id still wins over the fallback
+    expect(summarizePlayerAccess({ userId: 'u-1' }, 'jane@x.test').playerId).toBe('u-1');
+  });
+
   it('reports the sensitive categories present', () => {
     const a = summarizePlayerAccess({
       userId: 'u-1', balance: 120.5, balanceCy: 'EUR', kycStatus: 'verified',

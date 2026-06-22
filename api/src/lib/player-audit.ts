@@ -7,19 +7,30 @@
 
 import { str } from './maestro.js';
 
+// The exact category strings written to the audit trail. Exported so downstream
+// consumers (reporting, the append-only hardening, regulator tooling) share one
+// contract and typos can't drift in.
+export const PLAYER_ACCESS_CATEGORIES = ['balance', 'kyc', 'vip', 'contact'] as const;
+export type PlayerAccessCategory = (typeof PLAYER_ACCESS_CATEGORIES)[number];
+
 export interface PlayerAccessSummary {
   // Stable Maestro identifier for the viewed player (never their email).
   playerId: string | null;
   // Sensitive data categories present in the returned record.
-  accessed: string[];
+  accessed: PlayerAccessCategory[];
 }
 
 type Member = Record<string, unknown>;
 
-export function summarizePlayerAccess(member: Member): PlayerAccessSummary {
-  const playerId = str(member.userId) ?? str(member.memberId) ?? null;
+/**
+ * Summarise a player view for the audit trail. `fallbackId` (the identifier the
+ * agent actually looked up) is used when the gateway record carries neither
+ * userId nor memberId, so the audit row always names a subject.
+ */
+export function summarizePlayerAccess(member: Member, fallbackId?: string | null): PlayerAccessSummary {
+  const playerId = str(member.userId) ?? str(member.memberId) ?? (fallbackId != null ? String(fallbackId) : null);
 
-  const accessed: string[] = [];
+  const accessed: PlayerAccessCategory[] = [];
   if (str(member.balance) || str((member as { balanceCy?: unknown }).balanceCy)) accessed.push('balance');
   if (str(member.kycStatus) || str((member as { kyc?: unknown }).kyc)) accessed.push('kyc');
   if (str(member.vipLevel) || str((member as { vipTier?: unknown }).vipTier)) accessed.push('vip');

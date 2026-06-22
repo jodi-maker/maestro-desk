@@ -216,7 +216,12 @@ maestro.get('/players', requireAuthOnly, async (c) => {
     // Read-access audit: record WHO viewed WHICH player's sensitive data (the
     // "who looked at this account" trail regulators expect). Logs the stable
     // player id + the categories exposed (balance/kyc/…) — never the values.
-    const access = summarizePlayerAccess(member);
+    // Fall back to the looked-up value so the audit row always names a subject,
+    // even if the gateway record lacks userId/memberId.
+    const access = summarizePlayerAccess(member, Object.values(key)[0]);
+    // writeAudit swallows its own errors (logs, never throws) — a failed audit
+    // write can't abort the lookup; awaiting it just ensures the row is durably
+    // persisted before we respond (serverless can freeze after return).
     await writeAudit({
       workspaceId,
       actorUserId: userId,

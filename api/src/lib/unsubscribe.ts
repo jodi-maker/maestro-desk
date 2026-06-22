@@ -10,9 +10,14 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { env } from './env.js';
 
+// Domain-separation prefix: the message is namespaced so this HMAC can never
+// collide with any other use of BETTER_AUTH_SECRET. Bump the version if the
+// token contract changes.
+const PURPOSE = 'unsubscribe:v1';
+
 function sign(workspaceId: string, customerId: string): string {
   return createHmac('sha256', env.BETTER_AUTH_SECRET)
-    .update(`${workspaceId}:${customerId}`)
+    .update(`${PURPOSE}:${workspaceId}:${customerId}`)
     .digest('base64url');
 }
 

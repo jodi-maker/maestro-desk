@@ -566,29 +566,41 @@ publicRoutes.post('/:slug/csat/:token', async (c) => {
 // POST = RFC 8058 one-click (List-Unsubscribe-Post) → same effect, JSON reply.
 // The token is bound to the workspace, so a token for one brand can't
 // unsubscribe a customer in another. Always 200 on a valid token (idempotent).
-async function applyUnsubscribe(c: Context): Promise<{ name: string } | Response> {
+const HTML_ESCAPE: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+
+type UnsubResult = { ok: true; name: string } | { ok: false; res: Response };
+
+async function applyUnsubscribe(c: Context): Promise<UnsubResult> {
   const ws = await resolveWorkspace(c.req.param('slug') ?? '');
   const token = c.req.query('u') || '';
   const customerId = token ? verifyUnsubscribeToken(ws.id, token) : null;
-  if (!customerId) return c.json({ error: 'This unsubscribe link is invalid or has expired.' }, 400);
+  if (!customerId) return { ok: false, res: c.json({ error: 'This unsubscribe link is invalid or has expired.' }, 400) };
   const sql = getDb();
   await sql`
     update customers set consent = false
     where id = ${customerId} and workspace_id = ${ws.id}
   `;
-  return { name: ws.name };
+  return { ok: true, name: ws.name };
 }
 
 publicRoutes.post('/:slug/unsubscribe', async (c) => {
-  const res = await applyUnsubscribe(c);
-  if (res instanceof Response) return res;
+  // RFC 8058 one-click: the mail client POSTs `List-Unsubscribe=One-Click` as
+  // a form body. Require it so a bare cross-site/crawler POST can't trigger an
+  // unsubscribe off a guessed URL (the token is the real auth; this is defence
+  // in depth + RFC alignment).
+  const form: Record<string, unknown> = await c.req.parseBody().catch(() => ({}));
+  if (form['List-Unsubscribe'] !== 'One-Click') {
+    return c.json({ error: 'Expected List-Unsubscribe=One-Click' }, 400);
+  }
+  const r = await applyUnsubscribe(c);
+  if (!r.ok) return r.res;
   return c.json({ unsubscribed: true });
 });
 
 publicRoutes.get('/:slug/unsubscribe', async (c) => {
-  const res = await applyUnsubscribe(c);
-  if (res instanceof Response) return res;
-  const name = res.name.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
+  const r = await applyUnsubscribe(c);
+  if (!r.ok) return r.res;
+  const name = r.name.replace(/[&<>"]/g, (ch) => HTML_ESCAPE[ch] ?? ch);
   return c.html(
     `<!doctype html><meta charset="utf8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
     `<title>Unsubscribed</title>` +

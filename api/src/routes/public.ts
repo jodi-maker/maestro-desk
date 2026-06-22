@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import { HTTPException } from 'hono/http-exception';
 import { getDb } from '../lib/db.js';
@@ -8,6 +9,7 @@ import { suggestKbForQuestion } from '../lib/kb-suggest.js';
 import { createMagicLink, verifyMagicLink, customerForSession } from '../lib/portal-auth.js';
 import { sendEmail, PostmarkSendError } from '../lib/postmark-outbound.js';
 import { getOutboundFrom } from '../lib/outbound-from.js';
+import { verifyUnsubscribeToken } from '../lib/unsubscribe.js';
 import { env, isLocalDev } from '../lib/env.js';
 
 export const publicRoutes = new Hono();
@@ -556,4 +558,43 @@ publicRoutes.post('/:slug/csat/:token', async (c) => {
   `;
 
   return c.json({ ok: true });
+});
+
+// ─── Unsubscribe — honour an opt-out from a customer email ────────────────
+// Linked from outbound customer email (CSAT) via a stateless signed token.
+// GET = the human clicks the link → set consent=false + show a confirmation.
+// POST = RFC 8058 one-click (List-Unsubscribe-Post) → same effect, JSON reply.
+// The token is bound to the workspace, so a token for one brand can't
+// unsubscribe a customer in another. Always 200 on a valid token (idempotent).
+async function applyUnsubscribe(c: Context): Promise<{ name: string } | Response> {
+  const ws = await resolveWorkspace(c.req.param('slug') ?? '');
+  const token = c.req.query('u') || '';
+  const customerId = token ? verifyUnsubscribeToken(ws.id, token) : null;
+  if (!customerId) return c.json({ error: 'This unsubscribe link is invalid or has expired.' }, 400);
+  const sql = getDb();
+  await sql`
+    update customers set consent = false
+    where id = ${customerId} and workspace_id = ${ws.id}
+  `;
+  return { name: ws.name };
+}
+
+publicRoutes.post('/:slug/unsubscribe', async (c) => {
+  const res = await applyUnsubscribe(c);
+  if (res instanceof Response) return res;
+  return c.json({ unsubscribed: true });
+});
+
+publicRoutes.get('/:slug/unsubscribe', async (c) => {
+  const res = await applyUnsubscribe(c);
+  if (res instanceof Response) return res;
+  const name = res.name.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
+  return c.html(
+    `<!doctype html><meta charset="utf8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<title>Unsubscribed</title>` +
+    `<div style="font:16px/1.5 system-ui,sans-serif;max-width:460px;margin:80px auto;padding:0 24px;text-align:center;color:#1a1a2e">` +
+    `<h1 style="font-size:20px;margin:0 0 12px">You're unsubscribed</h1>` +
+    `<p style="color:#555">You won't receive further survey or notification emails from ${name}. ` +
+    `You'll still get replies to support tickets you contact us about.</p></div>`,
+  );
 });

@@ -124,7 +124,11 @@ function renderPopover() {
   pop.className = 'ws-switch-pop';
   // Absorber: clicks inside the panel but not on a row do nothing (don't close).
   pop.setAttribute('data-action', '');
-  pop.style.left = `${Math.round(rect.left + 8)}px`;
+  // Anchor under the brand block, but clamp the left edge so the panel never
+  // clips past the viewport on a narrow window (the CSS width is 248px).
+  const POP_W = 248;
+  const left = Math.max(8, Math.min(rect.left + 8, window.innerWidth - POP_W - 12));
+  pop.style.left = `${Math.round(left)}px`;
   pop.style.top  = `${Math.round(rect.bottom + 4)}px`;
 
   pop.innerHTML = `

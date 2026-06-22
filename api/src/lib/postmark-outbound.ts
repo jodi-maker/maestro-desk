@@ -28,6 +28,9 @@ export interface SendEmailArgs {
   // Address to set as Reply-To. Used to route customer replies back through
   // the Postmark inbound webhook instead of straight to the From mailbox.
   replyTo?: string | null;
+  // Extra RFC headers to append (e.g. List-Unsubscribe / List-Unsubscribe-Post).
+  // Reserved headers (Reply-To) must use the dedicated field, not this.
+  extraHeaders?: Array<{ Name: string; Value: string }>;
 }
 
 export interface SendEmailResult {
@@ -82,6 +85,9 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
     const msgId = args.inReplyTo.startsWith('<') ? args.inReplyTo : `<${args.inReplyTo}>`;
     headers.push({ Name: 'In-Reply-To', Value: msgId });
     headers.push({ Name: 'References', Value: msgId });
+  }
+  if (args.extraHeaders) {
+    for (const h of args.extraHeaders) headers.push(h);
   }
   // Reply-To is a reserved header in Postmark's Email API: passing it inside
   // the Headers array is rejected with HTTP 422 "Header 'Reply-To' not

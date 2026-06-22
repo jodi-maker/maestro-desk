@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import { HTTPException } from 'hono/http-exception';
 import { getDb } from '../lib/db.js';
@@ -8,6 +9,7 @@ import { suggestKbForQuestion } from '../lib/kb-suggest.js';
 import { createMagicLink, verifyMagicLink, customerForSession } from '../lib/portal-auth.js';
 import { sendEmail, PostmarkSendError } from '../lib/postmark-outbound.js';
 import { getOutboundFrom } from '../lib/outbound-from.js';
+import { verifyUnsubscribeToken } from '../lib/unsubscribe.js';
 import { env, isLocalDev } from '../lib/env.js';
 
 export const publicRoutes = new Hono();
@@ -556,4 +558,55 @@ publicRoutes.post('/:slug/csat/:token', async (c) => {
   `;
 
   return c.json({ ok: true });
+});
+
+// ─── Unsubscribe — honour an opt-out from a customer email ────────────────
+// Linked from outbound customer email (CSAT) via a stateless signed token.
+// GET = the human clicks the link → set consent=false + show a confirmation.
+// POST = RFC 8058 one-click (List-Unsubscribe-Post) → same effect, JSON reply.
+// The token is bound to the workspace, so a token for one brand can't
+// unsubscribe a customer in another. Always 200 on a valid token (idempotent).
+const HTML_ESCAPE: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+
+type UnsubResult = { ok: true; name: string } | { ok: false; res: Response };
+
+async function applyUnsubscribe(c: Context): Promise<UnsubResult> {
+  const ws = await resolveWorkspace(c.req.param('slug') ?? '');
+  const token = c.req.query('u') || '';
+  const customerId = token ? verifyUnsubscribeToken(ws.id, token) : null;
+  if (!customerId) return { ok: false, res: c.json({ error: 'This unsubscribe link is invalid or has expired.' }, 400) };
+  const sql = getDb();
+  await sql`
+    update customers set consent = false
+    where id = ${customerId} and workspace_id = ${ws.id}
+  `;
+  return { ok: true, name: ws.name };
+}
+
+publicRoutes.post('/:slug/unsubscribe', async (c) => {
+  // RFC 8058 one-click: the mail client POSTs `List-Unsubscribe=One-Click` as
+  // a form body. Require it so a bare cross-site/crawler POST can't trigger an
+  // unsubscribe off a guessed URL (the token is the real auth; this is defence
+  // in depth + RFC alignment).
+  const form: Record<string, unknown> = await c.req.parseBody().catch(() => ({}));
+  if (form['List-Unsubscribe'] !== 'One-Click') {
+    return c.json({ error: 'Expected List-Unsubscribe=One-Click' }, 400);
+  }
+  const r = await applyUnsubscribe(c);
+  if (!r.ok) return r.res;
+  return c.json({ unsubscribed: true });
+});
+
+publicRoutes.get('/:slug/unsubscribe', async (c) => {
+  const r = await applyUnsubscribe(c);
+  if (!r.ok) return r.res;
+  const name = r.name.replace(/[&<>"]/g, (ch) => HTML_ESCAPE[ch] ?? ch);
+  return c.html(
+    `<!doctype html><meta charset="utf8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<title>Unsubscribed</title>` +
+    `<div style="font:16px/1.5 system-ui,sans-serif;max-width:460px;margin:80px auto;padding:0 24px;text-align:center;color:#1a1a2e">` +
+    `<h1 style="font-size:20px;margin:0 0 12px">You're unsubscribed</h1>` +
+    `<p style="color:#555">You won't receive further survey or notification emails from ${name}. ` +
+    `You'll still get replies to support tickets you contact us about.</p></div>`,
+  );
 });

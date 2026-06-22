@@ -16,6 +16,7 @@
 import { env } from './env.js';
 import { sendEmail, isPostmarkConfigured, PostmarkSendError } from './postmark-outbound.js';
 import { getOutboundFrom } from './outbound-from.js';
+import { makeUnsubscribeToken, unsubscribeUrl } from './unsubscribe.js';
 import { getDb } from './db.js';
 
 // Migration to Neon — Step 3 (tickets megabatch). DB via getDb().
@@ -23,7 +24,7 @@ import { getDb } from './db.js';
 
 export type CsatSurveyResult =
   | { sent: true;  token: string }
-  | { sent: false; reason: 'already_requested' | 'already_rated' | 'no_email' | 'postmark_not_configured' | 'no_from' | 'no_workspace' | 'send_failed'; detail?: string };
+  | { sent: false; reason: 'already_requested' | 'already_rated' | 'no_email' | 'no_consent' | 'email_suppressed' | 'postmark_not_configured' | 'no_from' | 'no_workspace' | 'send_failed'; detail?: string };
 
 export async function sendCsatSurvey(args: {
   workspaceId: string;
@@ -36,11 +37,13 @@ export async function sendCsatSurvey(args: {
 
   const [t] = await sql<{
     display_id: string; subject: string; csat_requested_at: string | null; csat_submitted_at: string | null;
-    csat_token: string | null; first_name: string | null; last_name: string | null; email: string | null;
+    csat_token: string | null; customer_id: string | null; first_name: string | null; last_name: string | null;
+    email: string | null; consent: boolean | null; email_bounce_state: string | null;
     ws_name: string; ws_slug: string;
   }[]>`
     select t.display_id, t.subject, t.csat_requested_at, t.csat_submitted_at, t.csat_token,
-           c.first_name, c.last_name, c.email, w.name as ws_name, w.slug as ws_slug
+           c.id as customer_id, c.first_name, c.last_name, c.email, c.consent, c.email_bounce_state,
+           w.name as ws_name, w.slug as ws_slug
     from tickets t
     left join customers c on c.id = t.customer_id
     join workspaces w on w.id = t.workspace_id
@@ -52,6 +55,14 @@ export async function sendCsatSurvey(args: {
   const customer = { first_name: t.first_name, last_name: t.last_name, email: t.email };
   const customerEmail = customer.email;
   if (!customerEmail) return { sent: false, reason: 'no_email' };
+  // Honour an explicit opt-out. consent is tri-state: false = unsubscribed
+  // (skip), true/null = no recorded objection to a service-quality email.
+  if (t.consent === false) return { sent: false, reason: 'no_consent' };
+  // Don't email addresses that hard-bounced or were marked as spam — sending
+  // again hurts sender reputation. Soft bounces are transient, so allowed.
+  if (t.email_bounce_state === 'hard' || t.email_bounce_state === 'spam') {
+    return { sent: false, reason: 'email_suppressed' };
+  }
   const workspaceName = t.ws_name || 'Support';
   const workspaceSlug = t.ws_slug;
   if (!workspaceSlug) return { sent: false, reason: 'no_workspace' };
@@ -76,6 +87,12 @@ export async function sendCsatSurvey(args: {
   const surveyUrl  = `${portalBase}?ws=${encodeURIComponent(workspaceSlug)}&csat=${encodeURIComponent(token)}`;
   const customerName = [customer.first_name, customer.last_name].filter(Boolean).join(' ') || 'there';
   const subject = `How did we do? · ${t.display_id}`;
+
+  // One-click unsubscribe (RFC 8058) when we can identify the customer. The
+  // link sets consent=false via the public endpoint; the headers let Gmail/
+  // Apple Mail render a native Unsubscribe control. Falls back to no link if
+  // the ticket somehow has no linked customer row.
+  const unsubUrl = t.customer_id ? unsubscribeUrl(workspaceSlug, makeUnsubscribeToken(workspaceId, t.customer_id)) : null;
   const textBody = [
     `Hi ${customerName},`,
     '',
@@ -85,6 +102,7 @@ export async function sendCsatSurvey(args: {
     '',
     `Thanks,`,
     workspaceName,
+    ...(unsubUrl ? ['', `Don't want these emails? Unsubscribe: ${unsubUrl}`] : []),
   ].join('\n');
 
   try {
@@ -95,6 +113,12 @@ export async function sendCsatSurvey(args: {
       fromEmail,
       fromName,
       replyTo: env.POSTMARK_INBOUND_REPLY_ADDRESS || null,
+      extraHeaders: unsubUrl
+        ? [
+            { Name: 'List-Unsubscribe', Value: `<${unsubUrl}>` },
+            { Name: 'List-Unsubscribe-Post', Value: 'List-Unsubscribe=One-Click' },
+          ]
+        : undefined,
     });
   } catch (err) {
     const detail = err instanceof PostmarkSendError

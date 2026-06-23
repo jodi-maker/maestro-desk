@@ -26,6 +26,7 @@ create table ops_alert_dedup (
 create function claim_ops_alert(p_signature text, p_cooldown_seconds int)
 returns table (should_send boolean, suppressed_since int)
 language plpgsql
+set search_path = pg_catalog, public
 as $$
 declare
   v_now            timestamptz := now();
@@ -55,6 +56,7 @@ $$;
 create function prune_ops_alerts()
 returns void
 language sql
+set search_path = pg_catalog, public
 as $$
   delete from ops_alert_dedup where last_sent < now() - interval '30 days';
 $$;

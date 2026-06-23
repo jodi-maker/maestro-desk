@@ -77,13 +77,14 @@ describe('cron endpoints — CRON_SECRET guard', () => {
     expect(await res.json()).toEqual({ ok: true, checked: 2, tamperedCount: 0, tampered: [] });
   });
 
-  it('surfaces tampered chains in the audit-verify response (200)', async () => {
+  it('surfaces tampered chains with ok:false in the audit-verify response (200)', async () => {
     const tampered = [{ workspaceId: 'ws-1', firstBadSeq: 5, firstBadId: 'row-5' }];
     auditResult = { checked: 3, tampered };
     const res = await cron.request('/audit-verify', {
       headers: { Authorization: `Bearer ${CRON_SECRET}` },
     });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, checked: 3, tamperedCount: 1, tampered });
+    expect(res.status).toBe(200); // the check ran successfully…
+    // …but ok:false signals the audit is unhealthy (tamper detected).
+    expect(await res.json()).toEqual({ ok: false, checked: 3, tamperedCount: 1, tampered });
   });
 });

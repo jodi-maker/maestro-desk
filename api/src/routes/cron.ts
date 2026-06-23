@@ -58,6 +58,9 @@ cron.get('/retention', async (c) => {
   // number of cron jobs, so rather than spend a slot, this compliance sweep
   // rides the existing daily compliance cron. Best-effort: a verify failure is
   // logged/alerted inside verifyAuditChains but must not fail the purge result.
+  // We embed only a COUNT here to keep the retention payload light; the
+  // standalone /audit-verify returns the full tampered array. The alert itself
+  // (Sentry, in verifyAuditChains) fires regardless of which caller ran it.
   let audit: { checked: number; tampered: number } | undefined;
   try {
     const { checked, tampered } = await verifyAuditChains();
@@ -76,7 +79,10 @@ cron.get('/retention', async (c) => {
 cron.get('/audit-verify', async (c) => {
   try {
     const { checked, tampered } = await verifyAuditChains();
-    return c.json({ ok: true, checked, tamperedCount: tampered.length, tampered });
+    // `ok` reflects audit HEALTH, not merely "the call ran": an operator or
+    // monitor can treat ok:false as "tamper detected" without parsing the
+    // array. A failure to RUN the check is a different signal — HTTP 500 below.
+    return c.json({ ok: tampered.length === 0, checked, tamperedCount: tampered.length, tampered });
   } catch (err) {
     console.error('[cron] audit-verify failed:', err instanceof Error ? err.message : err);
     return c.json({ ok: false, error: 'audit-verify failed' }, 500);

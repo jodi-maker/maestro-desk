@@ -45,11 +45,18 @@ alter table audit_events
 -- forge a colliding preimage. jsonb::text is normalized by Postgres, so
 -- recomputation is deterministic. search_path is pinned so resolution of the
 -- built-ins can't be hijacked.
+-- Every persisted, security-relevant column is in the preimage. actor_ip and
+-- actor_ua establish who acted from where, so they are protected by the chain
+-- too — otherwise an adversary could rewrite the origin of an action without
+-- breaking it. (actor_ip/actor_ua are NULL on the current insert paths but are
+-- covered so any future writer that populates them is automatically protected.)
 create or replace function audit_events_rowhash(
   p_prev        bytea,
   p_id          uuid,
   p_workspace   uuid,
   p_actor       uuid,
+  p_actor_ip    inet,
+  p_actor_ua    text,
   p_action      text,
   p_target_type text,
   p_target_id   uuid,
@@ -66,6 +73,10 @@ as $$
     (octet_length(p_workspace::text)::text   || ':' || p_workspace::text) || '|' ||
     (case when p_actor is null then 'N'
           else octet_length(p_actor::text)::text || ':' || p_actor::text end) || '|' ||
+    (case when p_actor_ip is null then 'N'
+          else octet_length(p_actor_ip::text)::text || ':' || p_actor_ip::text end) || '|' ||
+    (case when p_actor_ua is null then 'N'
+          else octet_length(p_actor_ua)::text || ':' || p_actor_ua end) || '|' ||
     (case when p_action is null then 'N'
           else octet_length(p_action)::text || ':' || p_action end) || '|' ||
     (case when p_target_type is null then 'N'
@@ -104,8 +115,8 @@ begin
       seq       = n,
       prev_hash = prev,
       row_hash  = audit_events_rowhash(prev, r.id, r.workspace_id, r.actor_user_id,
-                                       r.action, r.target_type, r.target_id,
-                                       r.metadata, r.created_at)
+                                       r.actor_ip, r.actor_ua, r.action, r.target_type,
+                                       r.target_id, r.metadata, r.created_at)
     where id = r.id
     returning row_hash into prev;
   end loop;
@@ -138,7 +149,8 @@ begin
   new.seq       := coalesce(last_seq, 0) + 1;  -- 1 for the first row in a chain
   new.prev_hash := prev;                       -- null = first row in this chain
   new.row_hash  := audit_events_rowhash(prev, new.id, new.workspace_id, new.actor_user_id,
-                                        new.action, new.target_type, new.target_id,
+                                        new.actor_ip, new.actor_ua, new.action,
+                                        new.target_type, new.target_id,
                                         new.metadata, new.created_at);
   return new;
 end$$;
@@ -215,8 +227,8 @@ begin
         bad_seq := expected_seq; bad_id := r.id;       -- a row is missing
       else
         expected := audit_events_rowhash(prev, r.id, r.workspace_id, r.actor_user_id,
-                                         r.action, r.target_type, r.target_id,
-                                         r.metadata, r.created_at);
+                                         r.actor_ip, r.actor_ua, r.action, r.target_type,
+                                         r.target_id, r.metadata, r.created_at);
         if r.prev_hash is distinct from prev or r.row_hash is distinct from expected then
           bad_seq := r.seq; bad_id := r.id;            -- a row was altered
         end if;

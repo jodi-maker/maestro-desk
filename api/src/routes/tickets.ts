@@ -8,6 +8,7 @@ import { dispatchTicketEvent } from '../lib/outgoing-webhooks.js';
 import { scoreMessageSentiment } from '../lib/sentiment.js';
 import { sendCsatSurvey } from '../lib/csat-survey.js';
 import { notifyMentionedAgents } from '../lib/mention-notify.js';
+import { sendAgentReplyEmail, type AgentReplyDelivery } from '../lib/agent-reply.js';
 import { publishTicketChanged } from '../lib/pubby.js';
 import { getDb } from '../lib/db.js';
 
@@ -330,7 +331,24 @@ tickets.post('/:id/messages', async (c) => {
     }).catch((err) => console.warn('[mention-notify] failed:', err instanceof Error ? err.message : err));
   }
 
-  return c.json({ message }, 201);
+  // Public agent replies are emailed to the customer (internal notes are not).
+  // Sent inline so the response carries the delivery outcome for the composer
+  // to surface; the message row above persists regardless of the email result.
+  // Any unexpected error degrades to a generic 'send_failed' — never a 500 —
+  // so a saved reply is never lost to a mail hiccup.
+  let delivery: AgentReplyDelivery | undefined;
+  if (input.role === 'agent') {
+    try {
+      delivery = await sendAgentReplyEmail({
+        workspaceId, ticketId, messageId: message.id, authorUserId: userId, body: input.body,
+      });
+    } catch (err) {
+      console.error('[agent-reply] send threw:', err instanceof Error ? err.message : err);
+      delivery = { emailed: false, reason: 'send_failed' };
+    }
+  }
+
+  return c.json({ message, delivery }, 201);
 });
 
 // ─── POST /:id/sentiment/backfill — score unscored customer messages ─────

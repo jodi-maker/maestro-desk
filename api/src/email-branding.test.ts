@@ -99,7 +99,7 @@ runDbTests('email branding (DB-backed)', () => {
       method: 'POST', body: JSON.stringify({ name: 'Brand A', footer_text: 'Acme Ltd', is_default: true }),
     });
     expect(ok.status).toBe(201);
-    const { template } = await ok.json();
+    const { template } = await ok.json() as any;
     expect(template.is_default).toBe(true);
   });
 
@@ -118,7 +118,7 @@ runDbTests('email branding (DB-backed)', () => {
 
   it('isolates templates by workspace', async () => {
     const res = await as(admin.token, ctx.wsB, '/api/v1/email-branding/templates');
-    const { templates } = await res.json();
+    const { templates } = await res.json() as any;
     expect(templates).toHaveLength(0);
   });
 

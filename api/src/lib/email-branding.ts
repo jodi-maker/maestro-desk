@@ -89,7 +89,11 @@ export async function composeEmail(args: ComposeArgs): Promise<ComposedEmail> {
     authorUserId ? getDefaultSignature(workspaceId, authorUserId) : Promise.resolve(null),
   ]);
 
-  const logoUrl = template?.show_logo ? (ws?.logo_url ?? null) : null;
+  // No workspace row (deleted mid-send, bad id) → nothing to brand; fall back
+  // to the plain-text path exactly as an unconfigured workspace would.
+  if (!ws) return { text: bodyText, html: null };
+
+  const logoUrl = template?.show_logo ? (ws.logo_url ?? null) : null;
   const headerText = template?.header_text?.trim() || null;
   const footerText = template?.footer_text?.trim() || null;
   const sigText    = signature?.body_text?.trim() || null;

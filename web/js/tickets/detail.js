@@ -48,6 +48,7 @@ import { showAttachPanel } from './attachments.js';
 import { fireWebhook, ticketPayload } from '../webhooks/index.js';
 import { loadTicketDetail } from '../core/bootstrap.js';
 import { apiPatch, apiPost, apiDelete } from '../core/api-client.js';
+import { showToast } from '../core/toast.js';
 import {
   KB_INTEGRATION, KB_TICKET_CACHE,
   refreshTicketKbSuggestions,
@@ -965,7 +966,7 @@ async function sendCompose(id) {
   // translatedTo) is purely client-side display state — not persisted
   // server-side yet, so it lives only on the local entry.
   if (t._uuid) {
-    let message;
+    let message, delivery;
     try {
       const res = await apiPost(`/api/v1/tickets/${t._uuid}/messages`, {
         role: isNote ? 'note' : 'agent',
@@ -973,10 +974,14 @@ async function sendCompose(id) {
         mentions: isNote ? (mentions || []).map((m) => m.userId).filter(Boolean) : undefined,
       });
       message = res.message;
+      delivery = res.delivery;
     } catch (err) {
       alert(`Couldn't send: ${err?.message || err}`);
       return false;
     }
+    // Public replies are emailed to the customer; surface the outcome. Internal
+    // notes have no delivery field, so this is silently skipped for them.
+    if (delivery) notifyReplyDelivery(delivery);
     t.msgs.push({
       from: message.author_label,
       r: message.role,
@@ -1003,6 +1008,21 @@ async function sendCompose(id) {
   onComposeInput(id);
   if (CURRENT_TICKET === id) openTicket(id);
   return true;
+}
+
+// Map the server's agent-reply delivery outcome to a transient toast. The
+// reply is always saved on the ticket; this only tells the agent whether the
+// customer also got it by email (and why not, when applicable).
+function notifyReplyDelivery(delivery) {
+  if (delivery.emailed) { showToast('✓ Emailed to the customer', 'success'); return; }
+  const msg = {
+    no_customer_email:       'Reply saved. Not emailed — no email address on file for this customer.',
+    email_suppressed:        'Reply saved. Not emailed — this address previously hard-bounced or was marked spam.',
+    postmark_not_configured: 'Reply saved. Outbound email isn’t configured, so it wasn’t sent.',
+    no_from:                 'Reply saved. Not emailed — no sender address is configured for this workspace.',
+    send_failed:             'Reply saved, but the email failed to send. Try again or reach the customer another way.',
+  }[delivery.reason] || 'Reply saved, but it wasn’t emailed.';
+  showToast(msg, delivery.reason === 'send_failed' ? 'error' : 'warn', 6000);
 }
 
 export function showNewTicketModal(templateId) {

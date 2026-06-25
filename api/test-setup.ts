@@ -20,6 +20,15 @@ process.env.POSTMARK_INBOUND_SECRET ||= 'inbound-secret-0123456789';
 // these must be present before the first load — same reason as above.
 process.env.POSTMARK_SERVER_TOKEN ||= 'test-server-token';
 process.env.POSTMARK_OUTBOUND_FROM ||= 'support@maestro.test';
+// push.test.ts needs Web Push to read as "configured" at env-parse time. A
+// real generated keypair so setVapidDetails() accepts it (the test stubs
+// webpush.sendNotification, so nothing leaves the process). Same parse-once
+// reason as the Postmark vars above.
+import webpush from 'web-push';
+const _vapid = webpush.generateVAPIDKeys();
+process.env.VAPID_PUBLIC_KEY  ||= _vapid.publicKey;
+process.env.VAPID_PRIVATE_KEY ||= _vapid.privateKey;
+process.env.VAPID_SUBJECT     ||= 'mailto:test@maestro.test';
 // cors.test.ts pins APP_BASE_URL to a prod-like origin to tell allow from deny.
 // It mock.module's env.js to do so, but mock.module is global and index.js gets
 // module-cached, so whether that mock "wins" depends on which file loads

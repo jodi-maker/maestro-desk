@@ -33,6 +33,7 @@ import { showModal, closeModal } from '../core/modal.js';
 import { COLLAPSED_SECTIONS, resetAllCollapsedSections } from '../core/collapsible.js';
 import { KB_INTEGRATION, KB_TICKET_CACHE, saveKbIntegration, fetchKbArticles } from '../kb-integration/index.js';
 import { settingsEmailBranding, settingsMySignature } from '../email-branding/index.js';
+import { settingsPushSection } from '../push/index.js';
 import { registerActions, registerChangeActions, registerInputActions } from '../core/event-delegation.js';
 
 // In-memory snapshots of the workspace's integrations, loaded lazily
@@ -535,7 +536,8 @@ function settingsNotifications() {
         </label>
       </div>
       <div id="mention-email-msg" style="font-size:11px;color:var(--ink3);font-family:'DM Mono',monospace;margin-top:8px;min-height:14px"></div>
-    </div>`;
+    </div>
+    ${settingsPushSection()}`;
 }
 
 async function setMentionEmailPref(enabled) {

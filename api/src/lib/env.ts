@@ -83,6 +83,14 @@ const Env = z.object({
   PUBBY_SECRET: z.string().default(''),
   PUBBY_WS_HOST: z.string().default(''),
   PUBBY_API_HOST: z.string().default(''),
+  // Web Push (VAPID) for offline-agent notifications. All optional: when the
+  // keypair is unset, lib/push.ts no-ops and the SPA hides the opt-in (same
+  // gating style as Pubby/Sentry). Generate with `npx web-push generate-vapid-keys`.
+  // VAPID_PUBLIC_KEY is exposed to the client via GET /push/config; the private
+  // key is server-only. VAPID_SUBJECT is a mailto: or https: contact URL.
+  VAPID_PUBLIC_KEY: z.string().default(''),
+  VAPID_PRIVATE_KEY: z.string().default(''),
+  VAPID_SUBJECT: z.string().default('mailto:ops@maestro-desk.com'),
   // Vercel Cron auth (Step 6). Vercel sends `Authorization: Bearer
   // ${CRON_SECRET}` when invoking the /api/v1/cron/* endpoints; they reject
   // anything else. Required on Vercel (generate with `openssl rand -base64

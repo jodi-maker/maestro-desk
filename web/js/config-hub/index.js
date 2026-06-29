@@ -100,7 +100,7 @@ export function renderConfigHub() {
     <div class="page">
       <div class="topbar">
         <div class="tb-title">Configuration</div>
-        <span style="font-size:11px;color:var(--ink3);font-style:italic">Everything that shapes how this workspace handles tickets, customers, and channels.</span>
+        <span class="confighub-subtitle">Everything that shapes how this workspace handles tickets, customers, and channels.</span>
       </div>
       <div class="page-scroll">${groups}</div>
     </div>`;

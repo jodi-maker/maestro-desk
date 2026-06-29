@@ -54,6 +54,9 @@ import { stopPresence } from './presence.js';
 
 export function nav(page, el) {
   document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  // The top-bar config cog manages its own active state (set in app.config);
+  // any sidebar/card navigation clears it so it doesn't stay visually pressed.
+  document.getElementById('cog-btn')?.classList.remove('active');
   if (el) el.classList.add('active');
   renderPage(page);
 }

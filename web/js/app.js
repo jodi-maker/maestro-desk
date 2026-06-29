@@ -237,9 +237,14 @@ Object.assign(
 // both only through these data-action handlers.
 registerActions({
   'app.nav':    (ds, el) => nav(ds.page, el),
-  // The top-bar settings cog opens the Configuration hub. Pass no element so
-  // nav() just clears sidebar highlight — the hub isn't a sidebar item.
-  'app.config': () => nav('config', null),
+  // The top-bar settings cog opens the Configuration hub. It isn't a sidebar
+  // item, so it manages its own active state: highlight the cog and clear the
+  // sidebar here; nav() clears the cog's active class on the next navigation.
+  'app.config': () => {
+    document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+    document.getElementById('cog-btn')?.classList.add('active');
+    renderPage('config');
+  },
   'app.logout': () => logout(),
 });
 

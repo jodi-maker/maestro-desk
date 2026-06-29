@@ -64,4 +64,6 @@ The database is **Neon Postgres**, accessed directly via `postgres.js` (`getDb()
 3. **Execute the approved plan.** If reality diverges mid-flight, stop, re-plan, and get approval again.
 4. **Validate the code before the PR.** Before `gh pr create`: run the CI gates above (build + bridge-collision + route smoke + detail smoke) **and** the import-completeness static audit (the smokes don't catch missing imports — see Gotchas), then run `/code-review` and resolve its findings. (On Jodi's machine a `PreToolUse` hook also forces this checkpoint.)
 
+> *Note: `EnterPlanMode` / `ExitPlanMode` / `PreToolUse` are Claude Code tooling references. The gates apply to any contributor regardless of tooling — for humans, "plan" = a written plan in the PR/issue and "validate the plan" = reviewer sign-off before implementation.*
+
 **Branching & review.** Feature branch per change (`feat/…`, `fix/…`), PR, then `/cem-pr-loop` (Octopus review) to a 4+/5 score before merge. When merging a stack, don't `--delete-branch` a PR that's still the base of another open PR (it auto-closes the child) — retarget children to `main` first.

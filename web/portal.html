@@ -241,6 +241,11 @@
       // Only this exact prod host points at the deployed API; PR previews
       // (hashed hostnames) still fall back to localhost so they never hit prod.
       window.MAESTRO_API_BASE = "https://maestro-desk-zjkl.vercel.app";
+    } else if (!window.MAESTRO_API_BASE && location.hostname === "maestro-desk-git-staging-jodi-1420s-projects.vercel.app") {
+      // STAGING (rehearsal env) — mirror of index.html. ⚠ CONFIRM these two
+      // hostnames against the real Vercel branch-deploy URLs for the `staging`
+      // branch and update if the slug differs / a custom staging alias is used.
+      window.MAESTRO_API_BASE = "https://maestro-desk-zjkl-git-staging-jodi-1420s-projects.vercel.app";
     }
     const API_BASE = (window.MAESTRO_API_BASE || 'http://localhost:3001');
     const params = new URLSearchParams(location.search);

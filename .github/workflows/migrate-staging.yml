@@ -1,0 +1,65 @@
+name: Migrate (Neon staging)
+
+# Applies pending Neon migrations to the STAGING branch database on every push
+# to the `staging` branch — the rehearsal twin of migrate.yml (which targets
+# prod on push to main).
+#
+# Why this exists: staging is a pre-prod rehearsal surface. Pushing a change to
+# `staging` deploys it to the Vercel staging environment AND applies its
+# migrations here to a Neon BRANCH database (a copy-on-write branch of prod),
+# so a bad or non-additive migration fails in staging instead of prod. Promote
+# to prod only after staging is green (feature → staging → main).
+#
+# Safety (identical to migrate.yml):
+#  - api/scripts/migrate.ts is idempotent (records applied files in
+#    schema_migrations and skips them) and runs each file in its own transaction.
+#  - Targets the STAGING DB only: DATABASE_URL is an environment secret on the
+#    `staging` GitHub Environment (the Neon staging-branch URL), restricted to
+#    the `staging` branch — prod's DATABASE_URL (the `production` environment) is
+#    never readable here.
+
+on:
+  push:
+    branches: [staging]
+    # Only run when something migration-related changed (matches migrate.yml).
+    paths:
+      - 'db/migrations/**'
+      - 'api/scripts/migrate.ts'
+      - '.github/workflows/migrate-staging.yml'
+  # Allow manual runs from the Actions tab.
+  workflow_dispatch:
+
+# Never run two staging migration passes at once, and never cancel one mid-flight.
+concurrency:
+  group: migrate-neon-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: apply pending migrations (staging)
+    runs-on: ubuntu-latest
+    # DATABASE_URL is an environment secret on `staging`, restricted to the
+    # `staging` branch — so a dispatch/push from any other branch cannot read it.
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        # Full repo checkout (default) so db/migrations/ at the repo root is
+        # present — the runner reads ../../db/migrations from api/scripts/.
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13" # match .github/workflows/ci.yml
+
+      - name: Install API deps
+        working-directory: api
+        run: bun install --frozen-lockfile
+
+      - name: Apply migrations to staging Neon
+        working-directory: api
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: bun run migrate

@@ -24,6 +24,15 @@
     // Only this exact prod SPA host points at the deployed API; PR previews
     // (hashed hostnames) still fall back to localhost so they never hit prod.
     window.MAESTRO_API_BASE = "https://maestro-desk-zjkl.vercel.app";
+  } else if (location.hostname === "maestro-desk-git-staging-jodi-1420s-projects.vercel.app") {
+    // STAGING (rehearsal env): the `staging` git branch auto-deploys to this
+    // Vercel branch URL and must point at the STAGING API deploy (backed by the
+    // Neon staging-branch DB). ⚠ CONFIRM these two hostnames against the real
+    // Vercel branch-deploy URLs (SPA + API projects → Deployments → `staging`)
+    // and update if Vercel's slug differs or a custom staging alias is assigned.
+    // If wrong, staging falls back to localhost (login fails on STAGING ONLY —
+    // prod is unaffected).
+    window.MAESTRO_API_BASE = "https://maestro-desk-zjkl-git-staging-jodi-1420s-projects.vercel.app";
   }
 </script>
 </head>

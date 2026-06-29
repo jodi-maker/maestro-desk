@@ -44,6 +44,7 @@ import { renderSearchResults } from '../global-search/index.js';
 import { renderChannels } from '../channels/index.js';
 import { renderWebhooks } from '../webhooks/index.js';
 import { renderSettings } from '../settings/index.js';
+import { renderConfigHub } from '../config-hub/index.js';
 import { renderHelp } from '../help/index.js';
 import { renderNotificationsPage, refreshNotifBadge } from '../notifications/index.js';
 import { renderProfile } from '../profile/index.js';
@@ -97,6 +98,7 @@ export function renderPage(page) {
     channels:      renderChannels,
     webhooks:      renderWebhooks,
     settings:      renderSettings,
+    config:        renderConfigHub,
     help:          renderHelp,
     notifications: renderNotificationsPage,
     profile:       renderProfile,

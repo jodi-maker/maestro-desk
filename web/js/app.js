@@ -49,7 +49,10 @@ function login(role, name, initials, userId = null, canManageCustomFields = fals
   document.getElementById('pf-name-sm').textContent = name;
   document.getElementById('pf-name-lg').textContent = name;
   document.getElementById('pf-role-lg').textContent = role;
-  if (role === 'Read Only') document.getElementById('nav-roles').style.opacity = '.3';
+  // Roles now lives in the Configuration hub, not the sidebar; guard in case
+  // the legacy nav-roles item is absent.
+  const navRoles = document.getElementById('nav-roles');
+  if (navRoles && role === 'Read Only') navRoles.style.opacity = '.3';
   // Platform admins (God) always get the god nav — so they can switch between
   // the platform view and any workspace they've entered without signing out.
   if (isPlatformAdmin()) revealGodNav();
@@ -234,6 +237,9 @@ Object.assign(
 // both only through these data-action handlers.
 registerActions({
   'app.nav':    (ds, el) => nav(ds.page, el),
+  // The top-bar settings cog opens the Configuration hub. Pass no element so
+  // nav() just clears sidebar highlight — the hub isn't a sidebar item.
+  'app.config': () => nav('config', null),
   'app.logout': () => logout(),
 });
 

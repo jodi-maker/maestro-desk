@@ -27,6 +27,9 @@ runDbTests('tenant isolation (DB-backed)', () => {
   // customerId } for two fully separate tenants A and B.
   const A = { email: `iso-a-${RUN}@t.test`, slug: `iso-a-${RUN}` } as Record<string, string>;
   const B = { email: `iso-b-${RUN}@t.test`, slug: `iso-b-${RUN}` } as Record<string, string>;
+  // C is a NON-admin member of tenant A, used to prove role management is
+  // admin-gated (advisory GHSA-6qq2-v492-r8r6 — privilege escalation).
+  const C = { email: `iso-c-${RUN}@t.test` } as Record<string, string>;
 
   async function signUp(email: string): Promise<{ id: string; token: string }> {
     const { auth } = await import('./lib/auth.js');
@@ -82,6 +85,22 @@ runDbTests('tenant isolation (DB-backed)', () => {
     B.userId = ub.id; B.token = ub.token;
     await setupTenant(A);
     await setupTenant(B);
+
+    // Add C as an ACTIVE, NON-admin member of tenant A under a fresh
+    // is_admin=false role. This is the principal the role-management gate
+    // must reject.
+    const uc = await signUp(C.email);
+    C.userId = uc.id; C.token = uc.token;
+    const [memberRole] = await sql<{ id: string }[]>`
+      insert into roles (workspace_id, name, is_admin)
+      values (${A.wsId}, 'Member', false)
+      returning id
+    `;
+    C.memberRoleId = memberRole.id;
+    await sql`
+      insert into workspace_members (workspace_id, user_id, role_id, active)
+      values (${A.wsId}, ${C.userId}, ${memberRole.id}, true)
+    `;
   });
 
   afterAll(async () => {
@@ -91,7 +110,7 @@ runDbTests('tenant isolation (DB-backed)', () => {
     // and mask the real error. Cascades to members/tickets/customers/etc.
     const wsIds = [A.wsId, B.wsId].filter(Boolean);
     if (wsIds.length) await sql`delete from workspaces where id in ${sql(wsIds)}`;
-    const userIds = [A.userId, B.userId].filter(Boolean);
+    const userIds = [A.userId, B.userId, C.userId].filter(Boolean);
     if (userIds.length) await sql`delete from users where id in ${sql(userIds)}`;
     // NB: do NOT sql.end() — `sql` is the shared getDb() pool, so ending it
     // would break any DB-backed test file that runs after this one. The bun
@@ -139,5 +158,47 @@ runDbTests('tenant isolation (DB-backed)', () => {
   it('symmetric: B cannot act as A\'s workspace (403)', async () => {
     const res = await as(B.token, A.wsId, '/api/v1/tickets');
     expect(res.status).toBe(403);
+  });
+
+  // ─── Role management is admin-only (GHSA-6qq2-v492-r8r6) ─────────────────
+  // A non-admin member must not be able to create/edit roles — otherwise it
+  // can flip its own role's is_admin and self-escalate to workspace admin.
+  it('non-admin member cannot PATCH a role to is_admin (403, no write)', async () => {
+    const res = await as(C.token, A.wsId, `/api/v1/roles/${C.memberRoleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_admin: true }),
+    });
+    expect(res.status).toBe(403);
+    // Prove the guard ran BEFORE the write — the role must still be non-admin.
+    const [role] = await sql<{ is_admin: boolean }[]>`
+      select is_admin from roles where id = ${C.memberRoleId}
+    `;
+    expect(role.is_admin).toBe(false);
+  });
+
+  it('non-admin member cannot create a role (403)', async () => {
+    const res = await as(C.token, A.wsId, '/api/v1/roles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `escalate-${RUN}`, is_admin: true }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('workspace admin can still manage roles (POST 201 + PATCH 200)', async () => {
+    const created = await as(A.token, A.wsId, '/api/v1/roles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `QA-${RUN}`, is_admin: false }),
+    });
+    expect(created.status).toBe(201);
+    const { role }: any = await created.json();
+    const patched = await as(A.token, A.wsId, `/api/v1/roles/${role.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `QA-${RUN}-renamed` }),
+    });
+    expect(patched.status).toBe(200);
   });
 });

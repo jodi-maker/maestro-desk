@@ -20,6 +20,8 @@ interface Policy {
   emailName?: string;
   emailMax?: number;
   windowSeconds: number;
+  /** fail closed on a limiter DB error (for email-sending paths) */
+  failClosed?: boolean;
 }
 
 // Match by path tail so it's independent of the mount prefix.
@@ -28,7 +30,8 @@ function policyFor(path: string): Policy | null {
     return { ipName: 'auth-login-ip', ipMax: 20, emailName: 'auth-login-email', emailMax: 10, windowSeconds: 600 };
   }
   if (path.endsWith('/request-password-reset')) {
-    return { ipName: 'auth-reset-req-ip', ipMax: 5, emailName: 'auth-reset-req-email', emailMax: 5, windowSeconds: 900 };
+    // Sends an email → fail closed so a DB outage can't enable reset-bombing.
+    return { ipName: 'auth-reset-req-ip', ipMax: 5, emailName: 'auth-reset-req-email', emailMax: 5, windowSeconds: 900, failClosed: true };
   }
   if (path.endsWith('/reset-password')) {
     return { ipName: 'auth-reset-consume-ip', ipMax: 20, windowSeconds: 900 };
@@ -48,7 +51,7 @@ export const authRateLimit: MiddlewareHandler = async (c, next) => {
   if (!policy) return next();
 
   // Per-IP bucket always applies.
-  const ipLimited = await enforceRateLimit(c, { name: policy.ipName, max: policy.ipMax, windowSeconds: policy.windowSeconds });
+  const ipLimited = await enforceRateLimit(c, { name: policy.ipName, max: policy.ipMax, windowSeconds: policy.windowSeconds, failClosed: policy.failClosed });
   if (ipLimited) return ipLimited;
 
   // Per-email bucket where the body carries a target address. Read a CLONE so
@@ -63,7 +66,7 @@ export const authRateLimit: MiddlewareHandler = async (c, next) => {
       // not JSON / no body — skip the email bucket
     }
     if (email) {
-      const emailLimited = await enforceRateLimit(c, { name: policy.emailName, by: email, max: policy.emailMax!, windowSeconds: policy.windowSeconds });
+      const emailLimited = await enforceRateLimit(c, { name: policy.emailName, by: email, max: policy.emailMax!, windowSeconds: policy.windowSeconds, failClosed: policy.failClosed });
       if (emailLimited) return emailLimited;
     }
   }

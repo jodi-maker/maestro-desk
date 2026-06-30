@@ -162,9 +162,15 @@ webhooks.post('/slack/events', async (c) => {
 
   // Self-healing backfill: tag (or re-tag) the matched row with this team_id so
   // future events hit the O(1) fast path. Covers both an untagged row and a
-  // workspace that re-pointed to a different Slack team.
+  // workspace that re-pointed to a different Slack team. Best-effort: the event
+  // is already verified, so a tagging hiccup must not fail it (we'd just take
+  // the fallback scan again next time).
   if (needsBackfill) {
-    await sql`update slack_integrations set team_id = ${teamId} where workspace_id = ${verified.workspace_id}`;
+    try {
+      await sql`update slack_integrations set team_id = ${teamId} where workspace_id = ${verified.workspace_id}`;
+    } catch (err) {
+      console.warn('[slack-events] team_id backfill failed:', err instanceof Error ? err.message : err);
+    }
   }
 
   try {

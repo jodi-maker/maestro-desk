@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -56,12 +56,14 @@ export type PostmarkInbound = z.infer<typeof PostmarkInbound>;
 // credential. (Documented residual.)
 
 function safeEqual(a: string, expected: string): boolean {
-  const ab = Buffer.from(a);
-  const eb = Buffer.from(expected);
-  // Differing lengths can't be equal; the secret's length is not itself secret,
-  // and timingSafeEqual throws on unequal-length buffers.
-  if (ab.length !== eb.length) return false;
-  return timingSafeEqual(ab, eb);
+  // Compare fixed-length SHA-256 digests rather than the raw strings: the
+  // digests are always 32 bytes, so there's no length pre-check to short-circuit
+  // on — this avoids leaking even the secret's length via timing (and dodges
+  // timingSafeEqual's unequal-length throw). A SHA-256 collision is infeasible,
+  // so equal digests ⇒ equal inputs.
+  const ad = createHash('sha256').update(a).digest();
+  const ed = createHash('sha256').update(expected).digest();
+  return timingSafeEqual(ad, ed);
 }
 
 // Every place the secret might be presented. Collected (rather than
